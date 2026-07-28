@@ -40,16 +40,31 @@
 # and `tasks-axi done` preserves it verbatim, so `complete` and `resolve` carry
 # both facts through unchanged without a second store to drift against. Neither
 # `<reason>` nor `<default>` may contain those markers, and both inherit the
-# parenthesis rejection `tasks-axi hold` already imposes on a reason.
+# parenthesis rejection `tasks-axi hold` already imposes on a reason. `<default>`
+# additionally rejects commas, because the shared backlog metadata parser in
+# bin/fm-fleet-snapshot.sh stops the composed `(hold: ...)` field at the first
+# comma.
+#
+# Known limitation: that same first-comma truncation applies to a comma in
+# `<reason>`, so on the jq-derived surfaces such a reason reads back cut at the
+# comma and loses the trailing default and answerable markers, while the backlog
+# markdown and the tasks-axi session-start digest still render the whole field.
+# Commas in reasons are pre-existing and common on the live board, so `<reason>`
+# keeps accepting them and widening that shared parser was deliberately excluded
+# from this contract.
 #
 # A hold created before this contract keeps working. Read paths treat a reason
 # with no marker as a desk question with no recorded default, and no read path
 # and no repeated `hold` ever rewrites an existing hold's body.
 #
 # `list` prints one tab-separated `<answerable> <id> <default> <title>` row per
-# open kind `captain` hold in the active home, play rows first, so a question
+# waiting captain question in the active home, play rows first, so a question
 # that needs the build played is not buried behind desk questions. A hold with
-# no recorded default prints `-` in that column.
+# no recorded default prints `-` in that column. A waiting question is a kind
+# `captain` item that is held for the captain and has no unresolved blocker, the
+# same two invariants every other captain-facing surface applies, so an item held
+# for another reason and a question whose prerequisite work is unfinished are
+# both omitted rather than relayed.
 #
 # `complete` is the shared investigation and visual-review completion gate.
 # `--none` is an explicit semantic attestation that the just-reviewed surface has
@@ -118,6 +133,15 @@ validate_hold_text() {  # <label> <value>
   case "$value" in
     *"$DEFAULT_MARK"*|*"$ANSWERABLE_MARK"*)
       fail "$label must not contain the stored hold markers '$DEFAULT_MARK' or '$ANSWERABLE_MARK'" ;;
+  esac
+}
+
+validate_hold_default() {  # <value>
+  local value=$1
+  validate_hold_text default "$value"
+  case "$value" in
+    *,*)
+      fail "default must not contain commas; the shared backlog metadata parser stops the stored hold field at the first comma, so restate the default without commas" ;;
   esac
 }
 
@@ -330,7 +354,7 @@ command_hold() {
   validate_hold_text reason "$reason"
   [ -n "$fallback" ] \
     || fail "--default is required: state what happens if the captain never answers"
-  validate_hold_text default "$fallback"
+  validate_hold_default "$fallback"
   validate_answerable "$answerable"
   stored_reason=$(compose_hold_reason "$reason" "$fallback" "$answerable")
   require_tasks_axi
@@ -383,6 +407,8 @@ command_list() {
   while IFS= read -r id; do
     [ -n "$id" ] || continue
     show=$(task_show "$id") || fail "could not read captain decision $id"
+    [ "$(show_field "$show" hold_kind)" = captain ] || continue
+    [ "$(show_field "$show" blocked)" = no ] || continue
     title=$(unquote "$(show_field "$show" title)")
     reason=$(unquote "$(show_field "$show" hold_reason)")
     axis=$(reason_answerable "$reason")

@@ -16,11 +16,15 @@ It rejects an identity collision, a changed title, and attempts to reopen an alr
 `hold` requires a stated default and accepts a `desk` or `play` answerable axis that defaults to `desk`.
 Both are composed into the tasks-axi hold reason as `<reason> | default if unanswered: <default> | answerable: <desk|play>`, and the script rejects a reason or default that contains either marker.
 `tasks-axi hold` already rejects parentheses in a reason, so the script applies the same rejection to the default before any backlog identity exists.
+The default additionally rejects commas, because the shared backlog metadata parser in `bin/fm-fleet-snapshot.sh` stops the composed `(hold: ...)` field at the first comma.
+The same first-comma truncation applies to a comma in the reason, so on the jq-derived surfaces such a reason reads back cut at the comma and loses the trailing default and answerable markers, while the backlog markdown and the tasks-axi session-start digest still render the whole field.
+Commas in reasons are pre-existing and common on the live board, so the reason keeps accepting them and widening that shared parser was deliberately excluded from this change.
 The hold reason is the only store because it is the one hold field every existing read surface already renders, and because `tasks-axi done` preserves it verbatim while `resolve` rewrites only the body, so both facts survive `complete` and `resolve` without a second copy to drift against.
 A hold created before this contract has no marker; every read path resolves it as a desk question with no recorded default, and no read path and no repeated `hold` rewrites an existing body.
 
-The `list` subcommand prints one tab-separated `<answerable> <id> <default> <title>` row per open kind `captain` hold in the active home, play rows first, and filters to one axis with `--answerable`.
-It reads titles and reasons through `tasks-axi show` rather than parsing the quoted list projection.
+The `list` subcommand prints one tab-separated `<answerable> <id> <default> <title>` row per waiting captain question in the active home, play rows first, and filters to one axis with `--answerable`.
+A waiting question is a kind `captain` item that is held for the captain and has no unresolved blocker, so an item held for another reason and a question whose prerequisite work is unfinished are both omitted, matching the readiness rule the fleet snapshot and Bearings already apply.
+It reads titles, hold kinds, blocker readiness, and reasons through `tasks-axi show` rather than parsing the quoted list projection.
 
 The `complete` subcommand unions the reviewed keys into `decision_keys=` and appends `decisions_reviewed=1` while originating task metadata is live.
 A post-teardown visual review can complete against the surviving report and durable holds without recreating volatile task metadata.
@@ -60,6 +64,8 @@ The initial Bearings snapshot correctly has no open decision, and the new teardo
 A later regression covers tasks-axi's quoted multi-entry `blocked_by` output so `resolve` matches the first, middle, and last ids and rejects a genuinely absent id.
 The stated-default regression asserts that a question with no default is refused before any backlog identity exists, that an unstated axis falls back to `desk`, that `list` separates the two axes, that the teardown gate still refuses an uninventoried investigation, and that `resolve` returns the hold reason byte-identical.
 A companion regression builds a hold the way the pre-default script did and asserts that listing, completion, verification, teardown, and resolution all still work, that its body is unchanged throughout, and that re-holding it adds the missing default without rewriting that body.
+A third regression puts an item held for another reason and a question blocked by unfinished work on the same board and asserts that `list` omits both, including under `--answerable play`, and that the blocked question returns to the list once its blocker is done.
+The stated-default regression also asserts that a default containing a comma is refused before any backlog identity exists.
 
 The final verification commands and their exact summarized outputs follow.
 
@@ -103,7 +109,10 @@ ALL 71 TEST SCRIPTS PASSED
 ```
 
 The 2026-07-28 stated-default and desk-or-play verification re-ran the directly affected suites.
-`tests/fm-fleet-snapshot-view.test.sh`, `tests/fm-bearings-snapshot.test.sh`, `tests/fm-brief.test.sh`, `tests/fm-teardown.test.sh`, and `tests/fm-session-start.test.sh` each exited 0 with their existing assertions unchanged, and the lifecycle suite's own output follows.
+`tests/fm-fleet-snapshot-view.test.sh`, `tests/fm-brief.test.sh`, `tests/fm-teardown.test.sh`, and `tests/fm-session-start.test.sh` each exited 0 with their existing assertions unchanged.
+`tests/fm-bearings-snapshot.test.sh` is flaky on the verifying machine: it exited 0 on its first standalone run and failed on repeat runs.
+That suite fails identically against a pristine pre-change copy of the repository, so the failure is not caused by this change, and no full-suite pass is claimed for that machine.
+The lifecycle suite's own output follows.
 
 ```text
 $ bash tests/fm-decision-hold-lifecycle.test.sh
@@ -118,4 +127,7 @@ ok - main-home and secondmate-home captain holds remain correctly routed
 ok - resolve matches first/middle/last in quoted blocked_by and rejects a genuinely absent id
 ok - every captain question carries a stated default and a desk or play axis through resolution
 ok - captain questions created before stated defaults keep working and keep their bodies
+ok - list shows only captain-held questions whose blockers have cleared
 ```
+
+ShellCheck is not installed on the verifying machine, so `bin/fm-lint.sh` could not run there for the 2026-07-28 verification and CI remains the enforcing lint gate.

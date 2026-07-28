@@ -597,6 +597,14 @@ test_stated_default_and_desk_play_split() {
   fi
   if run_decisions "$home" hold "$id" burn-cost \
     --title "Choose the sample burn cost" --reason "captain burn cost pending" \
+    --default "keep the shipped shove, tune it later" --repo sample \
+    > "$home/comma-default.out" 2> "$home/comma-default.err"; then
+    fail "hold accepted a default whose comma truncates the stored hold field"
+  fi
+  assert_grep "must not contain commas" "$home/comma-default.err" \
+    "the comma refusal must name the constraint"
+  if run_decisions "$home" hold "$id" burn-cost \
+    --title "Choose the sample burn cost" --reason "captain burn cost pending" \
     --default "keep the shipped shove" --answerable maybe --repo sample \
     > "$home/bad-axis.out" 2> "$home/bad-axis.err"; then
     fail "hold accepted an answerable value outside desk and play"
@@ -713,6 +721,67 @@ test_holds_without_a_stated_default_keep_working() {
   pass "captain questions created before stated defaults keep working and keep their bodies"
 }
 
+# `list` is the captain-facing question view, so it must apply the same two
+# invariants every other captain surface applies: the item is held for the
+# captain, and its blockers have cleared. A parked or load-gated backlog item and
+# a question whose prerequisite work is unfinished are not waiting questions.
+test_list_omits_other_hold_kinds_and_blocked_questions() {
+  local home id open_hold blocked_hold parked_hold load_hold rows
+  home=$(make_home list-invariants)
+  id=sample-list-review
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Review the sample list surface" --kind scout --repo sample --start >/dev/null \
+    || fail "could not create list-invariant origin"
+  write_origin_meta "$home" "$id"
+  printf 'done: report complete\n' > "$home/state/$id.status"
+  printf '# Sample list review\n\nOne waiting question, one blocked question, two other hold kinds.\n' \
+    > "$home/data/$id/report.md"
+
+  open_hold=$(run_decisions "$home" hold "$id" open-choice \
+    --title "Choose the open sample option" --reason "captain open choice pending" \
+    --default "keep the current sample option" --answerable play --repo sample) \
+    || fail "could not register the waiting question"
+  blocked_hold=$(run_decisions "$home" hold "$id" blocked-choice \
+    --title "Choose the blocked sample option" --reason "captain blocked choice pending" \
+    --default "keep the blocked sample option" --answerable play --repo sample) \
+    || fail "could not register the blocked question"
+  tasks_in "$home" add sample-prerequisite "Finish the sample prerequisite" --kind ship --repo sample >/dev/null \
+    || fail "could not create the prerequisite fixture"
+  tasks_in "$home" block "$blocked_hold" --by sample-prerequisite >/dev/null \
+    || fail "could not block a captain question behind unfinished work"
+
+  parked_hold="$id-decision-parked-choice"
+  tasks_in "$home" add "$parked_hold" "Parked sample backlog item" --kind captain --repo sample >/dev/null \
+    || fail "could not create the parked fixture"
+  tasks_in "$home" hold "$parked_hold" --reason "parked until the next window" --kind parked >/dev/null \
+    || fail "could not park the fixture"
+  load_hold="$id-decision-load-choice"
+  tasks_in "$home" add "$load_hold" "Load-gated sample backlog item" --kind captain --repo sample >/dev/null \
+    || fail "could not create the load-gated fixture"
+  tasks_in "$home" hold "$load_hold" --reason "waiting on fleet load" --kind load >/dev/null \
+    || fail "could not load-gate the fixture"
+  [ "$(tasks_in "$home" list --state held --kind captain | grep -cE "^  ($parked_hold|$load_hold|$blocked_hold),")" = 3 ] \
+    || fail "the fixture must reproduce the raw listing that returns all four items"
+
+  rows=$(run_decisions "$home" list) || fail "list failed with other hold kinds and a blocked question on the board"
+  [ "$(printf '%s\n' "$rows" | wc -l | tr -d ' ')" = 1 ] \
+    || fail "list did not omit the other hold kinds and the blocked question: $rows"
+  assert_contains "$rows" "$open_hold" "list lost the one waiting question"
+  assert_not_contains "$rows" "$parked_hold" "a parked backlog item was printed as a waiting question"
+  assert_not_contains "$rows" "$load_hold" "a load-gated backlog item was printed as a waiting question"
+  assert_not_contains "$rows" "$blocked_hold" "a question with unfinished prerequisite work was printed as waiting"
+  rows=$(run_decisions "$home" list --answerable play) || fail "play-only list failed"
+  assert_not_contains "$rows" "$blocked_hold" "a blocked play question was relayed as its own group"
+  [ -z "$(run_decisions "$home" list --answerable desk)" ] \
+    || fail "an item held for another reason surfaced as a desk question"
+
+  tasks_in "$home" "done" sample-prerequisite >/dev/null \
+    || fail "could not complete the prerequisite work"
+  rows=$(run_decisions "$home" list --answerable play) || fail "play-only list failed after the blocker cleared"
+  assert_contains "$rows" "$blocked_hold" "a question did not become a waiting question once its blocker was done"
+  pass "list shows only captain-held questions whose blockers have cleared"
+}
+
 test_uninventoried_report_decision_refuses_completion
 
 test_scout_teardown_always_requires_inventory_verification
@@ -725,3 +794,4 @@ test_secondmate_hold_stays_in_authoritative_home
 test_resolve_matches_quoted_blocked_by_edges
 test_stated_default_and_desk_play_split
 test_holds_without_a_stated_default_keep_working
+test_list_omits_other_hold_kinds_and_blocked_questions
