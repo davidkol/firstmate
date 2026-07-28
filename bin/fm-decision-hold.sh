@@ -19,11 +19,37 @@
 # Usage:
 #   fm-decision-hold.sh id <origin-id> <decision-key>
 #   fm-decision-hold.sh hold <origin-id> <decision-key> \
-#     --title <title> --reason <reason> [--repo <repo>]
+#     --title <title> --reason <reason> --default <default> \
+#     [--answerable desk|play] [--repo <repo>]
+#   fm-decision-hold.sh list [--answerable desk|play]
 #   fm-decision-hold.sh complete <origin-id> (--none | <decision-key>...)
 #   fm-decision-hold.sh verify <origin-id>
 #   fm-decision-hold.sh resolve <origin-id> <decision-key> \
 #     --decision-file <path> --routed-to <task-id> [--routed-to <task-id>...]
+#
+# `hold` requires `--default`: the concrete thing that happens if the captain
+# never answers. A question with a stated default blocks nobody while it waits.
+# `--answerable` separates a question answerable at a desk from one that cannot
+# be answered without playing the build. It defaults to `desk`, the safe value,
+# so an unspecified question never silently implies the captain must go play
+# something.
+#
+# Both facts are stored inside the tasks-axi hold reason as
+# `<reason> | default if unanswered: <default> | answerable: <desk|play>`.
+# The reason is the one hold field every existing read surface already renders,
+# and `tasks-axi done` preserves it verbatim, so `complete` and `resolve` carry
+# both facts through unchanged without a second store to drift against. Neither
+# `<reason>` nor `<default>` may contain those markers, and both inherit the
+# parenthesis rejection `tasks-axi hold` already imposes on a reason.
+#
+# A hold created before this contract keeps working. Read paths treat a reason
+# with no marker as a desk question with no recorded default, and no read path
+# and no repeated `hold` ever rewrites an existing hold's body.
+#
+# `list` prints one tab-separated `<answerable> <id> <default> <title>` row per
+# open kind `captain` hold in the active home, play rows first, so a question
+# that needs the build played is not buried behind desk questions. A hold with
+# no recorded default prints `-` in that column.
 #
 # `complete` is the shared investigation and visual-review completion gate.
 # `--none` is an explicit semantic attestation that the just-reviewed surface has
@@ -44,6 +70,11 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+
+# Markers that carry the stated default and the desk/play axis inside the
+# tasks-axi hold reason. Changing either string changes the stored contract.
+DEFAULT_MARK=' | default if unanswered: '
+ANSWERABLE_MARK=' | answerable: '
 
 # shellcheck source=bin/fm-classify-lib.sh
 # shellcheck disable=SC1091
@@ -78,6 +109,56 @@ validate_one_line() {  # <label> <value>
   case "$value" in
     *$'\n'*|*$'\r'*) fail "$label must be one line" ;;
   esac
+}
+
+validate_hold_text() {  # <label> <value>
+  local label=$1 value=$2
+  validate_one_line "$label" "$value"
+  case "$value" in *'('*|*')'*) fail "$label must not contain parentheses; tasks-axi hold rejects them" ;; esac
+  case "$value" in
+    *"$DEFAULT_MARK"*|*"$ANSWERABLE_MARK"*)
+      fail "$label must not contain the stored hold markers '$DEFAULT_MARK' or '$ANSWERABLE_MARK'" ;;
+  esac
+}
+
+validate_answerable() {  # <value>
+  local value=$1
+  case "$value" in
+    desk|play) : ;;
+    *) fail "--answerable must be desk or play, not: $value" ;;
+  esac
+}
+
+compose_hold_reason() {  # <reason> <default> <answerable>
+  printf '%s%s%s%s%s' "$1" "$DEFAULT_MARK" "$2" "$ANSWERABLE_MARK" "$3"
+}
+
+# A stored reason with no marker predates the stated-default contract. It reads
+# back as a desk question with no recorded default and is never rewritten here.
+reason_default() {  # <stored-reason>
+  local rest
+  case "$1" in
+    *"$DEFAULT_MARK"*) rest=${1#*"$DEFAULT_MARK"} ;;
+    *) printf '%s' -; return 0 ;;
+  esac
+  case "$rest" in
+    *"$ANSWERABLE_MARK"*) rest=${rest%"$ANSWERABLE_MARK"*} ;;
+  esac
+  printf '%s' "$rest"
+}
+
+reason_answerable() {  # <stored-reason>
+  case "$1" in
+    *"$ANSWERABLE_MARK"play) printf 'play' ;;
+    *) printf 'desk' ;;
+  esac
+}
+
+unquote() {  # <value>
+  local value=$1
+  value=${value#\"}
+  value=${value%\"}
+  printf '%s' "$value"
 }
 
 sha256_text() {  # <text>
@@ -229,13 +310,15 @@ command_id() {
 }
 
 command_hold() {
-  local origin=${1:-} key=${2:-} title='' reason='' repo='' id show state kind existing_title body
+  local origin=${1:-} key=${2:-} title='' reason='' fallback='' answerable=desk repo='' id show state kind existing_title body stored_reason
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
   shift 2
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --title) shift; title=${1:-} ;;
       --reason) shift; reason=${1:-} ;;
+      --default) shift; fallback=${1:-} ;;
+      --answerable) shift; answerable=${1:-} ;;
       --repo) shift; repo=${1:-} ;;
       *) usage >&2; exit 2 ;;
     esac
@@ -244,8 +327,12 @@ command_hold() {
   validate_slug origin-id "$origin"
   validate_slug decision-key "$key"
   validate_one_line title "$title"
-  validate_one_line reason "$reason"
-  case "$reason" in *'('*|*')'*) fail "reason must not contain parentheses (tasks-axi hold contract)" ;; esac
+  validate_hold_text reason "$reason"
+  [ -n "$fallback" ] \
+    || fail "--default is required: state what happens if the captain never answers"
+  validate_hold_text default "$fallback"
+  validate_answerable "$answerable"
+  stored_reason=$(compose_hold_reason "$reason" "$fallback" "$answerable")
   require_tasks_axi
   origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $FM_HOME"
   id=$(hold_id "$origin" "$key")
@@ -268,10 +355,50 @@ command_hold() {
     tasks_axi add "$id" "$title" --kind captain --repo "$repo" --body "$body" >/dev/null \
       || fail "could not create captain decision item $id"
   fi
-  tasks_axi hold "$id" --reason "$reason" --kind captain >/dev/null \
+  tasks_axi hold "$id" --reason "$stored_reason" --kind captain >/dev/null \
     || fail "could not activate captain hold $id"
   verify_hold_active "$id"
   printf '%s\n' "$id"
+}
+
+command_list() {
+  local filter='' raw ids id show title reason axis play_rows='' desk_rows='' row
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --answerable) shift; filter=${1:-}; validate_answerable "$filter" ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    shift
+  done
+  require_tasks_axi
+  raw=$(tasks_axi list --state held --kind captain 2>&1) \
+    || fail "could not list captain decisions in $FM_HOME"
+  case "$raw" in
+    *'count:'*) : ;;
+    *) fail "tasks-axi did not return a captain decision listing for $FM_HOME" ;;
+  esac
+  ids=$(printf '%s\n' "$raw" \
+    | sed -n 's/^  \([A-Za-z0-9._-][A-Za-z0-9._-]*\),.*$/\1/p' | LC_ALL=C sort -u)
+  [ -n "$ids" ] || return 0
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    show=$(task_show "$id") || fail "could not read captain decision $id"
+    title=$(unquote "$(show_field "$show" title)")
+    reason=$(unquote "$(show_field "$show" hold_reason)")
+    axis=$(reason_answerable "$reason")
+    row=$(printf '%s\t%s\t%s\t%s' "$axis" "$id" "$(reason_default "$reason")" "$title")
+    case "$axis" in
+      play) play_rows="${play_rows}${row}"$'\n' ;;
+      *) desk_rows="${desk_rows}${row}"$'\n' ;;
+    esac
+  done <<EOF
+$ids
+EOF
+  case "$filter" in
+    play) printf '%s' "$play_rows" ;;
+    desk) printf '%s' "$desk_rows" ;;
+    *) printf '%s%s' "$play_rows" "$desk_rows" ;;
+  esac
 }
 
 command_complete() {
@@ -456,6 +583,7 @@ command_resolve() {
 case "${1:-}" in
   id) shift; command_id "$@" ;;
   hold) shift; command_hold "$@" ;;
+  list) shift; command_list "$@" ;;
   complete) shift; command_complete "$@" ;;
   verify) shift; command_verify "$@" ;;
   resolve) shift; command_resolve "$@" ;;

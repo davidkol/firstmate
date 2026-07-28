@@ -17,6 +17,10 @@ This skill is the single policy owner for unresolved captain decisions discovere
 Every unresolved decision that belongs to the captain and is discovered while producing, reading, presenting, or ending an investigation or visual review must become a structured captain-held work item in the authoritative backlog of the home that owns the originating work before that work or review may be treated as complete.
 The agent performs the semantic inventory because scripts must not infer decisions from report prose, visual-review artifacts, terminal output, or chat.
 Give each distinct unresolved decision a stable privacy-safe key, register it through `bin/fm-decision-hold.sh hold`, and use the same key on retry so registration is idempotent while different decisions retain different durable identities.
+Every registered decision must state a default: the concrete thing that happens if the captain never answers, so a waiting question blocks nobody.
+The default is a real proposal the agent is prepared to act on, never a placeholder and never a request for a rubber stamp, and the captain remains free to override any of them.
+Every registered decision must also declare whether it is answerable at a desk or needs the build played, because a question the captain can only answer by playing the build waits on a different occasion than one answerable by reading and thinking.
+Declare the playing axis only when the captain genuinely cannot answer without playing the build; the desk value is the safe default and applies when unstated.
 After inventorying the whole report and review surface, run `bin/fm-decision-hold.sh complete` with every unresolved key, or with `--none` only when the reviewed surface contains no unresolved captain decision.
 A completed investigation and an ended visual review use this same owner and completion command; a visual tool, including Lavish, never owns a parallel completion policy.
 Run the command in the originating work's authoritative `FM_HOME`; main-home work creates main-home holds, and secondmate-owned work creates holds in that secondmate home's backlog rather than copying them into the main backlog.
@@ -29,9 +33,12 @@ Bearings reads the resulting structured state and must never compensate by scrap
 
 1. Read the complete investigation result and complete the visual review before declaring either complete.
 2. Inventory only genuine unresolved choices that require the captain.
-3. For each choice, choose a stable key and use the script's `hold` command with a concise title, reason, and repository.
+3. For each choice, choose a stable key and use the script's `hold` command with a concise title, reason, repository, stated default, and playing axis when the build must be played.
 4. Run the script's `complete` command with the full unresolved-key inventory for that review pass.
 5. Relay the choices to the captain as decisions from Bearings' Captain's Call section under `AGENTS.md` section 9; do not use the word hold in captain chat.
+   State each question's default in the same breath as the question, so the captain can answer by exception rather than by clearing a queue.
+   Read the defaults from the script's `list` command, which prints each one in full, rather than from Bearings' bounded summary, which may truncate it.
+   Relay the questions that need the build played as their own short group, using `list --answerable play`, so they are not buried behind desk questions and can be answered in one playing session.
 6. After the captain decides, record dependent work with normal tasks-axi commands and block it by the hold identity.
 7. Put the captain's exact durable decision in a file and use the script's `resolve` command with every routed task.
 8. Confirm Bearings no longer shows the closed hold and that routed work remains in structured backlog state.
