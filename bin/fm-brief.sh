@@ -26,9 +26,9 @@
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo string cannot reliably identify this repo. Briefs made
 #   without it carry a loud declaration so an omitted contract cannot be silent.
-# For ship tasks, the definition of done is shaped by the project's delivery mode
-# (data/projects.md via fm-project-mode.sh; see the project-management skill
-# and AGENTS.md task lifecycle):
+# For ship tasks, the delivery path inside the definition of done is shaped by the
+# project's delivery mode (data/projects.md via fm-project-mode.sh; see the
+# project-management skill and AGENTS.md task lifecycle):
 #   no-mistakes  implement -> /no-mistakes pipeline -> PR -> captain merge (default)
 #   direct-PR    implement -> push + open PR via gh-axi (no pipeline) -> captain merge
 #   local-only   implement on branch, stop and report "ready in branch" (no push/PR);
@@ -44,6 +44,27 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
+# Ship and scout scaffolds both carry an orientation step in their setup section
+# and a completion checklist inside their definition of done, because a rule
+# holds where the worker is already reading and fails in a document nobody
+# reopens.
+# The orientation step has the crewmate read `git status` and recent commits
+# before trusting any plan, status doc, or handoff.
+# The scout checklist is deliberately the shorter one: a scout delivers a report
+# rather than a change, so the items that attach to a diff have nothing to attach
+# to.
+# Both also name any existing curated-notes directory for the project under the
+# harness project store (${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects), which is
+# keyed by the absolute path of the directory a session ran in, so a disposable
+# worktree never loads them on its own.
+# A store directory is offered only once it is proven to belong to this project,
+# either because the location is one this scaffold derives exactly (firstmate's
+# clone, or that clone's origin when the origin is a local filesystem path) or
+# because the directory's own session transcripts record a working directory
+# whose basename is exactly the project name.
+# Transcript layout is an external format that can change or vanish without
+# notice, so a candidate whose recorded working directory cannot be read is
+# dropped silently rather than guessed at.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -70,6 +91,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 KIND=ship
 HERDR_LAB=0
 NO_PROJECTS=0
@@ -194,6 +216,109 @@ fi
 
 REPO=${POS[1]}
 
+# Reads back the absolute path a store directory's sessions actually ran in, from
+# the first `cwd` field of one of its session transcripts.
+# The read is bounded on purpose: one transcript per directory - a live one holds
+# over 500 - and only its leading bytes, because the field appears in the opening
+# records.
+# The transcript layout is an external format that may change or disappear
+# without notice, so a missing, unreadable or unrecognized transcript prints
+# nothing and the caller must fall back to silence rather than to a guess.
+store_recorded_cwd() {
+  local dir=$1 transcript
+  for transcript in "$dir"/*.jsonl; do
+    [ -f "$transcript" ] || return 0
+    head -c 131072 "$transcript" 2>/dev/null |
+      sed -n '/"cwd":"/{s/.*"cwd":"\([^"]*\)".*/\1/p;q;}'
+    return 0
+  done
+}
+
+# Curated per-project notes live in the harness project store, one directory per
+# session location, named by mangling that location's ABSOLUTE path: every
+# character outside [A-Za-z0-9] becomes "-". A crewmate runs in a disposable
+# worktree whose absolute path is neither firstmate's clone nor the captain's own
+# checkout, so it loads none of them.
+# The mangling is lossy - "/", " ", "." and "_" all collapse to "-" - so nothing
+# inside a mangled name can distinguish a path separator from a literal dash or
+# space, and matching store names by project-name suffix resolves project
+# "Dungeon" to the notes of ".../Godot/Gacha Dungeon".
+# So a suffix match only selects candidates, and a candidate is offered only
+# once it is confirmed by one of two proofs.
+# The first proof is exact derivation: firstmate's clone at $PROJECTS/<repo>,
+# and that clone's origin when the origin is a local filesystem path rather than
+# a URL. Each must be a real directory whose basename is exactly the project
+# name.
+# $PROJECTS/<repo> must itself be a repository root, not merely a directory
+# inside one: `git -C` walks up to the nearest ancestor repository, and this
+# home's own `projects/` sits inside the firstmate repo, so a project directory
+# left as a plain directory would answer with firstmate's OWN origin.
+# The second proof is the candidate's own recorded working directory, read back
+# from its session transcripts, which holds the real absolute path before
+# mangling. Its basename must equal the project name exactly, which rejects
+# "Gacha Dungeon" for "Dungeon" and reaches a captain checkout whose clone knows
+# it only through a remote URL.
+# Every candidate must also actually hold notes; anything unproven is dropped
+# rather than guessed at.
+# Prints nothing when the store, the clone, or a matching notes directory does
+# not exist.
+project_memory_dirs() {
+  local repo=$1 base clone clone_abs toplevel origin candidate abs store seen="" key dir cwd
+  base="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+  [ -d "$base" ] || return 0
+  clone_abs=""
+  origin=""
+  clone="$PROJECTS/$repo"
+  if [ -d "$clone" ] &&
+     clone_abs=$(cd "$clone" && pwd -P) &&
+     toplevel=$(git -C "$clone" rev-parse --show-toplevel 2>/dev/null) &&
+     [ -n "$toplevel" ] && [ -d "$toplevel" ] &&
+     toplevel=$(cd "$toplevel" && pwd -P) &&
+     [ "$toplevel" = "$clone_abs" ]; then
+    origin=$(git -C "$clone" remote get-url origin 2>/dev/null || true)
+    case "$origin" in
+      file://*) origin=${origin#file://} ;;
+      /*) : ;;
+      *) origin="" ;;
+    esac
+  else
+    clone_abs=""
+  fi
+  for candidate in "$clone_abs" "$origin"; do
+    [ -n "$candidate" ] && [ -d "$candidate" ] || continue
+    abs=$(cd "$candidate" && pwd -P) || continue
+    [ "${abs##*/}" = "$repo" ] || continue
+    store="$base/$(printf '%s' "$abs" | sed 's/[^a-zA-Z0-9]/-/g')"
+    [ -d "$store/memory" ] || continue
+    case "$seen" in *"|$store|"*) continue ;; esac
+    seen="$seen|$store|"
+    printf -- '- %s\n' "$store/memory"
+  done
+  key=$(printf '%s' "$repo" | sed 's/[^a-zA-Z0-9]/-/g')
+  for dir in "$base"/*-"$key"; do
+    [ -d "$dir/memory" ] || continue
+    case "$seen" in *"|$dir|"*) continue ;; esac
+    cwd=$(store_recorded_cwd "$dir")
+    [ -n "$cwd" ] || continue
+    [ "${cwd##*/}" = "$repo" ] || continue
+    seen="$seen|$dir|"
+    printf -- '- %s\n' "$dir/memory"
+  done
+}
+
+MEMORY_LIST=$(project_memory_dirs "$REPO")
+if [ -n "$MEMORY_LIST" ]; then
+  MEMORY_SECTION="
+
+Curated notes for this project already exist, and nothing loads them for you because this copy sits at a different path - read them first:
+$MEMORY_LIST"
+else
+  MEMORY_SECTION=""
+fi
+
+ORIENT_1="Run \`git status\` and \`git log --oneline -15\`, and read both before you trust any plan, status doc, or handoff."
+ORIENT_2="The repository state outranks every document, always: work that exists only in the tree or in unmentioned recent commits gets rebuilt from scratch by a session that believes the document instead."
+
 if [ "$HERDR_LAB" -eq 1 ]; then
 HERDR_LAB_HELPER=$(shell_quote "$FM_ROOT/bin/fm-herdr-lab.sh")
 # shellcheck disable=SC2016  # single quotes are deliberate: these lines are literal brief text whose backtick-wrapped $(...) and "$HERDR_LAB_SESSION" snippets must reach the reading agent verbatim, not expand at scaffold time; only the '"$VAR"' break-outs interpolate.
@@ -238,8 +363,10 @@ $HERDR_SECTION
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
 This is a SCOUT task: the deliverable is a written report, not a PR.
-The worktree is your laboratory - install, run, edit, and make scratch commits freely; all of it is discarded at teardown.
-The report is the only thing that survives, so anything worth keeping must be in it.
+The worktree is your laboratory - install, run, edit, and make scratch commits freely, because all of it is discarded at teardown and the report is the only thing that survives.
+
+**Orient before anything else.** $ORIENT_1
+$ORIENT_2$MEMORY_SECTION
 
 # Rules
 1. Never push to any remote and never open a PR.
@@ -266,6 +393,11 @@ The report is the only thing that survives, so anything worth keeping must be in
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
+Answer each item below explicitly before you report done; an item you cannot satisfy is named as a gap, never skipped in silence.
+- [ ] Any owner decision the report relies on is quoted verbatim with its date - a previous session summarising the owner is not evidence that the owner said it.
+- [ ] Anything you learned the hard way is a dated note in the report, with what would have caught it earlier.
+- [ ] Nothing recommended that no execution would touch.
+
 Before reporting done, read and follow \`$FM_ROOT/.agents/skills/decision-hold-lifecycle/SKILL.md\` and pass its shared completion gate for the report and any visual review.
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; firstmate may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
@@ -286,7 +418,6 @@ case "$MODE" in
     SETUP2=""
     RULE1='1. Never push to the default branch (push only your `fm/'"$ID"'` branch). Never merge a PR.'
     IFS= read -r -d '' DOD <<EOF || true
-# Definition of done
 This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
@@ -297,7 +428,6 @@ EOF
     SETUP2=""
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
     IFS= read -r -d '' DOD <<EOF || true
-# Definition of done
 This project ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
@@ -307,21 +437,17 @@ EOF
     ;;
   *)  # no-mistakes (default)
     SETUP2="
-2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
+3. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
     RULE1='1. Never push to the default branch. Never merge a PR.'
     IFS= read -r -d '' DOD <<EOF || true
-# Definition of done
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
 Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
 
-You drive no-mistakes by responding to its gates, not by implementing fixes.
+You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
-
-Two firstmate-specific rules layer on top of that guidance:
-- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop.
-  Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
+Two firstmate-specific rules layer on top of it:
+- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
 
@@ -334,6 +460,19 @@ esac
 # $(...) command substitution used to strip. Drop that one newline so generated
 # briefs stay byte-identical to the historical Bash 5 output.
 DOD=${DOD%$'\n'}
+
+# Checklist text is built with printf, not a heredoc in a command substitution,
+# so no apostrophe in it can break parsing of the rest of this script.
+# shellcheck disable=SC2016  # single quotes are deliberate: backticks and {} must reach the brief verbatim.
+CHECKLIST=$(printf '%s\n' \
+'Answer every item below explicitly before the final `done:` line the delivery path below names for this task, never before an earlier progress append; an item you cannot satisfy is named as a gap, never skipped in silence.' \
+'- [ ] The check command passes - `script/check` if it exists, otherwise the command `AGENTS.md` names. If this project has no verification at all, name that gap in your done line, because a silent pass here is the failure this list exists to catch.' \
+'- [ ] One edit named that would make a new test go red - made, confirmed red, reverted.' \
+'- [ ] A different context reviewed the diff than the one that wrote it.' \
+'- [ ] No new question left unasked.' \
+'- [ ] Any owner decision quoted verbatim, with its date.' \
+'- [ ] Any lesson learned the hard way that clears the Project memory bar above is a dated note in that project `AGENTS.md`. A task that produced no such lesson satisfies this with nothing written.' \
+'- [ ] Nothing added to a document that no execution touches.')
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -350,7 +489,9 @@ You are in a disposable git worktree of $REPO, at a detached HEAD on a clean def
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
-1. First action: create your branch: \`git checkout -b fm/$ID\`$SETUP2
+1. First action: create your branch: \`git checkout -b fm/$ID\`
+2. Then orient, before you build anything. $ORIENT_1
+   $ORIENT_2$SETUP2$MEMORY_SECTION
 
 # Rules
 $RULE1
@@ -378,11 +519,13 @@ $RULE1
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
 
 # Project memory
-If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
+If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree; skip it for a trivial task that produced no durable project knowledge.
 Record only project knowledge useful to almost every future session.
 For anything the codebase already shows, prefer a pointer to the authoritative file, command, or doc over copying the detail.
 If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, add that short self-governance section from \`$FM_ROOT/bin/fm-ensure-agents-md.sh\` in the same pass.
-Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
+
+# Definition of done
+$CHECKLIST
 
 $DOD
 EOF

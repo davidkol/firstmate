@@ -24,6 +24,11 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-tangle-guard)
 fm_git_identity fmtest fmtest@example.invalid
 
+# Pin the harness project store so a scaffolded brief never reads the
+# developer's real ~/.claude/projects notes, whose contents drift over time.
+export CLAUDE_CONFIG_DIR="$TMP_ROOT/claude-config"
+mkdir -p "$CLAUDE_CONFIG_DIR/projects"
+
 # A fresh git repo on `main` with one commit. Echoes its path.
 make_repo() {
   local dir=$1

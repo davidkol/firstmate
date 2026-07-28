@@ -19,6 +19,12 @@ BRIEF="$ROOT/bin/fm-brief.sh"
 SECONDMATE="$ROOT/.agents/skills/secondmate-provisioning/SKILL.md"
 TMP_ROOT=$(fm_test_tmproot fm-ask-user-authority)
 
+# Pin the harness project store: an unpinned scaffold reads the developer's real
+# ~/.claude/projects, whose contents drift over time, so the same brief would
+# render differently on different machines and on different days.
+export CLAUDE_CONFIG_DIR="$TMP_ROOT/claude-config"
+mkdir -p "$CLAUDE_CONFIG_DIR/projects"
+
 approval_contract() {
   awk '
     /^### Selected delivery path and approval authority$/ { found = 1; next }
