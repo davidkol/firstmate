@@ -49,8 +49,9 @@
 # completion checklist, because a rule holds where the worker is already reading
 # and fails in a document nobody reopens.
 # Both also name any existing curated-notes directory for the project under the
-# harness project store, which is keyed by the absolute path of the directory a
-# session ran in, so a disposable worktree never loads them on its own.
+# harness project store (${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects), which is
+# keyed by the absolute path of the directory a session ran in, so a disposable
+# worktree never loads them on its own.
 # A store directory is offered only once it is proven to belong to this project,
 # either because the location is one this scaffold derives exactly (firstmate's
 # clone, or that clone's origin when the origin is a local filesystem path) or
