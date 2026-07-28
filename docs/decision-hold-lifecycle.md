@@ -68,7 +68,7 @@ A third regression puts an item held for another reason and a question blocked b
 It then prunes that finished blocker out of the backlog and asserts that the stale `blocked-by:` edge remains while `list` keeps showing the question, pinning the intentional divergence from the fleet snapshot in the direction that shows a waiting captain question rather than hiding one.
 The stated-default regression also asserts that a default containing a comma is refused before any backlog identity exists.
 
-The final verification commands and their exact summarized outputs follow.
+The verification commands and their exact summarized outputs through the 2026-07-22 record follow; the lifecycle suite's current output is the 2026-07-28 block below it.
 
 ```text
 $ bash tests/fm-decision-hold-lifecycle.test.sh
