@@ -60,11 +60,20 @@
 # `list` prints one tab-separated `<answerable> <id> <default> <title>` row per
 # waiting captain question in the active home, play rows first, so a question
 # that needs the build played is not buried behind desk questions. A hold with
-# no recorded default prints `-` in that column. A waiting question is a kind
-# `captain` item that is held for the captain and has no unresolved blocker, the
-# same two invariants every other captain-facing surface applies, so an item held
-# for another reason and a question whose prerequisite work is unfinished are
-# both omitted rather than relayed.
+# no recorded default prints `-` in that column. `list` omits a hold whose hold
+# kind is not `captain` and a hold tasks-axi still reports as blocked, so an item
+# held for another reason and a question whose prerequisite work is unfinished
+# are never relayed.
+#
+# That readiness agrees with bin/fm-fleet-snapshot.sh and Bearings for an open
+# blocker and for a Done blocker still present in data/backlog.md, and it
+# deliberately diverges in one routinely reachable case. Once `tasks-axi prune`
+# archives a Done blocker out of that file, tasks-axi reports the hold as
+# unblocked and `list` shows the question, while the fleet snapshot still counts
+# that blocker id unresolved and Bearings withholds it. The divergence is
+# intentional and errs toward showing a waiting captain question rather than
+# hiding one; closing it was deliberately excluded because it would require a
+# second backlog parser inside this script.
 #
 # `complete` is the shared investigation and visual-review completion gate.
 # `--none` is an explicit semantic attestation that the just-reviewed surface has

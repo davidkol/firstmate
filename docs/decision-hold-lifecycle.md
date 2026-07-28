@@ -23,8 +23,11 @@ The hold reason is the only store because it is the one hold field every existin
 A hold created before this contract has no marker; every read path resolves it as a desk question with no recorded default, and no read path and no repeated `hold` rewrites an existing body.
 
 The `list` subcommand prints one tab-separated `<answerable> <id> <default> <title>` row per waiting captain question in the active home, play rows first, and filters to one axis with `--answerable`.
-A waiting question is a kind `captain` item that is held for the captain and has no unresolved blocker, so an item held for another reason and a question whose prerequisite work is unfinished are both omitted, matching the readiness rule the fleet snapshot and Bearings already apply.
+It omits a hold whose hold kind is not `captain` and a hold tasks-axi still reports as blocked, so an item held for another reason and a question whose prerequisite work is unfinished are never relayed.
 It reads titles, hold kinds, blocker readiness, and reasons through `tasks-axi show` rather than parsing the quoted list projection.
+That readiness agrees with the fleet snapshot and Bearings for an open blocker and for a Done blocker still present in `data/backlog.md`, and it deliberately diverges in one routinely reachable case.
+Once `tasks-axi prune` archives a Done blocker out of that file, tasks-axi reports the hold as unblocked and `list` shows the question, while the fleet snapshot still counts that blocker id unresolved and Bearings withholds it.
+The divergence is intentional and errs toward showing a waiting captain question rather than hiding one, and closing it was deliberately excluded because it would require a second backlog parser inside this script.
 
 The `complete` subcommand unions the reviewed keys into `decision_keys=` and appends `decisions_reviewed=1` while originating task metadata is live.
 A post-teardown visual review can complete against the surviving report and durable holds without recreating volatile task metadata.
@@ -65,6 +68,7 @@ A later regression covers tasks-axi's quoted multi-entry `blocked_by` output so 
 The stated-default regression asserts that a question with no default is refused before any backlog identity exists, that an unstated axis falls back to `desk`, that `list` separates the two axes, that the teardown gate still refuses an uninventoried investigation, and that `resolve` returns the hold reason byte-identical.
 A companion regression builds a hold the way the pre-default script did and asserts that listing, completion, verification, teardown, and resolution all still work, that its body is unchanged throughout, and that re-holding it adds the missing default without rewriting that body.
 A third regression puts an item held for another reason and a question blocked by unfinished work on the same board and asserts that `list` omits both, including under `--answerable play`, and that the blocked question returns to the list once its blocker is done.
+It then prunes that finished blocker out of the backlog and asserts that the stale `blocked-by:` edge remains while `list` keeps showing the question, pinning the intentional divergence from the fleet snapshot in the direction that shows a waiting captain question rather than hiding one.
 The stated-default regression also asserts that a default containing a comma is refused before any backlog identity exists.
 
 The final verification commands and their exact summarized outputs follow.
@@ -127,7 +131,7 @@ ok - main-home and secondmate-home captain holds remain correctly routed
 ok - resolve matches first/middle/last in quoted blocked_by and rejects a genuinely absent id
 ok - every captain question carries a stated default and a desk or play axis through resolution
 ok - captain questions created before stated defaults keep working and keep their bodies
-ok - list shows only captain-held questions whose blockers have cleared
+ok - list shows captain-held questions once tasks-axi reports their blockers cleared
 ```
 
 ShellCheck is not installed on the verifying machine, so `bin/fm-lint.sh` could not run there for the 2026-07-28 verification and CI remains the enforcing lint gate.

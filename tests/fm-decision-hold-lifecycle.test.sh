@@ -721,10 +721,12 @@ test_holds_without_a_stated_default_keep_working() {
   pass "captain questions created before stated defaults keep working and keep their bodies"
 }
 
-# `list` is the captain-facing question view, so it must apply the same two
-# invariants every other captain surface applies: the item is held for the
-# captain, and its blockers have cleared. A parked or load-gated backlog item and
-# a question whose prerequisite work is unfinished are not waiting questions.
+# `list` is the captain-facing question view, so it omits a hold whose hold kind
+# is not captain and a hold tasks-axi still reports as blocked. A parked or
+# load-gated backlog item and a question whose prerequisite work is unfinished
+# are not waiting questions. Once pruning archives a Done blocker out of the
+# backlog the two readiness views part company on purpose, and the deliberate
+# direction is to show the question rather than hide it.
 test_list_omits_other_hold_kinds_and_blocked_questions() {
   local home id open_hold blocked_hold parked_hold load_hold rows
   home=$(make_home list-invariants)
@@ -779,7 +781,14 @@ test_list_omits_other_hold_kinds_and_blocked_questions() {
     || fail "could not complete the prerequisite work"
   rows=$(run_decisions "$home" list --answerable play) || fail "play-only list failed after the blocker cleared"
   assert_contains "$rows" "$blocked_hold" "a question did not become a waiting question once its blocker was done"
-  pass "list shows only captain-held questions whose blockers have cleared"
+
+  tasks_in "$home" prune --keep 0 >/dev/null || fail "could not archive the completed prerequisite"
+  assert_grep "blocked-by: sample-prerequisite" "$home/data/backlog.md" \
+    "the pruned-blocker fixture must retain the stale edge the fleet snapshot still reads"
+  rows=$(run_decisions "$home" list --answerable play) || fail "play-only list failed after the blocker was pruned"
+  assert_contains "$rows" "$blocked_hold" \
+    "a question was hidden after routine pruning archived its finished blocker"
+  pass "list shows captain-held questions once tasks-axi reports their blockers cleared"
 }
 
 test_uninventoried_report_decision_refuses_completion
