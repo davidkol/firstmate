@@ -18,7 +18,7 @@ Both are composed into the tasks-axi hold reason as `<reason> | default if unans
 `tasks-axi hold` already rejects parentheses in a reason, so the script applies the same rejection to the default before any backlog identity exists.
 The default additionally rejects commas, because the shared backlog metadata parser in `bin/fm-fleet-snapshot.sh` stops the composed `(hold: ...)` field at the first comma.
 The same first-comma truncation applies to a comma in the reason, so on the jq-derived surfaces such a reason reads back cut at the comma and loses the trailing default and answerable markers, while the backlog markdown and the tasks-axi session-start digest still render the whole field.
-Commas in reasons are pre-existing and common on the live board, so the reason keeps accepting them and widening that shared parser was deliberately excluded from this change.
+Commas in reasons are pre-existing and common on the live board, so the reason keeps accepting them and widening that shared parser was deliberately excluded from this contract.
 The hold reason is the only store because it is the one hold field every existing read surface already renders, and because `tasks-axi done` preserves it verbatim while `resolve` rewrites only the body, so both facts survive `complete` and `resolve` without a second copy to drift against.
 A hold created before this contract has no marker; every read path resolves it as a desk question with no recorded default, and no read path and no repeated `hold` rewrites an existing body.
 
