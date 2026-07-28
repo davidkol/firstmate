@@ -507,6 +507,185 @@ test_scout_and_secondmate_load_decision_hold_policy() {
   pass "fm-brief.sh: investigation and visual-review completions load the shared decision policy"
 }
 
+# The completion checklist has to arrive inside the brief, because that is the
+# text every worker demonstrably reads; the same rules in a separate document
+# were contradicted by most of the work that was audited.
+test_ship_checklist_is_in_the_brief() {
+  local home id brief
+  home="$TMP_ROOT/checklist-home"
+  mkdir -p "$home/data"
+  id="brief-checklist-e1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_grep "Answer every item below explicitly before you report done" "$brief" \
+    "ship checklist lost its answer-every-item framing"
+  assert_grep "an item you cannot satisfy is named as a gap, never skipped in silence" "$brief" \
+    "ship checklist lost the no-silent-skip rule"
+  # All nine items, in the brief itself.
+  assert_grep "The check command passes" "$brief" "checklist missing the check item"
+  assert_grep "One edit named that would make a new test go red - made, confirmed red, reverted." "$brief" \
+    "checklist missing the break-it-on-purpose item"
+  assert_grep "A different context reviewed the diff than the one that wrote it." "$brief" \
+    "checklist missing the second-context review item"
+  assert_grep "No new question left unasked." "$brief" "checklist missing the open-question item"
+  assert_grep "Any owner decision quoted verbatim, with its date." "$brief" \
+    "checklist missing the verbatim-decision item"
+  assert_grep "Anything learned the hard way is a dated note." "$brief" \
+    "checklist missing the dated-note item"
+  assert_grep "Handoff updated." "$brief" "checklist missing the handoff item"
+  assert_grep "Nothing added to a document that no execution touches." "$brief" \
+    "checklist missing the no-inert-document item"
+  pass "fm-brief.sh: the ship brief carries all nine completion items"
+}
+
+# Two items are wrong as literally written and must stay corrected: most projects
+# have no `script/check`, and a project with no remote still has to be able to
+# satisfy "Landed". A silent pass on either is the failure mode.
+test_checklist_check_and_landed_items_are_satisfiable() {
+  local home id brief
+  home="$TMP_ROOT/checklist-fixes-home"
+  mkdir -p "$home/data"
+  cat > "$home/data/projects.md" <<'EOF'
+- local-proj [local-only] - fixture for a repo with no remote (added 2026-07-01)
+EOF
+  id="brief-checklist-fixes-e2"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  # shellcheck disable=SC2016  # literal backticks must survive into the brief
+  assert_grep 'otherwise the command `AGENTS.md` names' "$brief" \
+    "check item lost its fallback to the command the project actually names"
+  assert_grep "If this project has no verification at all, name that gap in your done line" "$brief" \
+    "check item can be satisfied without naming a missing-verification gap"
+  assert_grep "a silent pass here is the failure this list exists to catch" "$brief" \
+    "check item lost the silent-pass warning"
+  assert_grep "A commit that exists only in this copy is not landed, remote or no remote." "$brief" \
+    "landed item is not satisfiable in a repo with no remote"
+  assert_no_grep "\[ \] Pushed" "$brief" "landed item regressed to push-only phrasing"
+  assert_no_grep "merged to origin" "$brief" "landed item regressed to origin-only phrasing"
+  pass "fm-brief.sh: the check and landed items work without script/check and without a remote"
+}
+
+# The working tree outranks every document: a session that reads a status doc
+# instead of `git status` rebuilds work that already exists.
+test_orientation_step_precedes_the_work() {
+  local home brief kind id
+  home="$TMP_ROOT/orient-home"
+  mkdir -p "$home/data"
+  for kind in ship scout; do
+    id="brief-orient-$kind"
+    if [ "$kind" = scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
+    fi
+    brief="$home/data/$id/brief.md"
+    # shellcheck disable=SC2016  # literal backticks must survive into the brief
+    assert_grep 'Run `git status` and `git log --oneline -15`' "$brief" \
+      "$kind brief lost the read-the-repository-first step"
+    assert_grep "before you trust any plan, status doc, or handoff" "$brief" \
+      "$kind brief lost the document-comes-second ordering"
+    assert_grep "The repository state outranks every document, always" "$brief" \
+      "$kind brief lost the working-tree-wins rule"
+  done
+  # The isolation assertion is a safety contract and still comes first.
+  brief="$home/data/brief-orient-ship/brief.md"
+  if [ "$(grep -n 'Verify isolation before anything else' "$brief" | cut -d: -f1)" -gt \
+       "$(grep -n 'Run .git status' "$brief" | cut -d: -f1)" ]; then
+    fail "the orientation step displaced the worktree-isolation assertion"
+  fi
+  pass "fm-brief.sh: ship and scout briefs orient on the repository before any document"
+}
+
+# Curated notes are stored per session location, under a directory named by
+# mangling that location's absolute path (every non-alphanumeric becomes "-").
+# A crewmate worktree has a different absolute path, so it loads none of them
+# unless the brief names them. Both the firstmate clone and the captain's own
+# checkout end in the project name, so both are found.
+test_project_memory_paths_are_named_when_they_exist() {
+  local home store brief id
+  home="$TMP_ROOT/memory-home"
+  store="$TMP_ROOT/memory-store"
+  mkdir -p "$home/data"
+  mkdir -p "$store/projects/-Users-someone-projects-Godot-Widget/memory"
+  mkdir -p "$store/projects/-Users-someone-firstmate-projects-Widget/memory"
+  mkdir -p "$store/projects/-Users-someone-projects-Godot-OtherThing/memory"
+  # A session location with no notes must never be offered.
+  mkdir -p "$store/projects/-Users-someone--treehouse-Widget-1-Widget"
+
+  id="brief-memory-f1"
+  CLAUDE_CONFIG_DIR="$store" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Widget >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_grep "Curated notes for this project already exist" "$brief" \
+    "brief did not name the existing curated notes"
+  assert_grep "nothing loads them for you because this copy sits at a different path" "$brief" \
+    "brief did not explain why the notes are invisible to this copy"
+  assert_grep "$store/projects/-Users-someone-projects-Godot-Widget/memory" "$brief" \
+    "brief missed the notes under the captain checkout"
+  assert_grep "$store/projects/-Users-someone-firstmate-projects-Widget/memory" "$brief" \
+    "brief missed the notes under the firstmate clone"
+  assert_no_grep "OtherThing" "$brief" "brief offered another project's notes"
+  assert_no_grep "treehouse-Widget-1-Widget" "$brief" \
+    "brief offered a session location that holds no notes"
+
+  # Scouts read repositories too, so they get the same pointer.
+  id="brief-memory-f2"
+  CLAUDE_CONFIG_DIR="$store" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Widget --scout >/dev/null 2>&1
+  assert_grep "$store/projects/-Users-someone-projects-Godot-Widget/memory" "$home/data/$id/brief.md" \
+    "scout brief did not name the existing curated notes"
+  pass "fm-brief.sh: existing curated project notes are named for ship and scout briefs"
+}
+
+# Pointing a worker at a directory that does not exist is worse than saying
+# nothing, so an absent store or an absent match emits no section at all.
+test_project_memory_says_nothing_when_absent() {
+  local home store brief id
+  home="$TMP_ROOT/memory-absent-home"
+  store="$TMP_ROOT/memory-absent-store"
+  mkdir -p "$home/data" "$store/projects/-Users-someone-projects-Godot-Widget/memory"
+
+  id="brief-memory-absent-g1"
+  CLAUDE_CONFIG_DIR="$store" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Gadget >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_no_grep "Curated notes for this project" "$brief" \
+    "brief announced curated notes for a project that has none"
+  assert_no_grep "$store/projects" "$brief" "brief leaked an unrelated notes path"
+
+  # No store at all is the same silence, and must not break scaffolding.
+  id="brief-memory-absent-g2"
+  CLAUDE_CONFIG_DIR="$TMP_ROOT/no-such-store" FM_HOME="$home" \
+    "$ROOT/bin/fm-brief.sh" "$id" Widget >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "brief was not scaffolded when the notes store is absent"
+  assert_no_grep "Curated notes for this project" "$brief" \
+    "brief announced curated notes with no store present"
+  pass "fm-brief.sh: a missing notes directory produces no pointer at all"
+}
+
+# A scout produces a report, not a change, so it carries only the items that can
+# apply and none of the ship-only ones.
+test_scout_checklist_is_reduced() {
+  local home brief id
+  home="$TMP_ROOT/scout-checklist-home"
+  mkdir -p "$home/data"
+  id="brief-scout-checklist-h1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_grep "Answer each item below explicitly before you report done" "$brief" \
+    "scout checklist lost its framing"
+  assert_grep "a previous session summarising the owner is not evidence that the owner said it" "$brief" \
+    "scout checklist lost the owner-quote evidence rule"
+  assert_grep "with what would have caught it earlier" "$brief" \
+    "scout checklist lost the what-would-have-caught-this note"
+  assert_grep "Nothing recommended that no execution would touch." "$brief" \
+    "scout checklist lost the no-inert-recommendation item"
+  assert_no_grep "The check command passes" "$brief" \
+    "scout brief carried the ship-only check item"
+  assert_no_grep "Handoff updated." "$brief" "scout brief carried the ship-only handoff item"
+  assert_no_grep "is not landed, remote or no remote" "$brief" \
+    "scout brief carried the ship-only landed item"
+  pass "fm-brief.sh: the scout brief carries a reduced checklist without ship-only items"
+}
+
 # Scout and secondmate paths still scaffold well-formed briefs.
 test_scout_and_secondmate_scaffold() {
   local brief
@@ -542,4 +721,10 @@ test_secondmate_no_projects_charter
 test_secondmate_marked_request_reporting_contract
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
+test_ship_checklist_is_in_the_brief
+test_checklist_check_and_landed_items_are_satisfiable
+test_orientation_step_precedes_the_work
+test_project_memory_paths_are_named_when_they_exist
+test_project_memory_says_nothing_when_absent
+test_scout_checklist_is_reduced
 test_scout_and_secondmate_scaffold
