@@ -51,6 +51,11 @@
 # Both also name any existing curated-notes directory for the project under the
 # harness project store, which is keyed by the absolute path of the directory a
 # session ran in, so a disposable worktree never loads them on its own.
+# Only locations this scaffold can derive exactly are offered - firstmate's clone
+# of the project and that clone's origin when the origin is a local filesystem
+# path. A captain checkout reachable only through a remote URL is deliberately
+# not found, because the store key is a lossy mangling of the path and any
+# name-based guess can resolve to a different project's notes.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -77,6 +82,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 KIND=ship
 HERDR_LAB=0
 NO_PROJECTS=0
@@ -205,20 +211,38 @@ REPO=${POS[1]}
 # session location, named by mangling that location's ABSOLUTE path: every
 # character outside [A-Za-z0-9] becomes "-". A crewmate runs in a disposable
 # worktree whose absolute path is neither firstmate's clone nor the captain's own
-# checkout, so it loads none of them. Both of those paths end in the project name,
-# so one suffix match over directories that actually hold notes covers both
-# without guessing where the captain keeps a checkout. Prints nothing when the
-# store, or a matching notes directory, does not exist.
+# checkout, so it loads none of them.
+# The mangling is lossy - "/", " ", "." and "_" all collapse to "-" - so nothing
+# inside a mangled name can distinguish a path separator from a literal dash or
+# space, and matching store names by project-name suffix resolves project
+# "Dungeon" to the notes of ".../Godot/Gacha Dungeon".
+# Only locations derivable exactly are offered: firstmate's clone at
+# $PROJECTS/<repo>, and that clone's origin when the origin is a local
+# filesystem path rather than a URL. Each must be a real directory whose
+# basename is exactly the project name, and must actually hold notes; anything
+# unproven is dropped rather than guessed at. Prints nothing when the store, the
+# clone, or a matching notes directory does not exist.
 project_memory_dirs() {
-  local repo=$1 base suffix dir
+  local repo=$1 base clone origin candidate abs store seen=""
   base="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
   [ -d "$base" ] || return 0
-  suffix="-$(printf '%s' "$repo" | sed 's/[^a-zA-Z0-9]/-/g')"
-  for dir in "$base"/*; do
-    [ -d "$dir/memory" ] || continue
-    case "${dir##*/}" in
-      *"$suffix") printf -- '- %s\n' "$dir/memory" ;;
-    esac
+  clone="$PROJECTS/$repo"
+  [ -d "$clone" ] || return 0
+  origin=$(git -C "$clone" remote get-url origin 2>/dev/null || true)
+  case "$origin" in
+    file://*) origin=${origin#file://} ;;
+    /*) : ;;
+    *) origin="" ;;
+  esac
+  for candidate in "$clone" "$origin"; do
+    [ -n "$candidate" ] && [ -d "$candidate" ] || continue
+    abs=$(cd "$candidate" && pwd -P) || continue
+    [ "${abs##*/}" = "$repo" ] || continue
+    store="$base/$(printf '%s' "$abs" | sed 's/[^a-zA-Z0-9]/-/g')"
+    [ -d "$store/memory" ] || continue
+    case "$seen" in *"|$store|"*) continue ;; esac
+    seen="$seen|$store|"
+    printf -- '- %s\n' "$store/memory"
   done
 }
 
@@ -381,15 +405,13 @@ DOD=${DOD%$'\n'}
 # so no apostrophe in it can break parsing of the rest of this script.
 # shellcheck disable=SC2016  # single quotes are deliberate: backticks and {} must reach the brief verbatim.
 CHECKLIST=$(printf '%s\n' \
-'Answer every item below explicitly before you report done; an item you cannot satisfy is named as a gap, never skipped in silence.' \
+'Answer every item below explicitly before the final `done:` line the delivery path below names for this task, never before an earlier progress append; an item you cannot satisfy is named as a gap, never skipped in silence.' \
 '- [ ] The check command passes - `script/check` if it exists, otherwise the command `AGENTS.md` names. If this project has no verification at all, name that gap in your done line, because a silent pass here is the failure this list exists to catch.' \
 '- [ ] One edit named that would make a new test go red - made, confirmed red, reverted.' \
 '- [ ] A different context reviewed the diff than the one that wrote it.' \
 '- [ ] No new question left unasked.' \
 '- [ ] Any owner decision quoted verbatim, with its date.' \
-'- [ ] Anything learned the hard way is a dated note.' \
-'- [ ] Handoff updated.' \
-'- [ ] Landed - the change reaches the default branch of the copy the owner works in, through the delivery path below. A commit that exists only in this copy is not landed, remote or no remote.' \
+'- [ ] Anything learned the hard way is a dated note in the project `AGENTS.md`, added through the Project memory section above.' \
 '- [ ] Nothing added to a document that no execution touches.')
 
 cat > "$BRIEF" <<EOF
