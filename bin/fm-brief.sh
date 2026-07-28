@@ -51,11 +51,14 @@
 # Both also name any existing curated-notes directory for the project under the
 # harness project store, which is keyed by the absolute path of the directory a
 # session ran in, so a disposable worktree never loads them on its own.
-# Only locations this scaffold can derive exactly are offered - firstmate's clone
-# of the project and that clone's origin when the origin is a local filesystem
-# path. A captain checkout reachable only through a remote URL is deliberately
-# not found, because the store key is a lossy mangling of the path and any
-# name-based guess can resolve to a different project's notes.
+# A store directory is offered only once it is proven to belong to this project,
+# either because the location is one this scaffold derives exactly (firstmate's
+# clone, or that clone's origin when the origin is a local filesystem path) or
+# because the directory's own session transcripts record a working directory
+# whose basename is exactly the project name.
+# Transcript layout is an external format that can change or vanish without
+# notice, so a candidate whose recorded working directory cannot be read is
+# dropped silently rather than guessed at.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -207,6 +210,24 @@ fi
 
 REPO=${POS[1]}
 
+# Reads back the absolute path a store directory's sessions actually ran in, from
+# the first `cwd` field of one of its session transcripts.
+# The read is bounded on purpose: one transcript per directory - a live one holds
+# over 500 - and only its leading bytes, because the field appears in the opening
+# records.
+# The transcript layout is an external format that may change or disappear
+# without notice, so a missing, unreadable or unrecognized transcript prints
+# nothing and the caller must fall back to silence rather than to a guess.
+store_recorded_cwd() {
+  local dir=$1 transcript
+  for transcript in "$dir"/*.jsonl; do
+    [ -f "$transcript" ] || return 0
+    head -c 131072 "$transcript" 2>/dev/null |
+      sed -n '/"cwd":"/{s/.*"cwd":"\([^"]*\)".*/\1/p;q;}'
+    return 0
+  done
+}
+
 # Curated per-project notes live in the harness project store, one directory per
 # session location, named by mangling that location's ABSOLUTE path: every
 # character outside [A-Za-z0-9] becomes "-". A crewmate runs in a disposable
@@ -216,34 +237,47 @@ REPO=${POS[1]}
 # inside a mangled name can distinguish a path separator from a literal dash or
 # space, and matching store names by project-name suffix resolves project
 # "Dungeon" to the notes of ".../Godot/Gacha Dungeon".
-# Only locations derivable exactly are offered: firstmate's clone at
-# $PROJECTS/<repo>, and that clone's origin when the origin is a local
-# filesystem path rather than a URL. Each must be a real directory whose
-# basename is exactly the project name, and must actually hold notes; anything
-# unproven is dropped rather than guessed at.
+# So a suffix match only selects candidates, and a candidate is offered only
+# once it is confirmed by one of two proofs.
+# The first proof is exact derivation: firstmate's clone at $PROJECTS/<repo>,
+# and that clone's origin when the origin is a local filesystem path rather than
+# a URL. Each must be a real directory whose basename is exactly the project
+# name.
 # $PROJECTS/<repo> must itself be a repository root, not merely a directory
 # inside one: `git -C` walks up to the nearest ancestor repository, and this
 # home's own `projects/` sits inside the firstmate repo, so a project directory
 # left as a plain directory would answer with firstmate's OWN origin.
+# The second proof is the candidate's own recorded working directory, read back
+# from its session transcripts, which holds the real absolute path before
+# mangling. Its basename must equal the project name exactly, which rejects
+# "Gacha Dungeon" for "Dungeon" and reaches a captain checkout whose clone knows
+# it only through a remote URL.
+# Every candidate must also actually hold notes; anything unproven is dropped
+# rather than guessed at.
 # Prints nothing when the store, the clone, or a matching notes directory does
 # not exist.
 project_memory_dirs() {
-  local repo=$1 base clone clone_abs toplevel origin candidate abs store seen=""
+  local repo=$1 base clone clone_abs toplevel origin candidate abs store seen="" key dir cwd
   base="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
   [ -d "$base" ] || return 0
+  clone_abs=""
+  origin=""
   clone="$PROJECTS/$repo"
-  [ -d "$clone" ] || return 0
-  clone_abs=$(cd "$clone" && pwd -P) || return 0
-  toplevel=$(git -C "$clone" rev-parse --show-toplevel 2>/dev/null) || return 0
-  [ -n "$toplevel" ] && [ -d "$toplevel" ] || return 0
-  toplevel=$(cd "$toplevel" && pwd -P) || return 0
-  [ "$toplevel" = "$clone_abs" ] || return 0
-  origin=$(git -C "$clone" remote get-url origin 2>/dev/null || true)
-  case "$origin" in
-    file://*) origin=${origin#file://} ;;
-    /*) : ;;
-    *) origin="" ;;
-  esac
+  if [ -d "$clone" ] &&
+     clone_abs=$(cd "$clone" && pwd -P) &&
+     toplevel=$(git -C "$clone" rev-parse --show-toplevel 2>/dev/null) &&
+     [ -n "$toplevel" ] && [ -d "$toplevel" ] &&
+     toplevel=$(cd "$toplevel" && pwd -P) &&
+     [ "$toplevel" = "$clone_abs" ]; then
+    origin=$(git -C "$clone" remote get-url origin 2>/dev/null || true)
+    case "$origin" in
+      file://*) origin=${origin#file://} ;;
+      /*) : ;;
+      *) origin="" ;;
+    esac
+  else
+    clone_abs=""
+  fi
   for candidate in "$clone_abs" "$origin"; do
     [ -n "$candidate" ] && [ -d "$candidate" ] || continue
     abs=$(cd "$candidate" && pwd -P) || continue
@@ -253,6 +287,16 @@ project_memory_dirs() {
     case "$seen" in *"|$store|"*) continue ;; esac
     seen="$seen|$store|"
     printf -- '- %s\n' "$store/memory"
+  done
+  key=$(printf '%s' "$repo" | sed 's/[^a-zA-Z0-9]/-/g')
+  for dir in "$base"/*-"$key"; do
+    [ -d "$dir/memory" ] || continue
+    case "$seen" in *"|$dir|"*) continue ;; esac
+    cwd=$(store_recorded_cwd "$dir")
+    [ -n "$cwd" ] || continue
+    [ "${cwd##*/}" = "$repo" ] || continue
+    seen="$seen|$dir|"
+    printf -- '- %s\n' "$dir/memory"
   done
 }
 

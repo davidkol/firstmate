@@ -32,10 +32,28 @@ mkdir -p "$CLAUDE_CONFIG_DIR/projects"
 
 # The store directory name for a session location is that location's absolute
 # path with every non-alphanumeric character replaced by "-".
+mangle_path() {
+  printf '%s' "$1" | sed 's/[^a-zA-Z0-9]/-/g'
+}
+
 store_key_for() {
   local abs
   abs=$(cd "$1" && pwd -P)
-  printf '%s' "$abs" | sed 's/[^a-zA-Z0-9]/-/g'
+  mangle_path "$abs"
+}
+
+# A store directory also holds the harness's session transcripts, one JSON record
+# per line. Their `cwd` field carries the real absolute path the session ran in,
+# before the store key mangled it, which is what proves whose notes a store
+# directory holds. The leading record without one mirrors the live format, where
+# the field starts appearing a few records in.
+seed_store_transcript() {
+  local dir=$1 cwd=$2
+  mkdir -p "$dir"
+  {
+    printf '%s\n' '{"type":"mode","mode":"normal","sessionId":"seeded"}'
+    printf '{"type":"user","cwd":"%s","sessionId":"seeded"}\n' "$cwd"
+  } > "$dir/00000000-0000-4000-8000-000000000000.jsonl"
 }
 
 # The script itself must always parse under the ambient bash. That is Bash 5 in
@@ -685,6 +703,9 @@ test_project_memory_paths_are_named_when_they_exist() {
 # store name cannot be split back into path components and a project-name suffix
 # match cannot tell a separator from a literal dash. Matching "Dungeon" that way
 # hands a crewmate the notes of "/Users/davidkol/projects/Godot/Gacha Dungeon".
+# The suffix match does select that directory, so the rejection has to come from
+# the working directory its transcripts recorded: basename "Gacha Dungeon" is not
+# "Dungeon".
 # Handing over the wrong project's owner-level context is the failure that must
 # never happen; finding nothing is the acceptable outcome.
 test_project_memory_never_resolves_to_another_project() {
@@ -695,6 +716,8 @@ test_project_memory_never_resolves_to_another_project() {
   mkdir -p "$home/data" "$home/projects"
   fm_git_init_commit "$clone"
   mkdir -p "$store/projects/-Users-davidkol-projects-Godot-Gacha-Dungeon/memory"
+  seed_store_transcript "$store/projects/-Users-davidkol-projects-Godot-Gacha-Dungeon" \
+    "/Users/davidkol/projects/Godot/Gacha Dungeon"
 
   id="brief-memory-collision-i1"
   CLAUDE_CONFIG_DIR="$store" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Dungeon >/dev/null 2>&1
@@ -745,6 +768,72 @@ test_project_memory_ignores_an_ancestor_repository_origin() {
   assert_no_grep "$store/projects" "$brief" \
     "brief offered notes derived from the surrounding home rather than the project"
   pass "fm-brief.sh: a project directory that is not a clone contributes nothing"
+}
+
+# Most clones know their origin only as a remote URL, so nothing about the owner's
+# own checkout is derivable from them and deriving alone reaches almost no notes.
+# The store directory itself supplies the missing proof: its transcripts record
+# the working directory the owner's sessions ran in, and that path never went
+# through the mangling, so its basename is compared to the project name exactly.
+test_project_memory_confirms_a_candidate_by_its_recorded_cwd() {
+  local home store clone owner brief id
+  home="$TMP_ROOT/memory-cwd-home"
+  store="$TMP_ROOT/memory-cwd-store"
+  clone="$home/projects/Widget"
+  # The owner's checkout is not on this machine at all - only the store knows it.
+  owner="/Users/someone/projects/Godot/Widget"
+  mkdir -p "$home/data" "$home/projects"
+  fm_git_init_commit "$clone"
+  git -C "$clone" remote add origin "https://github.com/someone/Widget.git"
+  mkdir -p "$store/projects/$(mangle_path "$owner")/memory"
+  seed_store_transcript "$store/projects/$(mangle_path "$owner")" "$owner"
+
+  id="brief-memory-cwd-k1"
+  CLAUDE_CONFIG_DIR="$store" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Widget >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_grep "Curated notes for this project already exist" "$brief" \
+    "brief missed notes whose only proof is the working directory its sessions recorded"
+  assert_grep "$store/projects/$(mangle_path "$owner")/memory" "$brief" \
+    "brief did not name the confirmed notes directory"
+  pass "fm-brief.sh: a candidate is confirmed by the working directory its sessions recorded"
+}
+
+# The transcript layout belongs to the harness, not to this repo, so it can change
+# shape or vanish. Every way of failing to read a working directory back has to
+# end in silence: falling back to the unconfirmed suffix match is exactly how a
+# crewmate would be handed another project's notes.
+test_project_memory_drops_a_candidate_with_no_recorded_cwd() {
+  local home store clone owner brief id
+  home="$TMP_ROOT/memory-nocwd-home"
+  store="$TMP_ROOT/memory-nocwd-store"
+  clone="$home/projects/Widget"
+  owner="/Users/someone/projects/Godot/Widget"
+  mkdir -p "$home/data" "$home/projects"
+  fm_git_init_commit "$clone"
+  git -C "$clone" remote add origin "https://github.com/someone/Widget.git"
+  # Notes that suffix-match the project, with no transcript to confirm them.
+  mkdir -p "$store/projects/$(mangle_path "$owner")/memory"
+
+  id="brief-memory-nocwd-k2"
+  CLAUDE_CONFIG_DIR="$store" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Widget >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_no_grep "Curated notes for this project" "$brief" \
+    "brief offered notes it could not confirm, with no transcript present"
+  assert_no_grep "$store/projects" "$brief" \
+    "brief fell back to an unconfirmed suffix match"
+
+  # A transcript the layout has moved past - no working directory in it - is the
+  # same silence.
+  printf '%s\n' '{"type":"mode","mode":"normal"}' \
+    > "$store/projects/$(mangle_path "$owner")/11111111-1111-4111-8111-111111111111.jsonl"
+  id="brief-memory-nocwd-k3"
+  CLAUDE_CONFIG_DIR="$store" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Widget >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_no_grep "Curated notes for this project" "$brief" \
+    "brief offered notes whose transcript records no working directory"
+  assert_no_grep "$store/projects" "$brief" \
+    "brief guessed at a candidate an unreadable transcript left unproven"
+  pass "fm-brief.sh: a candidate whose working directory cannot be read back is dropped"
 }
 
 # Pointing a worker at a directory that does not exist is worse than saying
@@ -853,6 +942,8 @@ test_orientation_step_precedes_the_work
 test_project_memory_paths_are_named_when_they_exist
 test_project_memory_never_resolves_to_another_project
 test_project_memory_ignores_an_ancestor_repository_origin
+test_project_memory_confirms_a_candidate_by_its_recorded_cwd
+test_project_memory_drops_a_candidate_with_no_recorded_cwd
 test_project_memory_says_nothing_when_absent
 test_scout_checklist_is_reduced
 test_scout_and_secondmate_scaffold
