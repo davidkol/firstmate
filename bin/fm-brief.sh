@@ -26,9 +26,9 @@
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo string cannot reliably identify this repo. Briefs made
 #   without it carry a loud declaration so an omitted contract cannot be silent.
-# For ship tasks, the definition of done is shaped by the project's delivery mode
-# (data/projects.md via fm-project-mode.sh; see the project-management skill
-# and AGENTS.md task lifecycle):
+# For ship tasks, the delivery path inside the definition of done is shaped by the
+# project's delivery mode (data/projects.md via fm-project-mode.sh; see the
+# project-management skill and AGENTS.md task lifecycle):
 #   no-mistakes  implement -> /no-mistakes pipeline -> PR -> captain merge (default)
 #   direct-PR    implement -> push + open PR via gh-axi (no pipeline) -> captain merge
 #   local-only   implement on branch, stop and report "ready in branch" (no push/PR);
@@ -44,10 +44,15 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
-# Ship and scout scaffolds both open with an orientation step - read `git status`
-# and recent commits before trusting any plan, status doc, or handoff - and a
-# completion checklist, because a rule holds where the worker is already reading
-# and fails in a document nobody reopens.
+# Ship and scout scaffolds both carry an orientation step in their setup section
+# and a completion checklist inside their definition of done, because a rule
+# holds where the worker is already reading and fails in a document nobody
+# reopens.
+# The orientation step has the crewmate read `git status` and recent commits
+# before trusting any plan, status doc, or handoff.
+# The scout checklist is deliberately the shorter one: a scout delivers a report
+# rather than a change, so the items that attach to a diff have nothing to attach
+# to.
 # Both also name any existing curated-notes directory for the project under the
 # harness project store (${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects), which is
 # keyed by the absolute path of the directory a session ran in, so a disposable
