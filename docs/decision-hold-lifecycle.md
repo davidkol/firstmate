@@ -13,18 +13,15 @@ The `hold` subcommand maps an originating work id and stable decision key to `<o
 It creates a kind `captain` backlog item when absent and invokes `tasks-axi hold <id> --reason <reason> --kind captain` on every retry.
 It rejects an identity collision, a changed title, and attempts to reopen an already resolved identity.
 
-`hold` requires a stated default and accepts a `desk` or `play` answerable axis that defaults to `desk`.
-Both are composed into the tasks-axi hold reason as `<reason> | default if unanswered: <default> | answerable: <desk|play>`, and the script rejects a reason or default that contains either marker.
-`tasks-axi hold` already rejects parentheses in a reason, so the script applies the same rejection to the default before any backlog identity exists.
-The default additionally rejects commas, because the shared backlog metadata parser in `bin/fm-fleet-snapshot.sh` stops the composed `(hold: ...)` field at the first comma.
-The same first-comma truncation applies to a comma in the reason, so on the jq-derived surfaces such a reason reads back cut at the comma and loses the trailing default and answerable markers, while the backlog markdown and the tasks-axi session-start digest still render the whole field.
+`hold` carries a stated default and a `desk` or `play` answerable axis, and the `list` subcommand relays the waiting questions; `bin/fm-decision-hold.sh --help` owns their flags, the exact stored reason format, and the validation rules.
+The hold reason is the only store for both facts because it is the one hold field every existing read surface already renders, and because `tasks-axi done` preserves it verbatim.
+The body was not available as a second store: `resolve` rewrites it by design, so a body-stored default would be destroyed by the very command that must carry it through.
+Storing both facts in the reason therefore carries them through `complete` and `resolve` without a second copy to drift against.
+The default's comma rejection exists because the shared backlog metadata parser in `bin/fm-fleet-snapshot.sh` stops the composed `(hold: ...)` field at the first comma.
+Known limitation: that same first-comma truncation applies to a comma in the reason, so on the jq-derived surfaces such a reason reads back cut at the comma and loses the trailing default and answerable markers, while the backlog markdown and the tasks-axi session-start digest still render the whole field.
 Commas in reasons are pre-existing and common on the live board, so the reason keeps accepting them and widening that shared parser was deliberately excluded from this contract.
-The hold reason is the only store because it is the one hold field every existing read surface already renders, and because `tasks-axi done` preserves it verbatim while `resolve` rewrites only the body, so both facts survive `complete` and `resolve` without a second copy to drift against.
-A hold created before this contract has no marker; every read path resolves it as a desk question with no recorded default, and no read path and no repeated `hold` rewrites an existing body.
 
-The `list` subcommand prints one tab-separated `<answerable> <id> <default> <title>` row per waiting captain question in the active home, play rows first, and filters to one axis with `--answerable`.
-It omits a hold whose hold kind is not `captain` and a hold tasks-axi still reports as blocked, so an item held for another reason and a question whose prerequisite work is unfinished are never relayed.
-It reads titles, hold kinds, blocker readiness, and reasons through `tasks-axi show` rather than parsing the quoted list projection.
+`list` reads titles, hold kinds, blocker readiness, and reasons through `tasks-axi show` rather than parsing the quoted list projection.
 That readiness agrees with the fleet snapshot and Bearings for an open blocker and for a Done blocker still present in `data/backlog.md`, and it deliberately diverges in one routinely reachable case.
 Once `tasks-axi prune` archives a Done blocker out of that file, tasks-axi reports the hold as unblocked and `list` shows the question, while the fleet snapshot still counts that blocker id unresolved and Bearings withholds it.
 The divergence is intentional and errs toward showing a waiting captain question rather than hiding one, and closing it was deliberately excluded because it would require a second backlog parser inside this script.

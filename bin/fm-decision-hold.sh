@@ -36,22 +36,9 @@
 #
 # Both facts are stored inside the tasks-axi hold reason as
 # `<reason> | default if unanswered: <default> | answerable: <desk|play>`.
-# The reason is the one hold field every existing read surface already renders,
-# and `tasks-axi done` preserves it verbatim, so `complete` and `resolve` carry
-# both facts through unchanged without a second store to drift against. Neither
-# `<reason>` nor `<default>` may contain those markers, and both inherit the
-# parenthesis rejection `tasks-axi hold` already imposes on a reason. `<default>`
-# additionally rejects commas, because the shared backlog metadata parser in
-# bin/fm-fleet-snapshot.sh stops the composed `(hold: ...)` field at the first
-# comma.
-#
-# Known limitation: that same first-comma truncation applies to a comma in
-# `<reason>`, so on the jq-derived surfaces such a reason reads back cut at the
-# comma and loses the trailing default and answerable markers, while the backlog
-# markdown and the tasks-axi session-start digest still render the whole field.
-# Commas in reasons are pre-existing and common on the live board, so `<reason>`
-# keeps accepting them and widening that shared parser was deliberately excluded
-# from this contract.
+# Neither `<reason>` nor `<default>` may contain those markers, and both inherit
+# the parenthesis rejection `tasks-axi hold` already imposes on a reason.
+# `<default>` additionally rejects commas.
 #
 # A hold created before this contract keeps working. Read paths treat a reason
 # with no marker as a desk question with no recorded default, and no read path
@@ -65,15 +52,9 @@
 # held for another reason and a question whose prerequisite work is unfinished
 # are never relayed.
 #
-# That readiness agrees with bin/fm-fleet-snapshot.sh and Bearings for an open
-# blocker and for a Done blocker still present in data/backlog.md, and it
-# deliberately diverges in one routinely reachable case. Once `tasks-axi prune`
-# archives a Done blocker out of that file, tasks-axi reports the hold as
-# unblocked and `list` shows the question, while the fleet snapshot still counts
-# that blocker id unresolved and Bearings withholds it. The divergence is
-# intentional and errs toward showing a waiting captain question rather than
-# hiding one; closing it was deliberately excluded because it would require a
-# second backlog parser inside this script.
+# docs/decision-hold-lifecycle.md owns why the hold reason is the only store,
+# the known first-comma truncation limitation, and the intentional divergence
+# between `list`'s blocker readiness and the fleet snapshot's.
 #
 # `complete` is the shared investigation and visual-review completion gate.
 # `--none` is an explicit semantic attestation that the just-reviewed surface has
