@@ -548,8 +548,12 @@ test_ship_checklist_is_in_the_brief() {
   assert_grep "No new question left unasked." "$brief" "checklist missing the open-question item"
   assert_grep "Any owner decision quoted verbatim, with its date." "$brief" \
     "checklist missing the verbatim-decision item"
-  assert_grep "Anything learned the hard way is a dated note in the project \`AGENTS.md\`, added through the Project memory section above." "$brief" \
+  assert_grep "Any lesson learned the hard way that clears the Project memory bar above is a dated note in that project \`AGENTS.md\`." "$brief" \
     "checklist missing the dated-note item anchored to its destination"
+  assert_grep "A task that produced no such lesson satisfies this with nothing written." "$brief" \
+    "the dated-note item cannot be satisfied by a task that produced no durable lesson"
+  [ "$(grep -cF 'Record only project knowledge useful to almost every future session' "$brief")" = 1 ] \
+    || fail "the checklist restated the Project memory bar instead of pointing at its one owner"
   assert_grep "Nothing added to a document that no execution touches." "$brief" \
     "checklist missing the no-inert-document item"
   [ "$(grep -c '^- \[ \] ' "$brief")" = 7 ] || fail "ship checklist is no longer seven items"
@@ -688,7 +692,8 @@ test_project_memory_never_resolves_to_another_project() {
   home="$TMP_ROOT/memory-collision-home"
   store="$TMP_ROOT/memory-collision-store"
   clone="$home/projects/Dungeon"
-  mkdir -p "$home/data" "$home/projects" "$clone"
+  mkdir -p "$home/data" "$home/projects"
+  fm_git_init_commit "$clone"
   mkdir -p "$store/projects/-Users-davidkol-projects-Godot-Gacha-Dungeon/memory"
 
   id="brief-memory-collision-i1"
@@ -717,6 +722,31 @@ test_project_memory_never_resolves_to_another_project() {
   pass "fm-brief.sh: notes that cannot be proven to belong to this project are dropped"
 }
 
+# `git -C <dir>` answers from the nearest ancestor repository when <dir> is not
+# itself one, and a home's `projects/` lives inside the firstmate repo. So a
+# project directory left as a plain directory - a seed that failed after
+# `mkdir -p`, or anything that never became a clone - would otherwise hand back
+# firstmate's OWN origin and offer that home's notes as the project's.
+test_project_memory_ignores_an_ancestor_repository_origin() {
+  local home store captain brief id
+  home="$TMP_ROOT/memory-ancestor-home"
+  store="$TMP_ROOT/memory-ancestor-store"
+  captain="$TMP_ROOT/memory-ancestor-origin/Widget"
+  mkdir -p "$home/data" "$home/projects/Widget" "$captain"
+  fm_git_init_commit "$home"
+  git -C "$home" remote add origin "$captain"
+  mkdir -p "$store/projects/$(store_key_for "$captain")/memory"
+
+  id="brief-memory-ancestor-j1"
+  CLAUDE_CONFIG_DIR="$store" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Widget >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_no_grep "Curated notes for this project" "$brief" \
+    "brief read an ancestor repository's origin as if it were the project clone"
+  assert_no_grep "$store/projects" "$brief" \
+    "brief offered notes derived from the surrounding home rather than the project"
+  pass "fm-brief.sh: a project directory that is not a clone contributes nothing"
+}
+
 # Pointing a worker at a directory that does not exist is worse than saying
 # nothing, so an absent store or an absent match emits no section at all.
 test_project_memory_says_nothing_when_absent() {
@@ -724,7 +754,8 @@ test_project_memory_says_nothing_when_absent() {
   home="$TMP_ROOT/memory-absent-home"
   store="$TMP_ROOT/memory-absent-store"
   clone="$home/projects/Gadget"
-  mkdir -p "$home/data" "$home/projects" "$clone"
+  mkdir -p "$home/data" "$home/projects"
+  fm_git_init_commit "$clone"
   mkdir -p "$store/projects/-Users-someone-projects-Godot-Widget/memory"
 
   id="brief-memory-absent-g1"
@@ -821,6 +852,7 @@ test_checklist_check_item_is_satisfiable
 test_orientation_step_precedes_the_work
 test_project_memory_paths_are_named_when_they_exist
 test_project_memory_never_resolves_to_another_project
+test_project_memory_ignores_an_ancestor_repository_origin
 test_project_memory_says_nothing_when_absent
 test_scout_checklist_is_reduced
 test_scout_and_secondmate_scaffold

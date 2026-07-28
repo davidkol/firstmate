@@ -220,21 +220,31 @@ REPO=${POS[1]}
 # $PROJECTS/<repo>, and that clone's origin when the origin is a local
 # filesystem path rather than a URL. Each must be a real directory whose
 # basename is exactly the project name, and must actually hold notes; anything
-# unproven is dropped rather than guessed at. Prints nothing when the store, the
-# clone, or a matching notes directory does not exist.
+# unproven is dropped rather than guessed at.
+# $PROJECTS/<repo> must itself be a repository root, not merely a directory
+# inside one: `git -C` walks up to the nearest ancestor repository, and this
+# home's own `projects/` sits inside the firstmate repo, so a project directory
+# left as a plain directory would answer with firstmate's OWN origin.
+# Prints nothing when the store, the clone, or a matching notes directory does
+# not exist.
 project_memory_dirs() {
-  local repo=$1 base clone origin candidate abs store seen=""
+  local repo=$1 base clone clone_abs toplevel origin candidate abs store seen=""
   base="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
   [ -d "$base" ] || return 0
   clone="$PROJECTS/$repo"
   [ -d "$clone" ] || return 0
+  clone_abs=$(cd "$clone" && pwd -P) || return 0
+  toplevel=$(git -C "$clone" rev-parse --show-toplevel 2>/dev/null) || return 0
+  [ -n "$toplevel" ] && [ -d "$toplevel" ] || return 0
+  toplevel=$(cd "$toplevel" && pwd -P) || return 0
+  [ "$toplevel" = "$clone_abs" ] || return 0
   origin=$(git -C "$clone" remote get-url origin 2>/dev/null || true)
   case "$origin" in
     file://*) origin=${origin#file://} ;;
     /*) : ;;
     *) origin="" ;;
   esac
-  for candidate in "$clone" "$origin"; do
+  for candidate in "$clone_abs" "$origin"; do
     [ -n "$candidate" ] && [ -d "$candidate" ] || continue
     abs=$(cd "$candidate" && pwd -P) || continue
     [ "${abs##*/}" = "$repo" ] || continue
@@ -411,7 +421,7 @@ CHECKLIST=$(printf '%s\n' \
 '- [ ] A different context reviewed the diff than the one that wrote it.' \
 '- [ ] No new question left unasked.' \
 '- [ ] Any owner decision quoted verbatim, with its date.' \
-'- [ ] Anything learned the hard way is a dated note in the project `AGENTS.md`, added through the Project memory section above.' \
+'- [ ] Any lesson learned the hard way that clears the Project memory bar above is a dated note in that project `AGENTS.md`. A task that produced no such lesson satisfies this with nothing written.' \
 '- [ ] Nothing added to a document that no execution touches.')
 
 cat > "$BRIEF" <<EOF
