@@ -570,17 +570,18 @@ validate_peer_id() {
   esac
 }
 
-# Refuse a target that sits inside another firstmate home. Walking the target's
-# ancestors for either home marker is cheaper and cannot go stale the way a
-# registry of peer homes would, and peer homes deliberately have no registry.
-refuse_nested_peer_home() {
+# Refuse a target that sits inside another firstmate home, whichever kind is
+# being seeded. Walking the target's ancestors for either home marker is cheaper
+# and cannot go stale the way a registry of peer homes would, and peer homes
+# deliberately have no registry to overlap against.
+refuse_nested_home() {
   local home=$1 probe
   probe=$(resolved_path "$home")
   while :; do
     probe=$(dirname "$probe")
     [ "$probe" != "/" ] || return 0
     if [ -f "$probe/$PEER_HOME_MARKER" ] || [ -f "$probe/$SUB_HOME_MARKER" ]; then
-      echo "error: peer home $home is inside firstmate home $probe" >&2
+      echo "error: $SEED_HOME_NOUN home $home is inside firstmate home $probe" >&2
       return 1
     fi
   done
@@ -1078,7 +1079,7 @@ seed_home() {
   if [ "$peer" -eq 1 ]; then
     requested_abs=$(abs_path_for_new "$requested_home")
     refuse_active_home_path "$requested_abs" || return 1
-    refuse_nested_peer_home "$requested_abs" || return 1
+    refuse_nested_home "$requested_abs" || return 1
     refuse_registered_secondmate_overlap "$requested_abs" || return 1
     validate_peer_home_target "$id" "$requested_abs" || return 1
     SEED_HOME="$requested_abs"
@@ -1093,6 +1094,7 @@ seed_home() {
   else
     requested_abs=$(abs_path_for_new "$requested_home")
     refuse_active_home_path "$requested_abs" || return 1
+    refuse_nested_home "$requested_abs" || return 1
     validate_home_assignment "$id" "$requested_abs" || return 1
     SEED_HOME="$requested_abs"
     [ -e "$requested_abs" ] || SEED_HOME_CREATED=1

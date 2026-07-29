@@ -71,5 +71,11 @@ done
 command -v "$1" >/dev/null 2>&1 || { echo "error: harness command not found on PATH: $1" >&2; exit 1; }
 
 cd "$FM_ROOT"
+# Every consumer resolves these BEFORE FM_HOME (bin/fm-bootstrap.sh, bin/fm-spawn.sh,
+# bin/fm-home-seed.sh), so an inherited one would silently point the opened session
+# at another home's board while FM_HOME still reported this one - after the four
+# directories checked above. Cleared for the same reason fm-home-seed.sh's
+# project_mode_in_home blanks them: the session must resolve as if it were in this home.
+unset FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE
 export FM_HOME="$HOME_ABS"
 exec "$@"

@@ -417,6 +417,32 @@ test_session_exists_false_when_absent() {
   pass "fm_backend_zellij_session_exists: false when the session name is not listed"
 }
 
+# The liveness primitive every send path gates on, pinned directly. Piping the
+# CLI straight into `jq -e` answered "alive" for a dead target, because `jq -e`
+# exits 0 on EMPTY input - so a failed call or empty listing must be an explicit
+# "not present" here, mirroring fm_backend_cmux_surface_exists.
+test_pane_exists_absent_when_listing_fails_or_is_empty() {
+  local dir fb
+  dir="$TMP_ROOT/pane-exists"; mkdir -p "$dir/responses"
+  fb=$(make_zellij_fakebin "$dir")
+  printf '1\n' > "$dir/responses/1.exit"                       # call 1: CLI fails outright
+  : > "$dir/responses/2.out"                                   # call 2: succeeds with empty output
+  printf '[]\n' > "$dir/responses/3.out"                       # call 3: valid JSON, no panes
+  zellij_pane_response "$dir" 4 7 3                            # call 4: the pane is listed
+
+  run_pane_exists() {
+    PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+      FM_ZELLIJ_SESSION_LIST="firstmate" \
+      bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_pane_exists firstmate 7' "$ROOT"
+  }
+
+  run_pane_exists && fail "pane_exists must report absent when the zellij CLI call fails"
+  run_pane_exists && fail "pane_exists must report absent when the zellij CLI returns empty output"
+  run_pane_exists && fail "pane_exists must report absent when the listing holds no panes"
+  run_pane_exists || fail "pane_exists must report present when the listing holds the pane"
+  pass "fm_backend_zellij_pane_exists: a failed, empty, or non-matching listing all mean absent"
+}
+
 test_server_ensure_skips_attach_when_already_exists() {
   local dir fb
   dir="$TMP_ROOT/server-reuse"; mkdir -p "$dir/responses"
@@ -1043,6 +1069,7 @@ test_resolve_bare_selector_prefers_later_session_scoped_title_over_legacy
 test_resolve_bare_selector_refuses_cross_session_ambiguous_untagged
 test_session_exists_true_when_listed
 test_session_exists_false_when_absent
+test_pane_exists_absent_when_listing_fails_or_is_empty
 test_server_ensure_skips_attach_when_already_exists
 test_dispatch_routes_zellij_backend
 test_dispatch_busy_state_unknown_for_zellij

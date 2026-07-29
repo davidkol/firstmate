@@ -170,6 +170,23 @@ test_seed_refusals() {
   pass "peer seed refuses unusable ids, nesting, occupied targets, and registered secondmate homes"
 }
 
+# The nesting invariant runs both ways: a peer home has no registry entry for a
+# secondmate seed to collide with, so only the ancestor-marker walk stands
+# between a secondmate clone and a peer home's inside.
+test_seed_refuses_secondmate_nested_in_peer_home() {
+  local main peer out
+  main=$(new_main_home nestsub)
+  peer="$TMP_ROOT/nestsub/homes/hookgame"
+  seed_peer "$main" hookgame "$peer" --peer hookgame >/dev/null || fail "peer seed failed"
+
+  out=$(seed_peer "$main" ops "$peer/ops" hookgame) && fail "secondmate seed nested inside a peer home"
+  assert_contains "$out" "secondmate home $peer/ops is inside firstmate home $peer" \
+    "nesting refusal did not name the secondmate home and its containing peer home"
+  assert_absent "$peer/ops" "refused secondmate seed cloned a home inside the peer home anyway"
+  assert_absent "$main/data/secondmates.md" "refused secondmate seed wrote a registry route"
+  pass "secondmate seeding refuses a target nested inside a peer home"
+}
+
 test_seed_refuses_local_only_project() {
   local main out
   main=$(new_main_home localonly local-only)
@@ -274,6 +291,37 @@ test_open_refusals() {
   pass "fm-open.sh refuses mistyped, non-peer, unusable, and half-built homes"
 }
 
+# An inherited FM_*_OVERRIDE outranks FM_HOME in every consumer, so a launcher
+# that only exported FM_HOME would open a session reporting this peer home while
+# reading another home's board - the isolation the whole feature sells.
+test_open_clears_inherited_directory_overrides() {
+  local main home decoy out
+  main=$(new_main_home overrides)
+  home="$TMP_ROOT/overrides/homes/hookgame"
+  decoy="$TMP_ROOT/overrides/decoy"
+  seed_peer "$main" hookgame "$home" --peer hookgame >/dev/null || fail "peer seed failed"
+  mkdir -p "$decoy/data" "$decoy/state" "$decoy/config" "$decoy/projects"
+  printf -- '- decoyproj [local-only] - a decoy board (added 2026-07-28)\n' > "$decoy/data/projects.md"
+  printf 'not-a-pid\n' > "$decoy/state/.lock"
+
+  # shellcheck disable=SC2016 # The launched command must resolve these itself.
+  out=$(FM_STATE_OVERRIDE="$decoy/state" FM_DATA_OVERRIDE="$decoy/data" \
+    FM_PROJECTS_OVERRIDE="$decoy/projects" FM_CONFIG_OVERRIDE="$decoy/config" \
+    "$OPEN" "$home" sh -c '
+      printf "mode=%s\n" "$(./bin/fm-project-mode.sh hookgame 2>/dev/null)"
+      printf "lock=%s\n" "$(./bin/fm-lock.sh status)"
+      printf "projects=%s\n" "${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
+      printf "config=%s\n" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+    ' 2>&1) || fail "fm-open.sh failed with inherited overrides: $out"
+
+  assert_contains "$out" "mode=direct-PR off" "the opened session read data/ from the decoy home, not the peer home"
+  assert_contains "$out" "lock=lock: free" "the opened session read state/ from the decoy home, not the peer home"
+  assert_contains "$out" "projects=$home/projects" "the opened session resolved projects/ outside the peer home"
+  assert_contains "$out" "config=$home/config" "the opened session resolved config/ outside the peer home"
+  assert_not_contains "$out" "$decoy" "the opened session still resolved part of its board to the decoy home"
+  pass "fm-open.sh clears inherited directory overrides so the session resolves inside the peer home"
+}
+
 # --- per-home identity -------------------------------------------------------
 
 test_backend_labels_separate_peer_homes() {
@@ -362,10 +410,12 @@ test_seed_shape
 test_seed_projectless
 test_seed_reseed_is_idempotent
 test_seed_refusals
+test_seed_refuses_secondmate_nested_in_peer_home
 test_seed_refuses_local_only_project
 test_seed_rolls_back
 test_open_launches_against_the_code_root
 test_open_refusals
+test_open_clears_inherited_directory_overrides
 test_backend_labels_separate_peer_homes
 test_session_lock_is_per_peer_home
 test_peer_session_start_sees_only_its_own_board
