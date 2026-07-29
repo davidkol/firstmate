@@ -26,7 +26,10 @@
 #
 # Every path prints a "compare: " line naming the side it actually used, because
 # the fallbacks above are otherwise indistinguishable from a normal run and a
-# reviewer cannot tell which head they read.
+# reviewer cannot tell which head they read. A head resolved by fetch and a head
+# taken from recorded pr_head= are labelled apart: the recorded one is the only
+# compare side never confirmed against the remote, so it can legitimately be
+# stale, and that path warns on nothing.
 # Usage: fm-review-diff.sh <task-id> [--stat]
 #   --stat prints only the stat summary; default prints stat summary plus full diff.
 set -eu
@@ -128,15 +131,17 @@ resolve_pr_head() {
   n=$(pr_number_from_target "$pr_url") || true
   if [ -n "$n" ]; then
     if resolved=$(fetch_pull_head "$n"); then
-      printf '%s' "$resolved"
+      printf 'fetched refs/pull/%s/head %s' "$n" "$resolved"
       return 0
     fi
   fi
-  # Offline / unreachable remote: recorded pr_head is better than the local
-  # branch, but never preferred over a successful pull-head fetch above.
+  # Offline / unreachable remote, or a pr= this parser cannot turn into a PR
+  # number: recorded pr_head is better than the local branch, but never preferred
+  # over a successful pull-head fetch above. Reached either way it was not
+  # confirmed against the remote, so the caller labels it apart.
   if [ -n "$recorded_head" ] \
     && git -C "$WT" cat-file -e "$recorded_head^{commit}" 2>/dev/null; then
-    printf '%s' "$recorded_head"
+    printf 'recorded %s' "$recorded_head"
     return 0
   fi
   return 1
@@ -162,9 +167,18 @@ COMPARE_REF=$BRANCH
 COMPARE_DESC="local branch $BRANCH"
 COMPARE_NOTE=
 if [ -n "$PR_URL" ]; then
-  if PR_HEAD=$(resolve_pr_head "$PR_URL" "$PR_HEAD_RECORDED"); then
+  if PR_HEAD_RESULT=$(resolve_pr_head "$PR_URL" "$PR_HEAD_RECORDED"); then
+    PR_HEAD=${PR_HEAD_RESULT##* }
+    PR_HEAD_SOURCE=${PR_HEAD_RESULT% *}
     COMPARE_REF=$PR_HEAD
-    COMPARE_DESC="PR head $PR_HEAD"
+    case "$PR_HEAD_SOURCE" in
+      recorded)
+        COMPARE_DESC="recorded PR head $PR_HEAD (from task meta, unconfirmed against the remote; may be stale)"
+        ;;
+      *)
+        COMPARE_DESC="PR head $PR_HEAD ($PR_HEAD_SOURCE)"
+        ;;
+    esac
   else
     COMPARE_DESC="local branch $BRANCH (PR head unavailable)"
     echo "warning: PR head unavailable; diff may lag the open PR (using local branch $BRANCH)" >&2
@@ -178,7 +192,7 @@ elif [ "$MODE" = validated-main ]; then
       COMPARE_NOTE="note: local branch $BRANCH has $AHEAD commit(s) the published head does not contain; they are not in this diff"
     fi
   elif published_branch_absent "$BRANCH"; then
-    COMPARE_DESC="local branch $BRANCH (nothing published)"
+    COMPARE_DESC="local branch $BRANCH (nothing published to origin; not a validated published head)"
   else
     COMPARE_DESC="local branch $BRANCH (published head unavailable)"
     echo "warning: published head origin/$BRANCH unavailable; diff may lag the validated branch (using local branch $BRANCH)" >&2

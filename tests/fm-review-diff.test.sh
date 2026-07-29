@@ -23,6 +23,10 @@
 # so every case asserts the "compare: " line naming the side actually used, and
 #   (i) mode=validated-main + local branch ahead of the published head -> the diff
 #       names the published head and reports the local commits it omits
+#
+# A fetched head and a recorded pr_head= fallback are labelled apart: the recorded
+# one is never confirmed against the remote and warns on nothing, so its label is
+# the only signal that case (a) above can be showing a stale head.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -102,8 +106,8 @@ test_pr_meta_uses_pr_head_not_stale_local() {
   assert_not_contains "$out" 'stale-local' "pr-head-sha: diff must not use the stale local branch"
   assert_not_contains "$(cat "$case_dir/stderr")" 'warning: PR head unavailable' \
     "pr-head-sha: should not warn when recorded pr_head is reachable offline"
-  assert_contains "$out" "compare: PR head $PR_SHA" \
-    "pr-head-sha: must name the resolved PR head as the compare side"
+  assert_contains "$out" "compare: recorded PR head $PR_SHA (from task meta, unconfirmed against the remote; may be stale)" \
+    "pr-head-sha: the recorded fallback is the one head that can be stale and must say so"
   pass "fm-review-diff falls back to recorded pr_head when pull head cannot be fetched"
 }
 
@@ -126,8 +130,10 @@ test_stale_recorded_pr_head_loses_to_fetched_pull_head() {
     "stale-recorded: diff must not use the stale local/recorded content"
   assert_not_contains "$(cat "$case_dir/stderr")" 'warning: PR head unavailable' \
     "stale-recorded: fetch of refs/pull/<n>/head should succeed"
-  assert_contains "$out" "compare: PR head $PR_SHA" \
+  assert_contains "$out" "compare: PR head $PR_SHA (fetched refs/pull/9/head)" \
     "stale-recorded: compare line must name the fetched PR head, not the recorded SHA"
+  assert_not_contains "$out" 'compare: recorded PR head' \
+    "stale-recorded: a fetched head must never be labelled as the recorded fallback"
   # Pre-fix behavior preferred reachable recorded pr_head= and would show stale-local.
   [ "$stale_sha" != "$PR_SHA" ] || fail "stale-recorded: fixture did not diverge recorded vs PR head"
   pass "fm-review-diff prefers freshly fetched PR head over a stale recorded pr_head="
@@ -146,8 +152,10 @@ test_pr_meta_fetches_pull_head_without_recorded_sha() {
   assert_not_contains "$out" 'stale-local' "pr-fetch: diff must not use the stale local branch"
   assert_not_contains "$(cat "$case_dir/stderr")" 'warning: PR head unavailable' \
     "pr-fetch: should not warn when fetch succeeds"
-  assert_contains "$out" "compare: PR head $PR_SHA" \
+  assert_contains "$out" "compare: PR head $PR_SHA (fetched refs/pull/9/head)" \
     "pr-fetch: must name the fetched PR head as the compare side"
+  assert_not_contains "$out" 'compare: recorded PR head' \
+    "pr-fetch: a fetched head must never be labelled as the recorded fallback"
   pass "fm-review-diff fetches refs/pull/<n>/head when pr_head= is absent"
 }
 
@@ -163,8 +171,8 @@ test_no_pr_meta_uses_local_branch() {
   assert_not_contains "$out" '+pr-fixed' "no-pr-meta: diff must not jump to the unpushed PR commit"
   assert_not_contains "$(cat "$case_dir/stderr")" 'warning: PR head unavailable' \
     "no-pr-meta: no warning without pr= in meta"
-  assert_contains "$out" 'compare: local branch fm/task-x1' \
-    "no-pr-meta: must name the local branch as the compare side"
+  assert_contains "$out" "compare: local branch fm/task-x1"$'\n' \
+    "no-pr-meta: the plain local-branch label carries no qualifier"
   pass "fm-review-diff without pr= keeps the worktree-branch diff"
 }
 
@@ -227,7 +235,7 @@ test_validated_main_unpublished_uses_local_branch() {
     "validated-main-unpublished: diff should use the local branch"
   assert_not_contains "$(cat "$case_dir/stderr")" 'warning: published head origin/' \
     "validated-main-unpublished: an unpublished branch is normal, not a warning"
-  assert_contains "$out" 'compare: local branch fm/task-x1 (nothing published)' \
+  assert_contains "$out" 'compare: local branch fm/task-x1 (nothing published to origin; not a validated published head)' \
     "validated-main-unpublished: stderr stays silent, so the compare line must say nothing is published"
   pass "fm-review-diff on validated-main uses the local branch when nothing is published"
 }
