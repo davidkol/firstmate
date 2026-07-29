@@ -31,6 +31,11 @@
 #                   drop scripts whose primary family matches <name> after selection
 #                   (repeatable; portable CI lanes exclude real-herdr-gated so the
 #                   dedicated required Herdr lane owns that coverage)
+#   --require-nonempty
+#                   exit non-zero when the selection is empty instead of
+#                   reporting total=0 and succeeding. Automated gates
+#                   (.no-mistakes.yaml commands.test) pass this so an unmapped
+#                   change cannot read as a pass with nothing run.
 #   --fail-on-gate-skip <token>
 #                   after each script, fail the run if any output line contains
 #                   "skip: <token>" (e.g. --fail-on-gate-skip 'herdr not found').
@@ -80,6 +85,7 @@ JSON_PATH=
 SCRIPTS=()
 EXCLUDE_FAMILIES=()
 FAIL_ON_GATE_SKIP=
+REQUIRE_NONEMPTY=0
 JOBS=1
 JOBS_MAX=8
 
@@ -702,7 +708,11 @@ families_for_changed_path() {
     bin/fm-ff-lib.sh|bin/fm-gotmp*|bin/*pretool*)
       printf '%s\n' pure-contract-unit
       ;;
-    .agents/skills/*/SKILL.md)
+    .agents/skills/*|skills/*|.claude/skills)
+      # Whole skill directories, not just SKILL.md: sibling assets (agent
+      # descriptors, fixtures) are part of the same instruction contract.
+      # Public skills/ and the .claude/skills compatibility symlink are tracked
+      # shared material too, so neither may abort the gate as unmapped source.
       printf '%s\n' pure-contract-unit
       ;;
     .github/workflows/ci.yml|.no-mistakes.yaml)
@@ -721,6 +731,12 @@ families_for_changed_path() {
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
+    tests/fixtures/*)
+      # Fixtures are named by their containing directory in the tests that read
+      # them, so resolve coverage from that directory name.
+      families_for_test_reference "$(basename "$(dirname "$path")")" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
     bin/*)
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
@@ -729,6 +745,11 @@ families_for_changed_path() {
       printf '%s\n' "__unmapped__:$path"
       ;;
     README.md|LICENSE|assets/*|docs/*|.gitignore)
+      # Prose and repo-surface changes still have one owner that can fail: the
+      # documentation audience, README setup routing, local link target, and
+      # owner pointer contract. Selecting nothing here made --changed exit 0
+      # with total=0 for the largest class of firstmate changes.
+      printf '%s\n' "__script__:fm-documentation-audiences.test.sh"
       ;;
     *)
       families_for_test_reference "$path" \
@@ -787,10 +808,23 @@ select_changed() {
     done < <(all_repo_tests)
   done
 
+  local deleted_family
   for script_name in "${wanted_scripts[@]+"${wanted_scripts[@]}"}"; do
     if [ -f "tests/$script_name" ]; then
       add_script "tests/$script_name"
+      continue
     fi
+    # The script was deleted or renamed away. Selecting nothing would leave a
+    # deletion-only change with an empty set, which --require-nonempty then
+    # reports as an unverifiable gate rather than a legitimate removal. Fall
+    # back to the surviving members of the family the script belonged to.
+    deleted_family=$(family_for_basename "$script_name")
+    while IFS= read -r s; do
+      [ -n "$s" ] || continue
+      if [ "$(family_for_basename "$(basename "$s")")" = "$deleted_family" ]; then
+        add_script "$s"
+      fi
+    done < <(all_repo_tests)
   done
 
   if [ "${#SCRIPTS[@]}" -eq 0 ]; then
@@ -1008,6 +1042,10 @@ while [ "$#" -gt 0 ]; do
       EXCLUDE_FAMILIES+=("${1#--exclude-family=}")
       shift
       ;;
+    --require-nonempty)
+      REQUIRE_NONEMPTY=1
+      shift
+      ;;
     --fail-on-gate-skip)
       [ "$#" -gt 1 ] || die "--fail-on-gate-skip requires a token (e.g. 'herdr not found')"
       FAIL_ON_GATE_SKIP=$2
@@ -1118,8 +1156,15 @@ fi
 if [ -n "$FAIL_ON_GATE_SKIP" ]; then
   SELECTION_DESC="${SELECTION_DESC};fail-on-gate-skip=$FAIL_ON_GATE_SKIP"
 fi
+if [ "$REQUIRE_NONEMPTY" -eq 1 ]; then
+  SELECTION_DESC="${SELECTION_DESC};require-nonempty"
+fi
 if [ "$JOBS" -gt 1 ]; then
   SELECTION_DESC="${SELECTION_DESC};jobs=$JOBS"
+fi
+
+if [ "${#SCRIPTS[@]}" -eq 0 ] && [ "$REQUIRE_NONEMPTY" -eq 1 ]; then
+  die "selection is empty and --require-nonempty was given; nothing would have been verified"
 fi
 
 if [ "$LIST_ONLY" -eq 1 ]; then

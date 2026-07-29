@@ -28,13 +28,31 @@ document:
 # `.github/workflows/ci.yml` invokes it directly, with parity asserted by
 # `tests/fm-lint.test.sh`.
 #
-# Do not set commands.test to a complete tests/*.test.sh walk. Local no-mistakes
-# Test is intent-targeted validation of whether the change meets its brief;
-# .github/workflows/ci.yml owns broad regression (behavior suite, platform,
-# security, Herdr, tmux, and lifecycle coverage). A full-suite override here
-# would duplicate CI and defeat the targeted Test contract.
+# Test is scoped: neither a complete walk nor absent. `bin/fm-test-run.sh
+# --changed` maps every changed path to the families that cover it, so an
+# instructions, skill, or prose change runs the instruction-generation contract
+# tests instead of the end-to-end lanes that start terminal sessions, spawn
+# agents, and run daemons on real timing.
+#
+# Both alternatives are worse. `--all` makes every change pay for the complete
+# walk. An absent command leaves the regression suite running nowhere:
+# `.github/workflows/ci.yml` defines the reference lane composition, but no
+# hosted CI runs on this fork, so nothing executes those lanes.
+# CONTRIBUTING.md owns the full local test policy and its entry points.
+#
+# `--require-nonempty` is what keeps this a gate. Without it an unmapped change
+# selects nothing and the step reports `total=0` and succeeds, which reads as a
+# pass while verifying nothing.
+#
+# Known gap, not covered locally: scripts needing an optional tool skip rather
+# than run. Most of the real-herdr-gated family reports `skip: herdr not found`
+# without a pinned Herdr, and the live-harness-optin, cmux, and zellij families
+# skip the same way on a machine without those tools. Each one lands in the
+# runner's `skipped_gate` tally. A non-zero `skipped_gate` in FM_TEST_SUMMARY
+# means those scripts did not run, and a pass carrying one is not full coverage.
 commands:
   lint: 'bin/fm-lint.sh'
+  test: 'bin/fm-test-run.sh --changed --require-nonempty'
 
 # Keep test evidence out of this repo; it stays in a temp dir instead.
 test:

@@ -77,7 +77,7 @@ Measured serial remainder wall (from the same Phase 1 artifacts, excluding Herdr
 3. Union of portable parallel shards + portable serial + real-Herdr family equals the complete `tests/*.test.sh` inventory.
 4. Those four partitions are pairwise disjoint (no missing scripts, no duplicates).
 
-CI runs that guard as a required job (`test-coverage`).
+`.github/workflows/ci.yml` defines that guard as a required job (`test-coverage`), and `tests/fm-test-run.test.sh` runs it locally, which is what executes it on a fork with no hosted CI.
 
 ## Timing artifacts
 
