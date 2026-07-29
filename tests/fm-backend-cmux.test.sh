@@ -842,6 +842,31 @@ test_send_text_submit_send_failed_when_target_absent() {
   pass "fm_backend_cmux_send_text_submit: reports 'send-failed' when the target workspace/surface is absent"
 }
 
+# The liveness primitive every send path gates on, pinned directly rather than
+# only through send_text_submit above. Piping the CLI straight into `jq -e`
+# answered "alive" for a dead target, because `jq -e` exits 0 on EMPTY input -
+# so a failed call or empty listing must be an explicit "not present" here.
+test_surface_exists_absent_when_listing_fails_or_is_empty() {
+  local dir fb
+  dir="$TMP_ROOT/surface-exists"; mkdir -p "$dir/responses"
+  fb=$(make_cmux_fakebin "$dir")
+  printf '1\n' > "$dir/responses/1.exit"      # call 1: CLI fails outright
+  : > "$dir/responses/2.out"                  # call 2: succeeds with empty output
+  printf '{"panes":[]}\n' > "$dir/responses/3.out"        # call 3: valid JSON, no panes
+  printf '{"panes":[{"surface_ids":["bbbbbbbb-1111-1111-1111-111111111111"]}]}\n' > "$dir/responses/4.out"
+
+  run_surface_exists() {
+    PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+      bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_surface_exists "aaaaaaaa-0000-0000-0000-000000000000" "bbbbbbbb-1111-1111-1111-111111111111"' "$ROOT"
+  }
+
+  run_surface_exists && fail "surface_exists must report absent when the cmux CLI call fails"
+  run_surface_exists && fail "surface_exists must report absent when the cmux CLI returns empty output"
+  run_surface_exists && fail "surface_exists must report absent when the listing holds no panes"
+  run_surface_exists || fail "surface_exists must report present when the listing holds the surface"
+  pass "fm_backend_cmux_surface_exists: a failed, empty, or non-matching listing all mean absent"
+}
+
 # --- window_of_workspace: which window holds a workspace, and its count ------
 
 test_window_of_workspace_finds_window_and_count() {
@@ -1053,6 +1078,7 @@ test_send_text_submit_detects_landed_send
 test_send_text_submit_detects_swallowed_enter
 test_send_text_submit_popup_autocomplete_requires_second_enter
 test_send_text_submit_send_failed_when_target_absent
+test_surface_exists_absent_when_listing_fails_or_is_empty
 test_window_of_workspace_finds_window_and_count
 test_window_of_workspace_empty_when_not_found
 test_kill_closes_workspace_directly_when_not_last
