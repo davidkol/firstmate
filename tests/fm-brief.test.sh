@@ -298,6 +298,46 @@ test_no_mistakes_dod_wording() {
   pass "fm-brief.sh: no-mistakes DOD keeps its apostrophe prose, now parse-safe"
 }
 
+# The no-mistakes ready signal is the pipeline's CI-ready return point, which a
+# PR that registers no checks reaches once the registration grace elapses. The
+# brief used to describe a green check result as the only way to get there, so a
+# worker on a repository with hosted CI off waited by hand for a signal that
+# could not arrive. docs/verification/validation-pipeline.md records the
+# pipeline behavior this wording depends on.
+test_no_mistakes_dod_no_checks_is_ready() {
+  local home id brief emitted
+  home="$TMP_ROOT/no-checks-home"
+  mkdir -p "$home/data"
+  id="brief-no-checks-d1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "brief was not scaffolded"
+  assert_grep "CI-ready return point" "$brief" \
+    "no-mistakes DOD must name the CI-ready return point as the ready signal"
+  assert_grep "registered no checks at all" "$brief" \
+    "no-mistakes DOD must state that no registered checks satisfies the return point"
+  assert_grep "never a reason to wait for a green signal by hand" "$brief" \
+    "no-mistakes DOD must forbid waiting by hand for checks that cannot arrive"
+  # The literal status token stays "checks green" in both cases:
+  # bin/fm-crew-state.sh's log_reports_ci_ready matches it to classify the task
+  # as CI-ready, so rewording it here would silently break state reconciliation.
+  assert_grep 'done: PR {url} checks green' "$brief" \
+    "no-mistakes DOD lost the literal status token fm-crew-state.sh matches"
+  # Couple the two files mechanically rather than trusting the comment above.
+  # log_reports_ci_ready reads globals and lives in a non-sourceable script, so
+  # assert both halves of the contract: the matcher still carries this glob, and
+  # the line the brief actually tells a worker to emit still satisfies it.
+  grep -qF '*PR*"checks green"*' "$ROOT/bin/fm-crew-state.sh" \
+    || fail "fm-crew-state.sh no longer matches the token the brief emits"
+  emitted=$(grep -o 'done: PR {url} checks green' "$brief" | head -1)
+  emitted=${emitted/\{url\}/https://github.com/o/r/pull/7}
+  case "$emitted" in
+    *PR*"checks green"*|*"checks green"*PR*) ;;
+    *) fail "the brief's own done line does not satisfy log_reports_ci_ready" ;;
+  esac
+  pass "fm-brief.sh: no-mistakes DOD treats no registered checks as CI-ready"
+}
+
 test_ship_project_memory_wording() {
   local home id brief
   home="$TMP_ROOT/project-memory-home"
@@ -926,6 +966,7 @@ test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
+test_no_mistakes_dod_no_checks_is_ready
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
 test_herdr_lab_contract_quotes_foreign_firstmate_path

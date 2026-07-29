@@ -312,6 +312,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/verification/validation-pipeline.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/watcher-continuity.md",
       "audience": "operator-current"
     },

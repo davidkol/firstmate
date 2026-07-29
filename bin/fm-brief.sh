@@ -451,7 +451,10 @@ Two firstmate-specific rules layer on top of it:
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+After /no-mistakes reaches its CI-ready return point, append \`done: PR {url} checks green\` and stop. You are finished.
+Two things satisfy that return point: checks passed, or the PR registered no checks at all once the pipeline's registration grace elapsed.
+A repository with no checks configured is normal here and reports as ready; it is not a failure, and it is never a reason to wait for a green signal by hand.
+In both cases do not wait for the step to keep monitoring in the background until merge.
 EOF
     ;;
 esac
