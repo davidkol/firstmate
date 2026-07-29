@@ -219,6 +219,7 @@ write_registry() {
   cat > "$home/data/projects.md" <<'EOF'
 - direct-proj [direct-PR] - fixture for direct-PR mode (added 2026-07-01)
 - local-proj [local-only] - fixture for local-only mode (added 2026-07-01)
+- main-proj [validated-main] - fixture for validated-main mode (added 2026-07-28)
 EOF
 }
 
@@ -232,7 +233,7 @@ test_ship_modes_generate_clean_briefs() {
   home="$TMP_ROOT/ship-home"
   write_registry "$home"
 
-  for id_proj in "brief-nomistakes-a1:no-registry-proj" "brief-directpr-a2:direct-proj" "brief-localonly-a3:local-proj"; do
+  for id_proj in "brief-nomistakes-a1:no-registry-proj" "brief-directpr-a2:direct-proj" "brief-localonly-a3:local-proj" "brief-validatedmain-a5:main-proj"; do
     id=${id_proj%%:*}
     proj=${id_proj##*:}
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" >/dev/null 2>&1; status=$?
@@ -245,7 +246,35 @@ test_ship_modes_generate_clean_briefs() {
       "$id: brief missing nonterminal working:/setup-complete gate protection"
     assert_no_grep "EOF" "$brief" "$id: brief leaked a heredoc EOF marker (unterminated heredoc)"
   done
-  pass "fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly"
+  pass "fm-brief.sh: no-mistakes/validated-main/direct-PR/local-only briefs generate cleanly"
+}
+
+# validated-main drops the PR but NOT the automated review: the pipeline's review,
+# test, document and lint steps are exactly what makes landing straight on main
+# safe. A brief that let a worker read "no PR" as "no pipeline" would remove the
+# only thing standing between an unread change and the default branch, so pin both
+# halves - the review stays, and only the two host-facing steps are skipped.
+test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci() {
+  local home id brief
+  home="$TMP_ROOT/validated-main-home"
+  write_registry "$home"
+  id="brief-validated-main-a6"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" main-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+
+  assert_grep "Skipping the PR does NOT skip the review" "$brief" \
+    "validated-main brief lost the review-is-retained statement"
+  assert_grep '--skip pr,ci' "$brief" \
+    "validated-main brief lost the exact skip flags, so a worker could open a PR"
+  assert_grep "no-mistakes doctor" "$brief" \
+    "validated-main brief lost the pipeline setup step, so the pipeline may not be initialized"
+  assert_grep "done: validated on fm/$id, ready to land" "$brief" \
+    "validated-main brief lost its no-PR ready signal"
+  assert_no_grep "done: PR" "$brief" \
+    "validated-main brief still reports a PR ready signal"
+  assert_grep "Firstmate lands the validated branch on \`main\` and pushes it" "$brief" \
+    "validated-main brief lost who performs the landing"
+  pass "fm-brief.sh: validated-main brief keeps the automated review and skips only the PR and CI steps"
 }
 
 test_faster_paths_use_configured_authority_without_stacked_review() {
@@ -964,6 +993,7 @@ test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
+test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_no_mistakes_dod_no_checks_is_ready

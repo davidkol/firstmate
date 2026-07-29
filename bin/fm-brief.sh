@@ -29,10 +29,12 @@
 # For ship tasks, the delivery path inside the definition of done is shaped by the
 # project's delivery mode (data/projects.md via fm-project-mode.sh; see the
 # project-management skill and AGENTS.md task lifecycle):
-#   no-mistakes  implement -> /no-mistakes pipeline -> PR -> captain merge (default)
-#   direct-PR    implement -> push + open PR via gh-axi (no pipeline) -> captain merge
-#   local-only   implement on branch, stop and report "ready in branch" (no push/PR);
-#                captain approves, firstmate merges to local main
+#   no-mistakes    implement -> /no-mistakes pipeline -> PR -> captain merge (default)
+#   validated-main implement -> same pipeline with its PR and CI steps skipped ->
+#                  firstmate merges to main and pushes; no PR is ever opened
+#   direct-PR      implement -> push + open PR via gh-axi (no pipeline) -> captain merge
+#   local-only     implement on branch, stop and report "ready in branch" (no push/PR);
+#                  captain approves, firstmate merges to local main
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # Scout tasks ignore mode - their deliverable is a report, not a merge.
 # Every scaffold's status protocol distinguishes the configured
@@ -422,6 +424,32 @@ This project ships **direct-PR**: you raise the PR yourself, without the no-mist
 The task is complete only when committed on your branch.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
 Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
+EOF
+    ;;
+  validated-main)
+    SETUP2="
+3. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
+    RULE1='1. Never push to the default branch and never merge. Push only your `fm/'"$ID"'` branch, and only through the pipeline.'
+    IFS= read -r -d '' DOD <<EOF || true
+This project ships **validated-main**: the same full validation pipeline as no-mistakes, landed on \`main\` without a PR.
+Skipping the PR does NOT skip the review - the pipeline's review, test, document and lint steps all run locally and are exactly what makes landing straight on \`main\` safe. Only the two steps that talk to the host are dropped.
+
+The task is complete only when committed on your branch.
+When you believe it is complete, append \`done: {summary}\` to the status file and stop.
+Firstmate will then instruct you to run /no-mistakes to validate the branch.
+
+When you start that run, skip the PR and CI steps - pass \`--skip pr,ci\` to \`no-mistakes axi run\` along with your \`--intent\`.
+There is no hosted CI on this fleet, so a CI step would have nothing to watch, and no PR is opened at any point.
+You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
+Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+Two firstmate-specific rules layer on top of it:
+- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
+  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+
+The pipeline commits its own fix rounds and pushes them, so your local branch may end up behind what it published. That is expected and is not yours to reconcile by hand.
+When the run reaches a successful terminal outcome, append \`done: validated on fm/$ID, ready to land\` and stop. You are finished.
+Firstmate lands the validated branch on \`main\` and pushes it; you never merge and never open a PR.
 EOF
     ;;
   local-only)

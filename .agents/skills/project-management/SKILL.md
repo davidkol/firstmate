@@ -31,8 +31,13 @@ Do not overwrite or repurpose an existing path.
 Choose the delivery mode when adding or creating the project:
 
 - `no-mistakes` runs the full validation pipeline before a PR and is the default when the captain does not specify a mode.
+- `validated-main` runs that same pipeline with only its PR and CI steps skipped, then lands on the default branch through the approved `bin/fm-merge-main.sh` path and pushes it; no PR is ever opened.
 - `direct-PR` pushes and opens a PR without the no-mistakes pipeline.
 - `local-only` has no required remote or PR and lands only through the approved local fast-forward path.
+
+`validated-main` and `direct-PR` are not interchangeable, and the difference is the automated review, not the PR.
+`validated-main` keeps the pipeline's local review, test, document, and lint steps and drops only the two host-facing steps, which is what makes landing straight on the default branch safe.
+`direct-PR` drops the pipeline instead, so it keeps the PR as the place a change is looked at.
 
 The optional `+yolo` posture changes routine approval authority but does not change the delivery mode.
 Default it off, and enable it only on the captain's explicit instruction.
@@ -42,7 +47,7 @@ Default it off, and enable it only on the captain's explicit instruction.
 
 Confirm the source URL, local project name, delivery mode, and autonomy posture.
 Clone into `projects/<name>` and add the registry entry only after the destination is known to be unused.
-A `no-mistakes` project must have an `origin` remote and must complete the initialization procedure below.
+A `no-mistakes` or `validated-main` project must have an `origin` remote and must complete the initialization procedure below.
 A `direct-PR` project needs an `origin` remote but skips no-mistakes initialization.
 A `local-only` project may have no remote and skips no-mistakes initialization.
 
@@ -58,7 +63,7 @@ The captain's request to create that local project authorizes this local initial
 
 ## Initialize
 
-Run no-mistakes initialization only for `no-mistakes` projects:
+Run no-mistakes initialization for `no-mistakes` and `validated-main` projects, which both drive the pipeline:
 
 ```sh
 cd projects/<name> && no-mistakes init && no-mistakes doctor

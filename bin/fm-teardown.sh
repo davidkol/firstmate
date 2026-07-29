@@ -433,6 +433,10 @@ backlog_refresh_reminder() {
       *)
         if [ "$MODE" = local-only ]; then
           done_cmd="tasks-axi done $ID --note \"local main\""
+        elif [ "$MODE" = validated-main ]; then
+          # validated-main never opens a PR, so there is no PR to record - the
+          # landed default branch is the completion artifact.
+          done_cmd="tasks-axi done $ID --note \"landed on main\""
         else
           pr=$PR_URL
           if [ -n "$pr" ]; then
