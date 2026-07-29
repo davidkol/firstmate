@@ -2,7 +2,7 @@
 
 Audience: maintainer verification.
 
-This record supports the current guarantee that a no-mistakes ship task reports its PR at the pipeline's CI-ready return point, including on a repository whose PR registers no checks.
+This record supports two current guarantees: that a no-mistakes ship task reports its PR at the pipeline's CI-ready return point, including on a repository whose PR registers no checks, and that the `validated-main` delivery mode validates through the same pipeline without ever opening a PR.
 `AGENTS.md` section 7 owns the operating contract and `bin/fm-crew-state.sh` owns the state mapping.
 Task-specific chronology, temporary paths, run identifiers, and delivery transcripts remain in private reports or PR evidence.
 
@@ -58,3 +58,76 @@ The `ci` key that exists in the schema is `auto_fix.ci`, an auto-fix attempt cou
 
 The only shipped mechanism for omitting the step is the per-invocation `--skip ci` flag on `no-mistakes axi run`, which no repository configuration can make sticky.
 Nothing in firstmate should be built on the assumption that a repository can declare itself checkless to the pipeline; the grace-period behavior above is what makes checkless repositories work.
+
+## The pipeline cannot land on the default branch, but it can validate without a PR
+
+Verified on 2026-07-28 against the same binary version.
+
+This is the evidence the `validated-main` delivery mode rests on, and it settles a question that is easy to get wrong in the opposite direction.
+
+The pipeline refuses to run on the default branch at all, so no flag combination makes it push the default branch itself.
+The shipped skill at `~/.claude/skills/no-mistakes/SKILL.md` states it under "Before you start":
+
+```text
+- You must be on a **feature branch**, not the repository's default branch.
+```
+
+and the binary carries the matching refusal and remedy strings:
+
+```text
+refusing to validate %q: it is the default branch
+Put your changes on a feature branch: `git switch -c <branch>`, then re-run
+```
+
+The pipeline's `push` step therefore publishes the task branch, never the default branch, and every terminal outcome the skill documents is PR-shaped (`checks-passed` leaves the PR open, `passed` means it merged or closed).
+Landing on the default branch is firstmate's action, not the pipeline's, which is why `bin/fm-merge-main.sh` exists.
+
+What the pipeline does support is validating with no PR.
+`--skip` is validated against a fixed step list, client-side, before any run starts:
+
+```console
+$ no-mistakes axi run --intent "probe" --skip bogusstep
+error: "unknown step \"bogusstep\""
+help[1]: "Valid steps: intent, rebase, review, test, document, lint, push, pr, ci"
+```
+
+`pr` and `ci` are both accepted members of that list, and the binary carries dedicated paths for each omission:
+
+```text
+skipping PR creation: %s
+no PR URL found, skipping CI
+```
+
+Observed end to end on a throwaway repository, complete step table from a real `--skip pr,ci` run:
+
+```text
+steps[9]{step,status,findings,duration_ms}:
+  intent,completed,0,2
+  rebase,completed,0,473
+  review,completed,1,28729
+  test,completed,1,72296
+  document,completed,0,83941
+  lint,completed,0,15
+  push,completed,0,223
+  pr,skipped,0,0
+  ci,skipped,0,0
+outcome: passed
+pr_state: none
+```
+
+The review step ran for 28.7 seconds and parked at its gate with a real finding before anything else advanced, so skipping `pr` does not skip `review`.
+Only `pr` and `ci` report `skipped`; the entire local review surface completed, and `pr_state: none` confirms no pull request was ever created.
+Dropping the PR drops ceremony, not the reviewer; a change that reads "no PR" as "no pipeline" has removed the only thing between an unread change and the default branch.
+
+The same run also pins why landing must read the published head rather than the local branch:
+
+```text
+submitted_head: edb06baa7750c369bfea570c7315097f4cab249b
+current_head:   5cdf532bb69d64b4f49ca71d91e9e4be3c5631d8
+pushed_head:    5cdf532bb69d64b4f49ca71d91e9e4be3c5631d8
+relation: behind
+next_action.code: sync
+```
+
+The pipeline committed its own fix rounds and published them while the local branch stayed at the submitted head.
+Merging the local head would have landed the unfixed commit, which is why `bin/fm-merge-main.sh` takes `origin/<branch>` as the merge source and refuses when the local branch carries commits that head does not contain.

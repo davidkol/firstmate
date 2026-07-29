@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tear down a finished task: return the treehouse worktree, release the Orca
 # worktree, or retire a secondmate home; kill the recorded runtime endpoint,
-# clear volatile state, refresh/prune the project's clone for PR-based ship
+# clear volatile state, refresh/prune the project's clone for remote-backed ship
 # tasks, then print a backlog-refresh reminder for ship and scout teardowns
 # (a secondmate teardown prints none, since secondmates are not backlog items).
 # REFUSES if the worktree holds work that has not LANDED, because cleanup
@@ -433,6 +433,10 @@ backlog_refresh_reminder() {
       *)
         if [ "$MODE" = local-only ]; then
           done_cmd="tasks-axi done $ID --note \"local main\""
+        elif [ "$MODE" = validated-main ]; then
+          # validated-main never opens a PR, so there is no PR to record - the
+          # landed default branch is the completion artifact.
+          done_cmd="tasks-axi done $ID --note \"landed on main\""
         else
           pr=$PR_URL
           if [ -n "$pr" ]; then

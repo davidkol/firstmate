@@ -543,7 +543,7 @@ clone_project() {
 $(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
-    echo "error: project $project is local-only; secondmate routes support only no-mistakes and direct-PR projects" >&2
+    echo "error: project $project is local-only; secondmate routes support only remote-backed projects" >&2
     return 1
   fi
   if [ -e "$dst" ]; then
@@ -570,7 +570,7 @@ validate_seed_project() {
 $(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
-    echo "error: project $project is local-only; secondmate routes support only no-mistakes and direct-PR projects" >&2
+    echo "error: project $project is local-only; secondmate routes support only remote-backed projects" >&2
     return 1
   fi
   url=$(git -C "$src" remote get-url origin 2>/dev/null || true)
@@ -770,7 +770,12 @@ sync_project_registry() {
 initialize_no_mistakes_project() {
   local home=$1 project=$2 created=$3 mode dst
   mode=$(project_mode_in_home "$home" "$project")
-  [ "$mode" = no-mistakes ] || return 0
+  # validated-main drives the same pipeline as no-mistakes, so it needs the same
+  # local gate initialized; only its PR and CI steps are skipped at run time.
+  case "$mode" in
+    no-mistakes|validated-main) ;;
+    *) return 0 ;;
+  esac
   dst=$(validate_project_destination "$home" "$project") || return 1
   if git -C "$dst" remote get-url no-mistakes >/dev/null 2>&1; then
     return 0

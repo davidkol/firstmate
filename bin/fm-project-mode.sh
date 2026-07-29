@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Resolve a project's delivery mode and yolo flag from the data/projects.md registry.
 # Prints two words to stdout: "<mode> <yolo>" where mode is one of
-# no-mistakes|direct-PR|local-only and yolo is on|off.
+# no-mistakes|validated-main|direct-PR|local-only and yolo is on|off.
 #
 # Registry line format (data/projects.md):
 #   - <name> - <desc> (added <date>)                  -> no-mistakes off  (legacy default)
@@ -9,9 +9,11 @@
 #   - <name> [<mode> +yolo] - <desc> (added <date>)    -> <mode> on
 #
 # mode = how a finished change reaches main:
-#   no-mistakes  full pipeline -> PR -> captain merge (default)
-#   direct-PR    push + PR via gh-axi, no pipeline -> captain merge
-#   local-only   local branch, no remote/PR -> captain approve -> guarded local merge
+#   no-mistakes    full pipeline -> PR -> captain merge (default)
+#   validated-main same full pipeline, PR and CI steps skipped -> guarded merge to
+#                  main -> push to origin; no PR is ever opened
+#   direct-PR      push + PR via gh-axi, no pipeline -> captain merge
+#   local-only     local branch, no remote/PR -> captain approve -> guarded local merge
 # yolo (orthogonal) = when on, firstmate may make routine approval decisions itself.
 #   AGENTS.md section 7 is the single owner of authority exceptions, including
 #   ask-user contract expansion and stronger captain boundaries.
@@ -59,7 +61,7 @@ fi
 mode=${parsed%% *}
 yolo=${parsed##* }
 case "$mode" in
-  no-mistakes|direct-PR|local-only) ;;
+  no-mistakes|validated-main|direct-PR|local-only) ;;
   *) echo "warn: unknown mode \"$mode\" for $NAME; defaulting to no-mistakes off" >&2; mode=no-mistakes; yolo=off ;;
 esac
 case "$yolo" in on|off) ;; *) yolo=off ;; esac

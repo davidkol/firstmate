@@ -53,7 +53,7 @@ Every `/bearings` chat response renders EXACTLY these four sections, in THIS ord
 
 1. **Captain's Call** - ONLY items that need the captain's own action now: a decision to make, a PR to approve or merge, a credential or login to provide, or a blocker only the captain can clear.
    Empty-state: "Nothing needs your action right now."
-2. **Recently Landed** - the bounded current recent-completions baseline: merged PRs, completed scouts, and finished local-only merges across the main fleet and every registered secondmate home.
+2. **Recently Landed** - the bounded current recent-completions baseline: merged PRs, completed scouts, and finished merges that landed without a PR, across the main fleet and every registered secondmate home.
    Empty-state: "No recent completions are in the current baseline."
 3. **Underway** - live work progressing on its own, one line of current state per direct report.
    Empty-state: "Nothing is underway."
