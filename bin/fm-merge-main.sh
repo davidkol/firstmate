@@ -13,8 +13,9 @@
 # mode=validated-main tasks, only after the configured merge authority approves
 # (captain approval, or yolo=on), and only as a clean fast-forward. It refuses a
 # diverged branch, a dirty or off-default project checkout, a task branch carrying
-# local commits the validated head does not contain, and a default branch that has
-# moved on the host. See AGENTS.md prime directives and task lifecycle.
+# local commits the validated head does not contain, a branch published to a remote
+# other than origin, and a default branch that has moved on the host. See AGENTS.md
+# prime directives and task lifecycle.
 #
 # The merge source is the published head (origin/fm/<id>) whenever it exists,
 # because the pipeline commits its own fix rounds and pushes them - the local task
