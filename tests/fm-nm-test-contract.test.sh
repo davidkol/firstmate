@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Contract: local no-mistakes Test is intent-targeted; CI owns broad regression.
+# Contract: local no-mistakes Test is scoped - present, and neither full-suite
+# nor absent.
 #
-# Firstmate must not configure commands.test as a complete tests/*.test.sh walk
-# (that duplicated CI and burned local pipeline time). Lint stays pinned to
-# bin/fm-lint.sh. Remote CI owns broad regression through separate portable and
-# required real-Herdr Behavior lanes composed around bin/fm-test-run.sh.
+# Firstmate must configure commands.test as a scoped bin/fm-test-run.sh
+# selection, so the local gate genuinely is the definition of done. An absent
+# command left the regression suite running nowhere, because
+# .github/workflows/ci.yml defines the reference lane composition but no hosted
+# CI executes it on this fork. A complete tests/*.test.sh walk is equally wrong:
+# it makes every prose or skill change pay for the end-to-end lanes. Lint stays
+# pinned to bin/fm-lint.sh.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -26,8 +30,8 @@ test_nm_keeps_lint_pin() {
   pass "commands.lint stays pinned to bin/fm-lint.sh"
 }
 
-# True when the YAML maps a non-empty commands.test (string or mapping value).
-# Empty / null / absent is the intended targeted-Test posture.
+# Prints the mapped commands.test (string or mapping value), empty when absent.
+# Empty / null / absent now fails the contract below.
 nm_commands_test_value() {
   if command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
     python3 -c '
@@ -72,28 +76,49 @@ end
   ' "$NM"
 }
 
-test_nm_has_no_complete_local_test_command() {
+test_nm_configures_a_scoped_local_test_command() {
   local val
   val=$(nm_commands_test_value) || fail "failed to read commands.test from .no-mistakes.yaml"
-  if [ -n "$val" ]; then
-    case "$val" in
-      *'tests/*.test.sh'*|*'tests/'*'.test.sh'*)
-        fail "commands.test must not walk the complete tests/*.test.sh suite; got: $val"
-        ;;
-      *)
-        # Any non-empty override still steers Test away from intent-targeted default.
-        fail "commands.test must be absent or empty so Test stays intent-targeted; got: $val"
-        ;;
-    esac
-  fi
-  # Also refuse a commented-out full-suite remnant that could be re-enabled by habit.
-  if grep -E '^[[:space:]]*#?[[:space:]]*test:[[:space:]].*tests/\*\.test\.sh' "$NM" >/dev/null 2>&1; then
-    fail ".no-mistakes.yaml still documents a full-suite commands.test line (active or comment)"
-  fi
-  pass "no-mistakes does not configure a complete local Test command"
+  [ -n "$val" ] \
+    || fail "commands.test must be set; an absent command leaves the regression suite running nowhere"
+  case "$val" in
+    *bin/fm-test-run.sh*) ;;
+    *) fail "commands.test must run the one-owner runner bin/fm-test-run.sh; got: $val" ;;
+  esac
+  # The scope ceiling: never the complete walk, however it is spelled.
+  case "$val" in
+    *--all*|*'tests/*.test.sh'*|*--proven-isolated*)
+      fail "commands.test must stay scoped, not a complete-suite walk; got: $val"
+      ;;
+  esac
+  # Require an explicitly scoped selector rather than accepting anything non-full.
+  case "$val" in
+    *--changed*|*--family*|*--lane*) ;;
+    *) fail "commands.test must select with --changed, --family, or --lane; got: $val" ;;
+  esac
+  # Without this, an unmapped change selects nothing, reports total=0, and the
+  # step succeeds having verified nothing at all.
+  case "$val" in
+    *--require-nonempty*) ;;
+    *) fail "commands.test must pass --require-nonempty so an empty selection cannot pass; got: $val" ;;
+  esac
+  pass "no-mistakes configures a scoped local Test command: $val"
 }
 
-test_ci_still_runs_broad_behavior_suite() {
+# The local gate cannot run the real-Herdr family without a pinned Herdr, so the
+# config must keep saying so. A partial pass must never read as full coverage.
+test_nm_documents_the_local_herdr_gap() {
+  grep -Fq 'real-herdr-gated' "$NM" \
+    || fail ".no-mistakes.yaml must name the real-herdr-gated family as a local gap"
+  grep -Fq 'skipped_gate' "$NM" \
+    || fail ".no-mistakes.yaml must point at the runner's skipped_gate tally as the honest signal"
+  pass ".no-mistakes.yaml documents the real-Herdr coverage gap the local gate cannot close"
+}
+
+# ci.yml is the reference definition of what complete coverage means here, and
+# the lane composition the scoped local runs are drawn from. It is not currently
+# executed on this fork, so it is a reference, never the local gate's backstop.
+test_ci_defines_the_reference_lane_composition() {
   assert_present "$CI" "ci.yml is missing"
   # Portable shards and the serial remainder cover every portable behavior
   # script through the one owner, with a deterministic inventory guard.
@@ -118,10 +143,11 @@ test_ci_still_runs_broad_behavior_suite() {
     || fail "CI must retain the repo invariants job"
   grep -Fq 'tests-herdr:' "$CI" \
     || fail "CI must retain the required Herdr Behavior job"
-  pass "CI still owns partitioned broad behavior coverage and companion jobs"
+  pass "CI still defines the partitioned reference lane composition and companion jobs"
 }
 
 test_nm_yaml_tracked
 test_nm_keeps_lint_pin
-test_nm_has_no_complete_local_test_command
-test_ci_still_runs_broad_behavior_suite
+test_nm_configures_a_scoped_local_test_command
+test_nm_documents_the_local_herdr_gap
+test_ci_defines_the_reference_lane_composition

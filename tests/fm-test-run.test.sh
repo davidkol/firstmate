@@ -190,7 +190,8 @@ test_empty_selection_emits_summary() {
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-empty.XXXXXX")
   repo="$tmp/repo"
   init_changed_fixture_repo "$repo"
-  printf 'documentation only\n' >"$repo/README.md"
+  # A clean tree is the empty selection now that prose paths select the
+  # documentation contract test rather than nothing.
   out=$(cd "$repo" && bin/fm-test-run.sh --changed --base HEAD --json "$tmp/artifacts/timing.json" 2>"$tmp/err") \
     || fail "empty valid changed selection must pass"
   [ "$out" = "FM_TEST_SUMMARY total=0 failed=0 skipped_gate=0 duration_ms=0" ] \
@@ -205,6 +206,174 @@ assert doc["families"] == []
 ' "$json" || { rm -rf "$tmp"; fail "empty selection JSON summary is wrong"; }
   rm -rf "$tmp"
   pass "empty changed selection emits deterministic text and JSON summaries"
+}
+
+# Prose surfaces used to map to no families at all, so --changed selected
+# nothing and exited 0. That made the gate vacuous for the largest class of
+# firstmate changes. Selecting only the documentation audience script then
+# under-selected: the translation contract asserts README body text and is a
+# sibling in the same family, so prose selects the whole contract family.
+test_changed_selects_contract_family_for_prose_paths() {
+  local tmp repo listed
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-prose.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  printf '#!/usr/bin/env bash\n# tests/lib.sh\n' >"$repo/tests/fm-documentation-audiences.test.sh"
+  chmod +x "$repo/tests/fm-documentation-audiences.test.sh"
+  mkdir -p "$repo/docs"
+  : >"$repo/docs/architecture.md"
+  git -C "$repo" add . >/dev/null 2>&1
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm docs-baseline
+
+  printf 'prose\n' >>"$repo/docs/architecture.md"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) \
+    || { rm -rf "$tmp"; fail "docs change must not fail selection"; }
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-documentation-audiences.test.sh' \
+    || { rm -rf "$tmp"; fail "a docs change must select the documentation contract test, got: $listed"; }
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-captain-translation-contract.test.sh' \
+    || { rm -rf "$tmp"; fail "a docs change must select the whole contract family, got: $listed"; }
+  git -C "$repo" add docs/architecture.md >/dev/null 2>&1
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm docs-change
+
+  printf 'prose\n' >>"$repo/README.md"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) \
+    || { rm -rf "$tmp"; fail "README change must not fail selection"; }
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-documentation-audiences.test.sh' \
+    || { rm -rf "$tmp"; fail "a README change must select the documentation contract test, got: $listed"; }
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-captain-translation-contract.test.sh' \
+    || { rm -rf "$tmp"; fail "a README change must select the whole contract family, got: $listed"; }
+  # Over-selecting to the contract family must still stop short of the lanes
+  # that start terminal sessions, spawn agents, and run daemons on real timing.
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-afk-pi-herdr-return-e2e.test.sh' \
+    && { rm -rf "$tmp"; fail "a README change must not select the live end-to-end lanes: $listed"; }
+
+  rm -rf "$tmp"
+  pass "prose paths select the instruction contract family instead of nothing"
+}
+
+# A skill's sibling assets and a test fixture directory are covered material, not
+# unmapped source: both used to abort the run with exit 2.
+test_changed_maps_skill_assets_and_fixtures() {
+  local tmp repo listed rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-assets.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  mkdir -p "$repo/.agents/skills/example/agents" "$repo/tests/fixtures/example-case"
+  : >"$repo/.agents/skills/example/agents/openai.yaml"
+  : >"$repo/tests/fixtures/example-case/cases.json"
+  # A test that names the fixture directory is what resolves its coverage.
+  printf '# tests/fixtures/example-case/cases.json\n' >>"$repo/tests/fm-brief.test.sh"
+  git -C "$repo" add . >/dev/null 2>&1
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm assets-baseline
+
+  printf 'model: x\n' >>"$repo/.agents/skills/example/agents/openai.yaml"
+  set +e
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD 2>/dev/null)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || { rm -rf "$tmp"; fail "a skill asset must not abort selection (exit $rc)"; }
+  [ -n "$listed" ] || { rm -rf "$tmp"; fail "a skill asset must select the instruction contract family"; }
+  git -C "$repo" checkout -- .agents/skills/example/agents/openai.yaml
+
+  printf '{}\n' >>"$repo/tests/fixtures/example-case/cases.json"
+  set +e
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD 2>/dev/null)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || { rm -rf "$tmp"; fail "a test fixture must not abort selection (exit $rc)"; }
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-brief.test.sh' \
+    || { rm -rf "$tmp"; fail "a fixture must select the test that names it, got: $listed"; }
+
+  # A fixture directly under tests/fixtures/ has no containing directory to name
+  # it. Deriving the needle from that directory yielded the literal "fixtures",
+  # which matched every script that merely mentions a fixture path and pulled in
+  # most of the suite, so only the file's own basename may resolve coverage.
+  : >"$repo/tests/fixtures/toplevel-case.json"
+  printf '# tests/fixtures/toplevel-case.json\n' >>"$repo/tests/fm-daemon.test.sh"
+  git -C "$repo" add -A >/dev/null 2>&1
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm toplevel-fixture-baseline
+
+  printf '{}\n' >>"$repo/tests/fixtures/toplevel-case.json"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) \
+    || { rm -rf "$tmp"; fail "a top-level fixture must not abort selection"; }
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-daemon.test.sh' \
+    || { rm -rf "$tmp"; fail "a top-level fixture must select the test that names it, got: $listed"; }
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-brief.test.sh' \
+    && { rm -rf "$tmp"; fail "a top-level fixture must not match every script mentioning fixtures: $listed"; }
+  git -C "$repo" add -A >/dev/null 2>&1
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm toplevel-fixture-change
+
+  # An unreferenced top-level fixture must fail closed rather than resolve to a
+  # broad match.
+  : >"$repo/tests/fixtures/unreferenced-case.json"
+  set +e
+  (cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD >/dev/null 2>"$tmp/err")
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] \
+    || { rm -rf "$tmp"; fail "an unreferenced top-level fixture must fail closed with exit 2, got $rc"; }
+  grep -Fq 'no changed-test mapping for source path: tests/fixtures/unreferenced-case.json' "$tmp/err" \
+    || { rm -rf "$tmp"; fail "unreferenced fixture failure is not actionable: $(cat "$tmp/err")"; }
+
+  rm -rf "$tmp"
+  pass "skill assets and test fixtures resolve to covering tests instead of aborting"
+}
+
+# Deleting a test used to resolve to a script path that no longer exists, get
+# silently dropped, and leave the gate with an empty selection it then refused.
+# A legitimate removal must still select its surviving family.
+test_changed_falls_back_to_family_for_deleted_test() {
+  local tmp repo listed rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-deleted.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+
+  git -C "$repo" rm -q tests/fm-brief.test.sh
+  set +e
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD --require-nonempty 2>/dev/null)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] \
+    || { rm -rf "$tmp"; fail "deleting a test must not leave the gate unverifiable (exit $rc)"; }
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-captain-translation-contract.test.sh' \
+    || { rm -rf "$tmp"; fail "a deleted test must select its surviving family, got: $listed"; }
+  printf '%s\n' "$listed" | grep -Fq 'tests/fm-brief.test.sh' \
+    && { rm -rf "$tmp"; fail "the deleted script itself must not be selected"; }
+
+  rm -rf "$tmp"
+  pass "deleting a test selects its surviving family instead of emptying the gate"
+}
+
+# The gate backstop: an empty selection must be a failure, not a silent pass.
+test_require_nonempty_refuses_empty_selection() {
+  local tmp repo out rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-nonempty.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+
+  # No changes at all: the selection is genuinely empty.
+  set +e
+  out=$(cd "$repo" && bin/fm-test-run.sh --changed --base HEAD 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || { rm -rf "$tmp"; fail "empty selection without the flag must still pass (exit $rc)"; }
+  printf '%s\n' "$out" | grep -Fq 'FM_TEST_SUMMARY total=0' \
+    || { rm -rf "$tmp"; fail "empty selection without the flag must report total=0"; }
+
+  set +e
+  out=$(cd "$repo" && bin/fm-test-run.sh --changed --base HEAD --require-nonempty 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || { rm -rf "$tmp"; fail "--require-nonempty must fail an empty selection, got exit $rc"; }
+  printf '%s\n' "$out" | grep -Fq 'nothing would have been verified' \
+    || { rm -rf "$tmp"; fail "--require-nonempty failure is not actionable: $out"; }
+  if printf '%s\n' "$out" | grep -Fq 'FM_TEST_SUMMARY total=0'; then
+    rm -rf "$tmp"
+    fail "--require-nonempty must not emit a passing total=0 summary"
+  fi
+
+  rm -rf "$tmp"
+  pass "--require-nonempty turns an empty selection into a failure"
 }
 
 test_timing_markers_and_json() {
@@ -422,13 +591,13 @@ test_ci_and_docs_call_the_owner() {
     || fail "CONTRIBUTING must document changed-file selection"
   grep -Fq 'bin/fm-test-run.sh --proven-isolated --jobs' "$CONTRIB" \
     || fail "CONTRIBUTING must document proven-isolated --jobs"
-  grep -Fq 'intent-targeted' "$CONTRIB" \
-    || fail "CONTRIBUTING must document intent-targeted no-mistakes Test"
+  grep -Fq 'bin/fm-test-run.sh --changed' "$ROOT/.no-mistakes.yaml" \
+    || fail ".no-mistakes.yaml must wire commands.test to the scoped changed-file selection"
   # Do not restore a complete-suite commands.test.
-  if grep -E '^[[:space:]]*test:[[:space:]].*tests/\*\.test\.sh' "$ROOT/.no-mistakes.yaml" >/dev/null 2>&1; then
+  if grep -E '^[[:space:]]*test:[[:space:]].*(tests/\*\.test\.sh|--all)' "$ROOT/.no-mistakes.yaml" >/dev/null 2>&1; then
     fail ".no-mistakes.yaml must not set a full-suite commands.test"
   fi
-  pass "CI and CONTRIBUTING call the one-owner runner; no full-suite local Test"
+  pass "CI and CONTRIBUTING call the one-owner runner; local Test is scoped, not full-suite"
 }
 
 test_portable_shard_union_and_coverage_guard() {
@@ -682,6 +851,10 @@ test_family_selection
 test_single_script_selection
 test_changed_file_selection_is_conservative
 test_changed_dependency_selection_and_unmapped_failure
+test_changed_selects_contract_family_for_prose_paths
+test_changed_maps_skill_assets_and_fixtures
+test_changed_falls_back_to_family_for_deleted_test
+test_require_nonempty_refuses_empty_selection
 test_empty_selection_emits_summary
 test_timing_markers_and_json
 test_aggregate_exit_behavior

@@ -26,11 +26,19 @@
 # Options:
 #   --json <path>   write a deterministic timing artifact after the run
 #   --list          print selected script paths (one per line) and exit 0
+#                   (see --require-nonempty for the one case that still fails)
 #   --base <ref>    with --changed, compare against this ref (default: origin/main)
 #   --exclude-family <name>
 #                   drop scripts whose primary family matches <name> after selection
 #                   (repeatable; portable CI lanes exclude real-herdr-gated so the
 #                   dedicated required Herdr lane owns that coverage)
+#   --require-nonempty
+#                   exit non-zero when the selection is empty instead of
+#                   reporting total=0 and succeeding. Automated gates
+#                   (.no-mistakes.yaml commands.test) pass this so an unmapped
+#                   change cannot read as a pass with nothing run. Checked
+#                   before the --list early exit, so previewing the gate's own
+#                   command cannot report a false green either.
 #   --fail-on-gate-skip <token>
 #                   after each script, fail the run if any output line contains
 #                   "skip: <token>" (e.g. --fail-on-gate-skip 'herdr not found').
@@ -80,6 +88,7 @@ JSON_PATH=
 SCRIPTS=()
 EXCLUDE_FAMILIES=()
 FAIL_ON_GATE_SKIP=
+REQUIRE_NONEMPTY=0
 JOBS=1
 JOBS_MAX=8
 
@@ -586,6 +595,9 @@ select_family() {
 families_for_test_reference() {
   local needle=$1 s
   local found=0
+  # An empty needle would match every script and silently expand to the whole
+  # suite, so it resolves to nothing instead.
+  [ -n "$needle" ] || return 1
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     if grep -Fq "$needle" "$s"; then
@@ -599,7 +611,7 @@ families_for_test_reference() {
 # Conservative path → family map. Over-selects rather than under-selects.
 # Never expands to the complete suite.
 families_for_changed_path() {
-  local path=$1
+  local path=$1 fixture_rest fixture_needle
   case "$path" in
     tests/fm-test-run.test.sh)
       printf '%s\n' pure-contract-unit
@@ -702,7 +714,11 @@ families_for_changed_path() {
     bin/fm-ff-lib.sh|bin/fm-gotmp*|bin/*pretool*)
       printf '%s\n' pure-contract-unit
       ;;
-    .agents/skills/*/SKILL.md)
+    .agents/skills/*|skills/*|.claude/skills)
+      # Whole skill directories, not just SKILL.md: sibling assets (agent
+      # descriptors, fixtures) are part of the same instruction contract.
+      # Public skills/ and the .claude/skills compatibility symlink are tracked
+      # shared material too, so neither may abort the gate as unmapped source.
       printf '%s\n' pure-contract-unit
       ;;
     .github/workflows/ci.yml|.no-mistakes.yaml)
@@ -721,6 +737,21 @@ families_for_changed_path() {
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
+    tests/fixtures/*)
+      # A fixture in a subdirectory is named by that directory in the tests that
+      # read it, so coverage resolves from the segment directly under
+      # tests/fixtures/. A fixture sitting at the top of tests/fixtures/ has no
+      # such segment: only its own basename is narrow enough to be a needle,
+      # since the enclosing directory name matches every script that merely
+      # mentions fixtures.
+      fixture_rest=${path#tests/fixtures/}
+      case "$fixture_rest" in
+        */*) fixture_needle=${fixture_rest%%/*} ;;
+        *) fixture_needle=$fixture_rest ;;
+      esac
+      families_for_test_reference "$fixture_needle" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
     bin/*)
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
@@ -729,6 +760,13 @@ families_for_changed_path() {
       printf '%s\n' "__unmapped__:$path"
       ;;
     README.md|LICENSE|assets/*|docs/*|.gitignore)
+      # Prose and repo-surface changes are covered by the instruction-generation
+      # contracts: the documentation audience and link target contract, plus the
+      # translation and instruction owner contracts that assert README body text
+      # directly. Selecting nothing here made --changed exit 0 with total=0 for
+      # the largest class of firstmate changes, and selecting the audience
+      # script alone still under-selected against those other owners.
+      printf '%s\n' pure-contract-unit
       ;;
     *)
       families_for_test_reference "$path" \
@@ -787,10 +825,23 @@ select_changed() {
     done < <(all_repo_tests)
   done
 
+  local deleted_family
   for script_name in "${wanted_scripts[@]+"${wanted_scripts[@]}"}"; do
     if [ -f "tests/$script_name" ]; then
       add_script "tests/$script_name"
+      continue
     fi
+    # The script was deleted or renamed away. Selecting nothing would leave a
+    # deletion-only change with an empty set, which --require-nonempty then
+    # reports as an unverifiable gate rather than a legitimate removal. Fall
+    # back to the surviving members of the family the script belonged to.
+    deleted_family=$(family_for_basename "$script_name")
+    while IFS= read -r s; do
+      [ -n "$s" ] || continue
+      if [ "$(family_for_basename "$(basename "$s")")" = "$deleted_family" ]; then
+        add_script "$s"
+      fi
+    done < <(all_repo_tests)
   done
 
   if [ "${#SCRIPTS[@]}" -eq 0 ]; then
@@ -1008,6 +1059,10 @@ while [ "$#" -gt 0 ]; do
       EXCLUDE_FAMILIES+=("${1#--exclude-family=}")
       shift
       ;;
+    --require-nonempty)
+      REQUIRE_NONEMPTY=1
+      shift
+      ;;
     --fail-on-gate-skip)
       [ "$#" -gt 1 ] || die "--fail-on-gate-skip requires a token (e.g. 'herdr not found')"
       FAIL_ON_GATE_SKIP=$2
@@ -1118,8 +1173,15 @@ fi
 if [ -n "$FAIL_ON_GATE_SKIP" ]; then
   SELECTION_DESC="${SELECTION_DESC};fail-on-gate-skip=$FAIL_ON_GATE_SKIP"
 fi
+if [ "$REQUIRE_NONEMPTY" -eq 1 ]; then
+  SELECTION_DESC="${SELECTION_DESC};require-nonempty"
+fi
 if [ "$JOBS" -gt 1 ]; then
   SELECTION_DESC="${SELECTION_DESC};jobs=$JOBS"
+fi
+
+if [ "${#SCRIPTS[@]}" -eq 0 ] && [ "$REQUIRE_NONEMPTY" -eq 1 ]; then
+  die "selection is empty and --require-nonempty was given; nothing would have been verified"
 fi
 
 if [ "$LIST_ONLY" -eq 1 ]; then
