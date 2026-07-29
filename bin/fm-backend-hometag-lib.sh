@@ -14,12 +14,17 @@
 #
 # fm_backend_hometag() derives a short, stable tag: a readable prefix
 # ("firstmate" for the primary home, "2ndmate-<id>" for a secondmate home
-# carrying .fm-secondmate-home) plus a short hash of the resolved FM_ROOT
+# carrying .fm-secondmate-home, "peer-<id>" for a peer home carrying
+# .fm-peer-home) plus a short hash of the resolved FM_ROOT
 # path, so distinct installations - including multiple primaries on one
 # machine - never collide even though they share one backend-global
 # namespace. Callers source this file AFTER resolving their own
 # FM_HOME/FM_ROOT fallbacks (both adapters already do this for their own
 # purposes before any other function runs).
+#
+# The FM_ROOT hash alone cannot separate peer homes, because every peer home
+# deliberately runs the SAME tracked code root and is distinguished only by
+# FM_HOME - so the readable prefix carries that identity instead.
 #
 # Moving/relocating a firstmate installation changes its FM_ROOT path and
 # therefore its tag; titles created under the old tag simply stop matching -
@@ -27,18 +32,23 @@
 # recorded absolute worktree path does not survive a move either.
 
 FM_BACKEND_HOMETAG_SECONDMATE_MARKER=".fm-secondmate-home"
+FM_BACKEND_HOMETAG_PEER_MARKER=".fm-peer-home"
+
+fm_backend_hometag_marker_id() {
+  local marker=$1
+  [ -f "$marker" ] || return 0
+  tr -d '[:space:]' < "$marker" 2>/dev/null
+}
 
 fm_backend_hometag() {
-  local marker="$FM_HOME/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER" id prefix root hash
-  if [ -f "$marker" ]; then
-    id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
-    if [ -n "$id" ]; then
-      prefix="2ndmate-$id"
-    else
-      prefix="firstmate"
-    fi
+  local id prefix root hash
+  prefix="firstmate"
+  id=$(fm_backend_hometag_marker_id "$FM_HOME/$FM_BACKEND_HOMETAG_SECONDMATE_MARKER")
+  if [ -n "$id" ]; then
+    prefix="2ndmate-$id"
   else
-    prefix="firstmate"
+    id=$(fm_backend_hometag_marker_id "$FM_HOME/$FM_BACKEND_HOMETAG_PEER_MARKER")
+    [ -z "$id" ] || prefix="peer-$id"
   fi
   root=$(cd "$FM_ROOT" 2>/dev/null && pwd -P) || root=$FM_ROOT
   if command -v shasum >/dev/null 2>&1; then

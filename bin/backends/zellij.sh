@@ -275,9 +275,19 @@ fm_backend_zellij_tab_for_pane() {  # <session> <pane_id>
     | jq -r --argjson p "$pane_id" '.[]? | select(.id == $p and .is_plugin == false) | .tab_id' 2>/dev/null | head -1
 }
 
+# The listing is captured before jq sees it, and a failed call or empty output
+# is an explicit "not present". Piping the CLI straight into `jq -e` reported
+# the OPPOSITE: `jq -e` exits 0 on EMPTY input (it has no last output value to
+# judge, unlike valid JSON with no match, which exits 1), so a dead zellij
+# server, a closed session, or any CLI error made this liveness probe answer
+# "the pane is alive". target_ready, send_literal, and send_key all gate on it,
+# so firstmate typed into a dead target and reported success instead of
+# send-failed - the same defect fixed in fm_backend_cmux_surface_exists.
 fm_backend_zellij_pane_exists() {  # <session> <pane_id>
-  local session=$1 pane_id=$2
-  fm_backend_zellij_cli "$session" action list-panes --json 2>/dev/null \
+  local session=$1 pane_id=$2 panes
+  panes=$(fm_backend_zellij_cli "$session" action list-panes --json 2>/dev/null) || return 1
+  [ -n "$panes" ] || return 1
+  printf '%s' "$panes" \
     | jq -e --argjson p "$pane_id" '[.[]? | select(.id == $p and .is_plugin == false)] | length > 0' >/dev/null 2>&1
 }
 

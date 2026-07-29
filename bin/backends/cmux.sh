@@ -397,9 +397,19 @@ fm_backend_cmux_parse_target() {  # <target>
 # instead - mirroring zellij's own pane_exists check
 # (fm_backend_zellij_pane_exists) rather than the design sketch's original
 # read-screen-based suggestion.
+# The listing is captured before jq sees it, and a failed call or empty output
+# is an explicit "not present". Piping the CLI straight into `jq -e` reported
+# the OPPOSITE: `jq -e` exits 0 on EMPTY input (it has no last output value to
+# judge, unlike valid JSON with no match, which exits 1), so an unreachable
+# control socket, a closed workspace, or any CLI error made this liveness probe
+# answer "the surface is alive". target_ready, send_literal, and send_key all
+# gate on it, so firstmate typed into a dead target and reported success
+# instead of send-failed.
 fm_backend_cmux_surface_exists() {  # <workspace_id> <surface_id>
-  local wsid=$1 sfid=$2
-  fm_backend_cmux_cli list-panes --workspace "$wsid" --json --id-format uuids 2>/dev/null \
+  local wsid=$1 sfid=$2 panes
+  panes=$(fm_backend_cmux_cli list-panes --workspace "$wsid" --json --id-format uuids 2>/dev/null) || return 1
+  [ -n "$panes" ] || return 1
+  printf '%s' "$panes" \
     | jq -e --arg s "$sfid" '[.panes[]? | select(.surface_ids // [] | index($s))] | length > 0' >/dev/null 2>&1
 }
 

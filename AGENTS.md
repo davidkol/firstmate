@@ -207,6 +207,10 @@ A secondmate is idle by default and acts only on work routed by the main firstma
 It reconciles its own work under way after restart, then waits silently; an empty queue never authorizes a survey, audit, or self-directed improvement sweep.
 Do not reconstruct or supervise a secondmate's child tree from the main home.
 
+A home the captain opens and talks to directly is a peer home, not a secondmate: a full firstmate over its own backlog, clones, crew, and session lock, seeded with `bin/fm-home-seed.sh <id> <home> --peer` and opened with `bin/fm-open.sh <home> <harness>`.
+Never register one in `data/secondmates.md` or route work down to it, because the captain reaches it directly.
+`docs/configuration.md` owns the home-kind distinction, and those two scripts own their mechanics.
+
 Route durable knowledge to its most specific owner:
 
 - Home-domain captain preferences and working style belong in `data/captain.md` after inspect-then-update.

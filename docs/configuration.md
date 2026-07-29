@@ -81,14 +81,14 @@ These five sentences are the single owner of the task-selector vocabulary; backe
 `fm-teardown.sh <id>` takes a task id directly and validates the complete metadata-only endpoint identity before any runtime dispatch or cleanup mutation.
 Missing, empty, duplicate, malformed, backend-inconsistent, or task-mismatched endpoint records are preserved and refused.
 Legacy tmux metadata remains cleanup-compatible when its exact window name is `fm-<id>`; opaque non-tmux endpoints require their recorded `endpoint_task_id=` binding.
-By default, Herdr workspaces are derived from `FM_HOME`: the primary home uses `firstmate`, and a secondmate home marked by `.fm-secondmate-home` uses `2ndmate-<secondmate-id>`.
+By default, Herdr workspaces are derived from `FM_HOME`: the primary home uses `firstmate`, a peer home marked by `.fm-peer-home` uses `peer-<peer-id>`, and a secondmate home marked by `.fm-secondmate-home` uses `2ndmate-<secondmate-id>` (see [Home kinds](#home-kinds)).
 The default-container spawn, list-live, and recovery paths read that label from the active home, so a secondmate's own crewmates stay inside that secondmate home's herdr space.
 The optional local `config/herdr-presentation-spaces` presence flag instead enables Herdr's default-off disposable single-task visual projection; [Optional presentation spaces](herdr-backend.md#optional-presentation-spaces) owns its behavior, safety limits, recovery contract, and narrow locked session-start cleanup of exact restored idle-shell children.
 The flag is default-off and inherited into secondmate homes under the primary-authoritative contract owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
 For normal herdr operations, `HERDR_SESSION` selects the named session, but destructive test cleanup must not rely on `HERDR_SESSION` alone.
 Use the explicit guarded cleanup path described in [`docs/herdr-backend.md`](herdr-backend.md) instead of `herdr server stop`.
 For normal zellij operations, `FM_ZELLIJ_SESSION` selects the named session and defaults to `firstmate`.
-Zellij has no per-home workspace split: primary and secondmate tasks share that one session, and visible tab titles are scoped by the active `FM_HOME` readable label plus a short hash of the resolved `FM_ROOT` path as `fm-<home-label>-<id>`.
+Zellij has no per-home workspace split: primary, peer, and secondmate tasks share that one session, and visible tab titles are scoped by the active `FM_HOME` readable label plus a short hash of the resolved `FM_ROOT` path as `fm-<home-label>-<id>`.
 Use the guarded cleanup path described in [`docs/zellij-backend.md`](zellij-backend.md) instead of `kill-all-sessions` or `delete-all-sessions`.
 cmux has no session layer at all - one workspace per task, in whatever cmux window is open - and its socket password (when configured) is read from local, gitignored `config/cmux-socket-password` under the effective config directory, never committed.
 The caller-facing label remains `fm-<id>`, but the actual cmux workspace title is scoped by the active `FM_HOME` readable label plus a short hash of the resolved `FM_ROOT` path as `fm-<home-label>-<id>`.
@@ -174,6 +174,25 @@ For the zellij backend, `FM_HOME` does not split containers, but it determines t
 The full zellij home label also includes a short hash of the resolved `FM_ROOT` path.
 For the cmux backend, `FM_CONFIG_OVERRIDE` overrides where `config/cmux-socket-password` is read from, while `FM_HOME` determines the default config path and readable home prefix embedded in workspace titles.
 The full cmux home label also includes a short hash of the resolved `FM_ROOT` path, and there is no per-home container split.
+
+### Home kinds
+
+This subsection is the single owner of the difference between the three home kinds; every other mention points here.
+A home root carries at most one marker file, and that marker is what tells the kinds apart.
+
+- The **primary home** is the tracked code root itself, used when `FM_HOME` is unset.
+  It carries no marker.
+- A **peer home** is an ordinary directory holding only `data/`, `state/`, `config/`, and `projects/`, plus a `.fm-peer-home` marker naming its id.
+  It has no copy of this repo, no charter, and no route in any `data/secondmates.md`, because it is not a direct report: the captain opens it directly with [`bin/fm-open.sh`](../bin/fm-open.sh) and talks to it as a peer.
+  A peer session is a full firstmate over its own backlog, project clones, crew, and session lock, exactly as [`AGENTS.md`](../AGENTS.md) describes with nothing overlaid.
+  Because `bin/fm-open.sh` runs it against this tracked code root through `FM_HOME`, a peer home never holds scripts or instructions that can drift, and `/updatefirstmate` reaches every peer home by updating this one repo.
+- A **secondmate home** is a checkout or leased worktree of this repo carrying `.fm-secondmate-home`, `data/charter.md`, and a route in its parent's `data/secondmates.md`.
+  It is idle by default and works only on what its parent routes down; [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md) owns its whole lifecycle.
+
+Peer homes deliberately share one `FM_ROOT`, so the marker is the only thing that separates them.
+Session-provider adapters whose container namespace is machine-global therefore derive their per-home label from that marker, prefixing `firstmate`, `peer-<id>`, or `2ndmate-<id>`; [`bin/fm-backend-hometag-lib.sh`](../bin/fm-backend-hometag-lib.sh) and herdr's `fm_backend_herdr_workspace_label` own that derivation.
+[`bin/fm-home-seed.sh`](../bin/fm-home-seed.sh) provisions peer and secondmate homes and owns their exact seeding mechanics and refusals.
+Move existing backlog items into a new peer home with `tasks-axi mv <id>... --to <home>/data/backlog.md`, since [`bin/fm-backlog-handoff.sh`](../bin/fm-backlog-handoff.sh) stays the secondmate-only route helper.
 
 ## Harness support
 
