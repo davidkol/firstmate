@@ -1,6 +1,6 @@
 ---
 name: stow
-description: Sweep the current session for uncaptured durable knowledge and file it to disk before a context reset. Use when the captain invokes /stow (e.g. "/stow", "stow what you've learned"), before a session reset or context compaction, or periodically to keep operational memory current.
+description: Sweep the current session for uncaptured durable knowledge and file it to disk before a context reset. Use when the captain invokes /stow (e.g. "/stow", "stow what you've learned"), before a session reset or context compaction, periodically to keep operational memory current, and before promoting a home-local learning into firstmate's shared tracked surface.
 user-invocable: true
 metadata:
   internal: true
@@ -32,6 +32,7 @@ The goal is a session that is safe to reset or destroy because everything durabl
    - Captain preferences and fleet-local operational facts: hand-write directly to the destination selected by AGENTS.md's knowledge-routing table, using inspect-then-update every time.
      Before writing, inspect the destination, find the existing bullet or section the finding duplicates or supersedes, and rewrite it in place rather than adding a new trailing entry.
      `data/learnings.md` may not exist yet; create it on first local learning, in the same dated, evidence-backed, curated style as the captain-preference files.
+     If it holds an `fm-promotion` marker line, that block belongs to `bin/fm-learning-promote.sh`: curate around it, leave its shape alone, and never copy that marker line elsewhere in the file, because `land` refuses a block it did not write and refuses a slug carrying more than one marker line rather than risk deleting entries that are not part of it, and this file is gitignored with no recovery.
    - Project-intrinsic knowledge: never hand-write a project's `AGENTS.md`.
      Route it through a normal ship task so a crewmate records it via `bin/fm-ensure-agents-md.sh` and commits it through that project's delivery pipeline, exactly as section 6 describes.
      If the fleet is live, delegate this to a crewmate rather than doing it inline.
@@ -49,12 +50,36 @@ The goal is a session that is safe to reset or destroy because everything durabl
    - Can this be a one-sentence rewrite instead of a new entry?
    - Should an older bullet or note be deleted, retired, or archived because it is now obsolete?
    When a finding overlaps or supersedes something already on disk, rewrite or prune the existing entry instead of piling on a new one.
-   Graduation moves are limited to exactly three: promote a learning to the shared `AGENTS.md` via PR, fold it into the captain-preference destination selected by AGENTS.md, or delete a stale entry.
+   Graduation moves are limited to exactly three: promote a learning into firstmate's shared tracked surface under "Promoting a learning into the tracked repo" below, fold it into the captain-preference destination selected by AGENTS.md, or delete a stale entry.
    Do not invent other graduation paths.
 
 5. **Report to the captain.**
    Summarize, in plain outcome language (section 9): what was stowed and where, what was filed to the backlog, and whether the session is now safe to reset or destroy - i.e. whether every durable finding from this sweep now lives on disk rather than only in this conversation.
    If something could not be captured yet (for example, project-intrinsic knowledge waiting on a crewmate to land it), say so explicitly rather than reporting the session fully safe.
+
+## Promoting a learning into the tracked repo
+
+A home's `data/learnings.md` is gitignored and home-local, and there is deliberately no shared learnings file between homes, because a shared file is the thing that rots.
+The only path that reaches every home runs upward: the lesson lands in this repo's shared tracked material through the normal delivery path, and every home picks it up on its next update.
+
+**A learning graduates onto that path only when it is true in more than one project and somebody makes it checkable.**
+If it cannot be made checkable it stays a note, and most good knowledge stays a note.
+A lesson true of one project belongs in that project's `AGENTS.md` or `notes/`, and a lesson true of how the captain works belongs in this home's `data/captain.md`; neither is a promotion.
+Promotion is the rare move, never the tidy default.
+
+Promotion runs in two phases with a gate between them, because retiring the local entry before the tracked change lands destroys it, and never retiring it leaves the same lesson in two places:
+
+1. `bin/fm-learning-promote.sh start <slug> --to <path> --evidence <where it proved true> --checkable <what makes it checkable> --landed-text <the distinguishing phrase the landed change will put in the destination>` records the promotion in flight in this home's `data/learnings.md`, so the session-start digest prints it every session until it is finished.
+   It refuses an unstated graduation case and a destination no other home would receive; it cannot judge whether your stated evidence is true, so that judgment stays with you and the review pipeline.
+   Choose `--landed-text` from the sentence you actually intend to add, not a paraphrase, because it is the only thing proving this lesson landed rather than someone else's.
+2. Ship the tracked change through this repo's normal branch, no-mistakes, PR, and captain-merge path, exactly like any other shared-material change.
+   Never hand-commit it to the default branch.
+3. `bin/fm-learning-promote.sh land <slug>` refuses until the destination on the default branch actually contains that phrase, and on success replaces the in-flight record with a one-line pointer to the tracked owner.
+   A merely changed destination is not enough: `AGENTS.md` is touched by nearly every shared-material PR, so a weaker check would retire a lesson that never landed.
+   Delete the original local entry that pointer supersedes in the same pass, so the lesson lives in exactly one place.
+
+Read `bin/fm-learning-promote.sh --help` for exact flags, paths, and refusals.
+Inside step 2 the destination is chosen by the knowledge-placement decision tree in the `firstmate-coding-guidelines` skill, as a deliberate reviewed repo change; that is not this sweep writing to a skill, and the exclusion below is unchanged.
 
 ## Scope exclusion: no skill storage
 
