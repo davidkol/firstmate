@@ -2,8 +2,8 @@
 name: project-management
 description: >-
   Agent-only procedure for Firstmate project management.
-  Use before adding, creating, removing, or initializing a project.
-  Owns project add, create, clone, remove, initialization, registry, delivery-mode, autonomy, and outward-consent decisions.
+  Use before adding, creating, removing, initializing, or reconciling a project.
+  Owns project add, create, clone, remove, initialization, state-surface reconciliation, registry, delivery-mode, autonomy, and outward-consent decisions.
 user-invocable: false
 metadata:
   internal: true
@@ -11,7 +11,7 @@ metadata:
 
 # project-management
 
-Use this procedure before adding, creating, removing, or initializing a project.
+Use this procedure before adding, creating, removing, initializing, or reconciling a project.
 This skill is the single owner of Firstmate's project-management procedure.
 It does not replace `secondmate-provisioning`, which owns project clones inside persistent secondmate homes.
 
@@ -67,6 +67,42 @@ cd projects/<name> && no-mistakes init && no-mistakes doctor
 Initialization configures the local gate and does not vendor a no-mistakes skill into the project.
 Do not create a commit merely because initialization ran.
 If doctor reports an environment, authentication, or daemon problem, resolve that blocker before dispatching work and never restart the shared daemon from a project operation.
+
+## Reconcile the project's state surfaces
+
+Do this once per project, before dispatching its first task, on newly added projects and on existing ones alike.
+It is a reconciliation, not an install: every project that has been worked on already has entry points, handoff documents, question registers, decision records, notes stores and check commands, and in most of them the surface the repo itself routes to is stale.
+Seeding a fresh set over the top adds one more surface to the pile, which is the problem this exists to reduce.
+`bin/fm-project-reconcile.sh` owns the mechanics; its header and `--help` own the exact flags, report-line prefixes and exit codes.
+
+Run the read-only report against the project clone first.
+Reading a project is always allowed, so firstmate runs this itself.
+Then route what it reports:
+
+- A `COLLISION:` line means two or more surfaces cover the same job.
+  Tell the captain in plain language and file the consolidation as its own backlog item.
+  Do not retire a surface on your own, and never delete one.
+- A `DISAGREEMENT:` line means two surfaces disagree about what is true, and the captain owns which one survives.
+  Load `decision-hold-lifecycle` and register each one as a durable hold with a stated default.
+  Never pick a side, and never pre-empt a hold that is already open on the board.
+- A `GAP:` line names something absent or unlanded that no script can resolve for the project.
+  A missing check command is the one that matters most: it degrades the done checklist to a named gap and never to a silent pass.
+  Uncommitted work is reported here too, with the paths named, because state that lives only in a working tree and in no document is how a session rebuilds what the project already has.
+  A gap informs the brief; it is not a captain hold and never blocks the seed.
+- `SEED:` lines are the plan for what is genuinely missing.
+
+Seeding is a project write, so a crewmate carries it through the project's selected delivery path, the same way it creates a project `AGENTS.md`.
+Brief that crewmate to run the script with `--seed` inside its own worktree.
+The script refuses `--seed` (exit 4) against a clone under a firstmate home's `projects/` directory, so the boundary holds even if a brief is wrong.
+It also resolves every planned path through its symlinks first and refuses the whole plan (exit 5) if any one of them lands outside the project directory, so a detector that is wrong about what is missing still cannot write outside the repo.
+Both refusals write nothing at all rather than the part of the plan that would have landed inside.
+The read-only report names those escaping paths as a gap too, so the plan you brief a crewmate from is the plan that will actually run.
+
+Two files are deliberately never seeded, by captain ruling of 2026-07-28.
+There is no repo-side `QUESTIONS.md`, because questions live on firstmate's board, which already reaches the captain and already carries a stated default and a desk-or-play axis; a second register lets a question be open in one place and invisible in the other.
+There is no `handoff/<name>.md`, because firstmate is the handoff and a hand-written summary of state firstmate already writes is exactly what goes stale.
+What survives from the handoff idea is the habit that whoever picks up work runs the check themselves, which the task instructions already carry.
+Existing copies of either file are reported and left alone; propose retiring one only through the captain.
 
 ## Remove
 

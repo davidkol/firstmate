@@ -34,9 +34,9 @@ test_new_skill_metadata_and_triggers() {
     "diagnostic skill metadata lost its precise load trigger"
   assert_grep '`diagnostic-reasoning` - load before scoping a reported bug and before acting on a diagnostic report.' "$ROOT/AGENTS.md" \
     "AGENTS.md lost the diagnostic-reasoning trigger"
-  assert_grep 'Use before adding, creating, removing, or initializing a project.' "$PROJECT" \
+  assert_grep 'Use before adding, creating, removing, initializing, or reconciling a project.' "$PROJECT" \
     "project-management skill metadata lost its precise load trigger"
-  assert_grep '`project-management` - load before adding, creating, removing, or initializing a project.' "$ROOT/AGENTS.md" \
+  assert_grep '`project-management` - load before adding, creating, removing, initializing, or reconciling a project.' "$ROOT/AGENTS.md" \
     "AGENTS.md lost the project-management trigger"
   pass "new internal skills have one precise AGENTS.md trigger each"
 }
@@ -76,6 +76,24 @@ test_project_management_owner_covers_guarded_operations() {
     assert_grep "$phrase" "$PROJECT" "project-management owner is missing '$phrase'"
   done
   pass "project-management owns registry, delivery posture, consent, initialization, and removal safety"
+}
+
+test_project_management_owner_covers_state_surface_reconciliation() {
+  for phrase in \
+    'It is a reconciliation, not an install' \
+    'bin/fm-project-reconcile.sh' \
+    'Reading a project is always allowed' \
+    'never delete one' \
+    'decision-hold-lifecycle' \
+    'Never pick a side' \
+    'never to a silent pass' \
+    'a crewmate carries it through the project' \
+    'no repo-side `QUESTIONS.md`' \
+    'no `handoff/<name>.md`' \
+    'firstmate is the handoff'; do
+    assert_grep "$phrase" "$PROJECT" "project-management reconciliation owner is missing '$phrase'"
+  done
+  pass "project-management owns reconciliation routing, the two excluded files, and the write boundary"
 }
 
 test_generic_effort_fallback_respects_precedence() {
@@ -295,6 +313,7 @@ test_compressed_agents_retains_authority_and_supervision_safety() {
 test_new_skill_metadata_and_triggers
 test_diagnostic_owner_covers_causal_procedure
 test_project_management_owner_covers_guarded_operations
+test_project_management_owner_covers_state_surface_reconciliation
 test_generic_effort_fallback_respects_precedence
 test_agent_owned_quota_array_dispatch_contract
 test_shared_authoring_requirements_are_owned
