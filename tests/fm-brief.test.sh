@@ -775,7 +775,7 @@ test_project_memory_paths_are_named_when_they_exist() {
 # The store key is a lossy mangling: "/", " ", "." and "_" all become "-", so a
 # store name cannot be split back into path components and a project-name suffix
 # match cannot tell a separator from a literal dash. Matching "Dungeon" that way
-# hands a crewmate the notes of "/Users/davidkol/projects/Godot/Gacha Dungeon".
+# hands a crewmate the notes of "/captain/projects/Godot/Gacha Dungeon".
 # The suffix match does select that directory, so the rejection has to come from
 # the working directory its transcripts recorded: basename "Gacha Dungeon" is not
 # "Dungeon".
@@ -788,9 +788,9 @@ test_project_memory_never_resolves_to_another_project() {
   clone="$home/projects/Dungeon"
   mkdir -p "$home/data" "$home/projects"
   fm_git_init_commit "$clone"
-  mkdir -p "$store/projects/-Users-davidkol-projects-Godot-Gacha-Dungeon/memory"
-  seed_store_transcript "$store/projects/-Users-davidkol-projects-Godot-Gacha-Dungeon" \
-    "/Users/davidkol/projects/Godot/Gacha Dungeon"
+  mkdir -p "$store/projects/-captain-projects-Godot-Gacha-Dungeon/memory"
+  seed_store_transcript "$store/projects/-captain-projects-Godot-Gacha-Dungeon" \
+    "/captain/projects/Godot/Gacha Dungeon"
 
   id="brief-memory-collision-i1"
   CLAUDE_CONFIG_DIR="$store" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Dungeon >/dev/null 2>&1
@@ -854,7 +854,7 @@ test_project_memory_confirms_a_candidate_by_its_recorded_cwd() {
   store="$TMP_ROOT/memory-cwd-store"
   clone="$home/projects/Widget"
   # The owner's checkout is not on this machine at all - only the store knows it.
-  owner="/Users/someone/projects/Godot/Widget"
+  owner="/captain/projects/Godot/Widget"
   mkdir -p "$home/data" "$home/projects"
   fm_git_init_commit "$clone"
   git -C "$clone" remote add origin "https://github.com/someone/Widget.git"
@@ -880,7 +880,7 @@ test_project_memory_drops_a_candidate_with_no_recorded_cwd() {
   home="$TMP_ROOT/memory-nocwd-home"
   store="$TMP_ROOT/memory-nocwd-store"
   clone="$home/projects/Widget"
-  owner="/Users/someone/projects/Godot/Widget"
+  owner="/captain/projects/Godot/Widget"
   mkdir -p "$home/data" "$home/projects"
   fm_git_init_commit "$clone"
   git -C "$clone" remote add origin "https://github.com/someone/Widget.git"

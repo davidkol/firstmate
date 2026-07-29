@@ -1,7 +1,27 @@
 #!/usr/bin/env bash
-# Provision and route persistent secondmate homes.
+# Provision isolated firstmate homes: persistent secondmate homes, and peer
+# homes the captain opens and talks to directly.
+# docs/configuration.md "FM_HOME" owns the peer/secondmate distinction.
 #
 # Usage:
+#   fm-home-seed.sh <id> <home> --peer {<project>...|--no-projects}
+#       Provision <home> as a PEER firstmate home: an ordinary directory holding
+#       only data/, state/, config/, and projects/, plus a .fm-peer-home marker
+#       naming <id>. It gets NO copy of this repo, NO charter, and NO
+#       data/secondmates.md route, because a peer home is a full firstmate over
+#       its own board and crew rather than a direct report waiting for routed
+#       work. bin/fm-open.sh runs it against THIS tracked code root through
+#       FM_HOME, so it never carries scripts or instructions that can drift.
+#       <id> must match [A-Za-z0-9._-]+ because backend adapters embed it in
+#       per-home container labels. The leased-worktree "-" home form is refused:
+#       a peer home needs no worktree of this repo.
+#       The target must be an unused path, an empty directory, or the same peer
+#       home being re-seeded; a path inside another firstmate home, overlapping
+#       a registered secondmate home, or holding other content is refused
+#       without change. Projects are cloned from the active home exactly as
+#       below, and seeding is transactional in the same way.
+#       Move existing backlog items into the new home with
+#       `tasks-axi mv <id>... --to <home>/data/backlog.md`.
 #   fm-home-seed.sh <id> <home|-> {<project>...|--no-projects}
 #       Provision <home> as an isolated firstmate home. If <home> is "-", acquire
 #       a fresh firstmate worktree via "treehouse get --lease", which durably
@@ -38,9 +58,16 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 REG="$DATA/secondmates.md"
 SUB_HOME_MARKER=".fm-secondmate-home"
+PEER_HOME_MARKER=".fm-peer-home"
+# Noun for the path-boundary, operational-directory, and rollback validators the
+# two home kinds share. seed_home sets it once per run so a peer seed's refusals
+# name a peer home, while every secondmate message stays byte-identical to what
+# its callers and tests already expect.
+SEED_HOME_NOUN=secondmate
 
 usage() {
-  echo "usage: fm-home-seed.sh <id> <home|-> {<project>...|--no-projects}" >&2
+  echo "usage: fm-home-seed.sh <id> <home> --peer {<project>...|--no-projects}" >&2
+  echo "       fm-home-seed.sh <id> <home|-> {<project>...|--no-projects}" >&2
   echo "       fm-home-seed.sh validate" >&2
 }
 
@@ -319,31 +346,31 @@ refuse_active_home_path() {
   abs_active_home=$(resolved_path "$FM_HOME")
   abs_root=$(resolved_path "$FM_ROOT")
   if [ "$abs_home" = "/" ]; then
-    echo "error: secondmate home cannot be the filesystem root: $home" >&2
+    echo "error: $SEED_HOME_NOUN home cannot be the filesystem root: $home" >&2
     return 1
   fi
   if [ "$abs_home" = "$abs_active_home" ]; then
-    echo "error: secondmate home cannot be the active firstmate home: $home" >&2
+    echo "error: $SEED_HOME_NOUN home cannot be the active firstmate home: $home" >&2
     return 1
   fi
   if [ "$abs_home" = "$abs_root" ]; then
-    echo "error: secondmate home cannot be the firstmate repo: $home" >&2
+    echo "error: $SEED_HOME_NOUN home cannot be the firstmate repo: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_active_home" "$abs_home"; then
-    echo "error: secondmate home cannot be inside the active firstmate home: $home" >&2
+    echo "error: $SEED_HOME_NOUN home cannot be inside the active firstmate home: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_root" "$abs_home"; then
-    echo "error: secondmate home cannot be inside the firstmate repo: $home" >&2
+    echo "error: $SEED_HOME_NOUN home cannot be inside the firstmate repo: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_home" "$abs_active_home"; then
-    echo "error: secondmate home cannot be an ancestor of the active firstmate home: $home" >&2
+    echo "error: $SEED_HOME_NOUN home cannot be an ancestor of the active firstmate home: $home" >&2
     return 1
   fi
   if path_is_ancestor_of "$abs_home" "$abs_root"; then
-    echo "error: secondmate home cannot be an ancestor of the firstmate repo: $home" >&2
+    echo "error: $SEED_HOME_NOUN home cannot be an ancestor of the firstmate repo: $home" >&2
     return 1
   fi
 }
@@ -352,7 +379,7 @@ validate_operational_dir() {
   local home=$1 name=$2 dir abs_home abs_dir abs_active_home abs_root
   dir="$home/$name"
   if [ -L "$dir" ] && [ ! -e "$dir" ]; then
-    echo "error: secondmate $name directory must resolve inside the secondmate home: $dir" >&2
+    echo "error: $SEED_HOME_NOUN $name directory must resolve inside the $SEED_HOME_NOUN home: $dir" >&2
     return 1
   fi
   abs_home=$(resolved_path "$home")
@@ -360,15 +387,15 @@ validate_operational_dir() {
   abs_active_home=$(resolved_path "$FM_HOME")
   abs_root=$(resolved_path "$FM_ROOT")
   if ! path_is_ancestor_of "$abs_home" "$abs_dir"; then
-    echo "error: secondmate $name directory must resolve inside the secondmate home: $dir" >&2
+    echo "error: $SEED_HOME_NOUN $name directory must resolve inside the $SEED_HOME_NOUN home: $dir" >&2
     return 1
   fi
   if [ "$abs_dir" = "$abs_active_home" ] || path_is_ancestor_of "$abs_active_home" "$abs_dir"; then
-    echo "error: secondmate $name directory cannot be inside the active firstmate home: $dir" >&2
+    echo "error: $SEED_HOME_NOUN $name directory cannot be inside the active firstmate home: $dir" >&2
     return 1
   fi
   if [ "$abs_dir" = "$abs_root" ] || path_is_ancestor_of "$abs_root" "$abs_dir"; then
-    echo "error: secondmate $name directory cannot be inside the firstmate repo: $dir" >&2
+    echo "error: $SEED_HOME_NOUN $name directory cannot be inside the firstmate repo: $dir" >&2
     return 1
   fi
 }
@@ -383,10 +410,10 @@ validate_operational_dirs() {
 validate_seed_leaf_files() {
   local home=$1 label path abs_home abs_path
   abs_home=$(resolved_path "$home")
-  for label in "data/projects.md" "data/charter.md" "$SUB_HOME_MARKER"; do
+  for label in "data/projects.md" "data/charter.md" "$SUB_HOME_MARKER" "$PEER_HOME_MARKER"; do
     path="$home/$label"
     if [ -L "$path" ]; then
-      echo "error: secondmate leaf file must not be a symlink: $path" >&2
+      echo "error: $SEED_HOME_NOUN leaf file must not be a symlink: $path" >&2
       return 1
     fi
     [ -e "$path" ] || continue
@@ -394,7 +421,7 @@ validate_seed_leaf_files() {
     case "$abs_path" in
       "$abs_home"/*) ;;
       *)
-        echo "error: secondmate leaf file must resolve inside the secondmate home: $path" >&2
+        echo "error: $SEED_HOME_NOUN leaf file must resolve inside the $SEED_HOME_NOUN home: $path" >&2
         return 1
         ;;
     esac
@@ -411,11 +438,11 @@ validate_project_destination() {
   abs_active_home=$(resolved_path "$FM_HOME")
   abs_root=$(resolved_path "$FM_ROOT")
   if ! path_is_ancestor_of "$abs_home" "$abs_projects"; then
-    echo "error: secondmate projects directory must resolve inside the secondmate home: $projects_dir" >&2
+    echo "error: $SEED_HOME_NOUN projects directory must resolve inside the $SEED_HOME_NOUN home: $projects_dir" >&2
     return 1
   fi
   if ! path_is_ancestor_of "$abs_projects" "$abs_dst"; then
-    echo "error: seeded project $project destination must resolve inside the secondmate projects directory: $dst" >&2
+    echo "error: seeded project $project destination must resolve inside the $SEED_HOME_NOUN projects directory: $dst" >&2
     return 1
   fi
   if [ "$abs_dst" = "$abs_active_home" ] || path_is_ancestor_of "$abs_active_home" "$abs_dst"; then
@@ -533,8 +560,106 @@ EOF
   return 1
 }
 
+validate_peer_id() {
+  local id=$1
+  case "$id" in
+    ''|*[!A-Za-z0-9._-]*)
+      echo "error: peer home id must match [A-Za-z0-9._-]+ because backend adapters embed it in per-home container labels: ${id:-<empty>}" >&2
+      return 1
+      ;;
+  esac
+}
+
+# Refuse a target that sits inside another firstmate home. Walking the target's
+# ancestors for either home marker is cheaper and cannot go stale the way a
+# registry of peer homes would, and peer homes deliberately have no registry.
+refuse_nested_peer_home() {
+  local home=$1 probe
+  probe=$(resolved_path "$home")
+  while :; do
+    probe=$(dirname "$probe")
+    [ "$probe" != "/" ] || return 0
+    if [ -f "$probe/$PEER_HOME_MARKER" ] || [ -f "$probe/$SUB_HOME_MARKER" ]; then
+      echo "error: peer home $home is inside firstmate home $probe" >&2
+      return 1
+    fi
+  done
+}
+
+# Peer homes are absent from data/secondmates.md by design, but a secondmate
+# home registered there is still a real home whose operational directories a
+# peer home must never overlap. Unlike the secondmate assignment check, an exact
+# match on the same id is refused too: the two home kinds are separate
+# namespaces, so a shared path is always a collision.
+refuse_registered_secondmate_overlap() {
+  local home=$1 target line registered_id registered_home registered_key
+  [ -f "$REG" ] || return 0
+  target=$(resolved_path "$home")
+  while IFS= read -r line; do
+    case "$line" in
+      "- "*) ;;
+      *) continue ;;
+    esac
+    registered_id=${line#- }
+    registered_id=${registered_id%% *}
+    registered_home=$(printf '%s\n' "$line" | registry_home_for_line)
+    [ -n "$registered_home" ] || continue
+    registered_key=$(resolved_path "$registered_home")
+    if [ "$registered_key" = "$target" ] \
+      || path_is_ancestor_of "$registered_key" "$target" \
+      || path_is_ancestor_of "$target" "$registered_key"; then
+      echo "error: peer home $home overlaps registered secondmate home $registered_key for $registered_id" >&2
+      return 1
+    fi
+  done < "$REG"
+  return 0
+}
+
+# Accept only an unused path, an empty directory, or a re-seed of this same peer
+# home. Anything else could be a project clone, a secondmate home, or another
+# home's operational directory, so it is refused without being changed.
+validate_peer_home_target() {
+  local id=$1 home=$2 marker_id entry
+  if [ -L "$home" ]; then
+    echo "error: peer home path must not be a symlink: $home" >&2
+    return 1
+  fi
+  [ -e "$home" ] || return 0
+  if [ ! -d "$home" ]; then
+    echo "error: $home exists and is not a directory" >&2
+    return 1
+  fi
+  if [ -f "$home/$SUB_HOME_MARKER" ]; then
+    echo "error: $home is a secondmate home; retire it before seeding a peer home there" >&2
+    return 1
+  fi
+  if [ -f "$home/$PEER_HOME_MARKER" ]; then
+    marker_id=$(cat "$home/$PEER_HOME_MARKER" 2>/dev/null || true)
+    if [ "$marker_id" = "$id" ]; then
+      return 0
+    fi
+    echo "error: peer home $home is already marked for ${marker_id:-unknown}" >&2
+    return 1
+  fi
+  for entry in "$home"/* "$home"/.[!.]* "$home"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    echo "error: $home is not empty and is not a peer home; seed a peer home into an unused path" >&2
+    return 1
+  done
+  return 0
+}
+
+local_only_refusal() {
+  local project=$1 kind=$2
+  if [ "$kind" = peer ]; then
+    echo "error: project $project is local-only; a seeded home clones only remote-backed projects, because a second clone needs a shared upstream to reconcile through" >&2
+  else
+    echo "error: project $project is local-only; secondmate routes support only remote-backed projects" >&2
+  fi
+}
+
 clone_project() {
-  local project=$1 home=$2 src dst url dst_url mode
+  local project=$1 home=$2 kind=${3:-secondmate} src dst url dst_url mode
   src="$PROJECTS/$project"
   dst=$(validate_project_destination "$home" "$project") || return 1
   [ -d "$src" ] || { echo "error: project $project not found at $src" >&2; return 1; }
@@ -543,7 +668,7 @@ clone_project() {
 $(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
-    echo "error: project $project is local-only; secondmate routes support only remote-backed projects" >&2
+    local_only_refusal "$project" "$kind"
     return 1
   fi
   if [ -e "$dst" ]; then
@@ -562,7 +687,7 @@ EOF
 }
 
 validate_seed_project() {
-  local project=$1 src mode url
+  local project=$1 kind=${2:-secondmate} src mode url
   src="$PROJECTS/$project"
   [ -d "$src" ] || { echo "error: project $project not found at $src" >&2; return 1; }
   git -C "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: project $project is not a git repo" >&2; return 1; }
@@ -570,7 +695,7 @@ validate_seed_project() {
 $(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
 EOF
   if [ "$mode" = local-only ]; then
-    echo "error: project $project is local-only; secondmate routes support only remote-backed projects" >&2
+    local_only_refusal "$project" "$kind"
     return 1
   fi
   url=$(git -C "$src" remote get-url origin 2>/dev/null || true)
@@ -592,6 +717,7 @@ SEED_PARENT_BRIEF_DIR_CREATED=0
 SEED_SUB_REG_EXISTED=0
 SEED_CHARTER_EXISTED=0
 SEED_MARKER_EXISTED=0
+SEED_PEER_MARKER_EXISTED=0
 
 restore_seed_file() {
   local existed=$1 backup=$2 path=$3
@@ -662,11 +788,11 @@ seed_project_rollback_target() {
   abs_home=$(resolved_path "$SEED_HOME")
   abs_projects=$(resolved_path "$SEED_HOME/projects")
   if ! path_is_ancestor_of "$abs_home" "$abs_projects"; then
-    echo "REFUSED: unsafe created project rollback target $target has projects directory outside the secondmate home" >&2
+    echo "REFUSED: unsafe created project rollback target $target has projects directory outside the $SEED_HOME_NOUN home" >&2
     return 1
   fi
   if ! path_is_ancestor_of "$abs_projects" "$abs_target"; then
-    echo "REFUSED: unsafe created project rollback target $target is outside the secondmate projects directory" >&2
+    echo "REFUSED: unsafe created project rollback target $target is outside the $SEED_HOME_NOUN projects directory" >&2
     return 1
   fi
   printf '%s\n' "$abs_target"
@@ -711,6 +837,7 @@ seed_rollback() {
       fi
       if [ -n "${SEED_BACKUP_DIR:-}" ] && [ "${SEED_HOME_BACKED_UP:-0}" = 1 ]; then
         restore_seed_file "$SEED_MARKER_EXISTED" "$SEED_BACKUP_DIR/marker" "$SEED_HOME/$SUB_HOME_MARKER"
+        restore_seed_file "$SEED_PEER_MARKER_EXISTED" "$SEED_BACKUP_DIR/peer-marker" "$SEED_HOME/$PEER_HOME_MARKER"
         restore_seed_file "$SEED_CHARTER_EXISTED" "$SEED_BACKUP_DIR/charter.md" "$SEED_HOME/data/charter.md"
         restore_seed_file "$SEED_SUB_REG_EXISTED" "$SEED_BACKUP_DIR/sub-projects.md" "$SEED_HOME/data/projects.md"
       fi
@@ -841,7 +968,7 @@ refuse_populated_projectless_home() {
   fi
   [ "${#clones[@]}" -eq 0 ] && [ "${#registry_projects[@]}" -eq 0 ] && return 0
 
-  echo "error: cannot seed project-less secondmate home $home because it contains project data" >&2
+  echo "error: cannot seed project-less $SEED_HOME_NOUN home $home because it contains project data" >&2
   if [ "${#clones[@]}" -gt 0 ]; then
     printf 'error: projects/ entries: %s\n' "$(join_projects "${clones[@]}")" >&2
   fi
@@ -866,14 +993,18 @@ refuse_projectful_projectless_charter() {
 
 seed_home() {
   local id=$1 requested_home=$2 requested_abs home projects_csv project project_dst charter_summary charter_scope
-  local no_projects=0 arg
+  local no_projects=0 peer=0 arg
   local filtered=()
   shift 2
   # A deliberate --no-projects signal (anywhere in the project position) seeds a
   # project-less home; an accidental omission with no signal still fails loudly.
+  # --peer selects the peer home kind in the same position, for the same reason:
+  # it must be stated, never inferred.
   for arg in "$@"; do
     if [ "$arg" = "--no-projects" ]; then
       no_projects=1
+    elif [ "$arg" = "--peer" ]; then
+      peer=1
     else
       filtered+=("$arg")
     fi
@@ -885,13 +1016,23 @@ seed_home() {
   fi
   if [ "$no_projects" -eq 1 ]; then
     [ $# -eq 0 ] || { echo "error: --no-projects cannot be combined with a project list" >&2; return 1; }
+  elif [ "$peer" -eq 1 ]; then
+    [ $# -gt 0 ] || { echo "error: peer home needs at least one project, or --no-projects for a project-less home" >&2; return 1; }
   else
     [ $# -gt 0 ] || { echo "error: secondmate needs at least one project, or --no-projects for a project-less home" >&2; return 1; }
+  fi
+  if [ "$peer" -eq 1 ]; then
+    SEED_HOME_NOUN=peer
+    validate_peer_id "$id" || return 1
+    [ "$requested_home" != "-" ] || {
+      echo "error: --peer needs an explicit home path; the leased-worktree form exists only for secondmate homes, which are worktrees of this repo" >&2
+      return 1
+    }
   fi
 
   validate_registry
   for project in "$@"; do
-    validate_seed_project "$project"
+    validate_seed_project "$project" "$SEED_HOME_NOUN"
   done
 
   SEED_ROLLBACK_ACTIVE=1
@@ -911,13 +1052,24 @@ seed_home() {
   SEED_SUB_REG_EXISTED=0
   SEED_CHARTER_EXISTED=0
   SEED_MARKER_EXISTED=0
+  SEED_PEER_MARKER_EXISTED=0
   trap seed_rollback EXIT
   if [ -f "$REG" ]; then
     SEED_PARENT_REG_EXISTED=1
     cp "$REG" "$SEED_BACKUP_DIR/parent-secondmates.md"
   fi
 
-  if [ "$requested_home" = "-" ]; then
+  if [ "$peer" -eq 1 ]; then
+    requested_abs=$(abs_path_for_new "$requested_home")
+    refuse_active_home_path "$requested_abs" || return 1
+    refuse_nested_peer_home "$requested_abs" || return 1
+    refuse_registered_secondmate_overlap "$requested_abs" || return 1
+    validate_peer_home_target "$id" "$requested_abs" || return 1
+    SEED_HOME="$requested_abs"
+    [ -e "$requested_abs" ] || SEED_HOME_CREATED=1
+    mkdir -p "$requested_abs"
+    home=$(cd "$requested_abs" && pwd -P)
+  elif [ "$requested_home" = "-" ]; then
     SEED_HOME_ACQUIRED=1
     home=$(acquire_treehouse_home "$id")
     SEED_HOME="$home"
@@ -931,13 +1083,17 @@ seed_home() {
     home=$(ensure_home "$id" "$requested_abs")
   fi
   SEED_HOME="$home"
-  validate_registry_home_text "$home" || return 1
-  validate_home_assignment "$id" "$home"
+  # A peer home is never written into data/secondmates.md, so the registry text
+  # and assignment checks that guard that line do not apply to it.
+  if [ "$peer" -eq 0 ]; then
+    validate_registry_home_text "$home" || return 1
+    validate_home_assignment "$id" "$home"
+  fi
   validate_operational_dirs "$home" || return 1
   validate_seed_leaf_files "$home" || return 1
   if [ "$no_projects" -eq 1 ]; then
     refuse_populated_projectless_home "$home" || return 1
-    if [ -f "$SEED_PARENT_BRIEF" ]; then
+    if [ "$peer" -eq 0 ] && [ -f "$SEED_PARENT_BRIEF" ]; then
       refuse_projectful_projectless_charter "$id" "$SEED_PARENT_BRIEF" || return 1
     fi
   fi
@@ -954,40 +1110,48 @@ seed_home() {
     SEED_MARKER_EXISTED=1
     cp "$home/$SUB_HOME_MARKER" "$SEED_BACKUP_DIR/marker"
   fi
+  if [ -f "$home/$PEER_HOME_MARKER" ]; then
+    SEED_PEER_MARKER_EXISTED=1
+    cp "$home/$PEER_HOME_MARKER" "$SEED_BACKUP_DIR/peer-marker"
+  fi
   SEED_HOME_BACKED_UP=1
 
-  if [ ! -f "$SEED_PARENT_BRIEF" ]; then
-    [ -n "${FM_SECONDMATE_CHARTER:-}" ] || {
-      echo "error: no filled secondmate charter brief at $SEED_PARENT_BRIEF; set FM_SECONDMATE_CHARTER or scaffold one and replace {TASK}" >&2
+  # A peer home's job description is AGENTS.md itself, read fresh from the
+  # tracked code root at every session, so it has no charter to resolve.
+  if [ "$peer" -eq 0 ]; then
+    if [ ! -f "$SEED_PARENT_BRIEF" ]; then
+      [ -n "${FM_SECONDMATE_CHARTER:-}" ] || {
+        echo "error: no filled secondmate charter brief at $SEED_PARENT_BRIEF; set FM_SECONDMATE_CHARTER or scaffold one and replace {TASK}" >&2
+        return 1
+      }
+      [ -d "$DATA/$id" ] || SEED_PARENT_BRIEF_DIR_CREATED=1
+      if [ "$no_projects" -eq 1 ]; then
+        "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate --no-projects
+      else
+        "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate "$@"
+      fi
+      SEED_PARENT_BRIEF_CREATED=1
+    fi
+    if grep -F '{TASK}' "$SEED_PARENT_BRIEF" >/dev/null 2>&1; then
+      echo "error: secondmate charter brief at $SEED_PARENT_BRIEF still contains {TASK}; fill it before seeding" >&2
+      return 1
+    fi
+    charter_summary=$(registry_summary_for_brief "$SEED_PARENT_BRIEF")
+    [ -n "$charter_summary" ] || {
+      echo "error: secondmate charter brief at $SEED_PARENT_BRIEF has an empty Charter section; fill it before seeding" >&2
       return 1
     }
-    [ -d "$DATA/$id" ] || SEED_PARENT_BRIEF_DIR_CREATED=1
-    if [ "$no_projects" -eq 1 ]; then
-      "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate --no-projects
-    else
-      "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate "$@"
-    fi
-    SEED_PARENT_BRIEF_CREATED=1
+    charter_scope=$(registry_scope_for_brief "$SEED_PARENT_BRIEF")
+    [ -n "$charter_scope" ] || {
+      echo "error: secondmate charter brief at $SEED_PARENT_BRIEF has an empty Routing scope section; fill it before seeding" >&2
+      return 1
+    }
   fi
-  if grep -F '{TASK}' "$SEED_PARENT_BRIEF" >/dev/null 2>&1; then
-    echo "error: secondmate charter brief at $SEED_PARENT_BRIEF still contains {TASK}; fill it before seeding" >&2
-    return 1
-  fi
-  charter_summary=$(registry_summary_for_brief "$SEED_PARENT_BRIEF")
-  [ -n "$charter_summary" ] || {
-    echo "error: secondmate charter brief at $SEED_PARENT_BRIEF has an empty Charter section; fill it before seeding" >&2
-    return 1
-  }
-  charter_scope=$(registry_scope_for_brief "$SEED_PARENT_BRIEF")
-  [ -n "$charter_scope" ] || {
-    echo "error: secondmate charter brief at $SEED_PARENT_BRIEF has an empty Routing scope section; fill it before seeding" >&2
-    return 1
-  }
 
   for project in "$@"; do
     project_dst=$(validate_project_destination "$home" "$project") || return 1
     [ -e "$project_dst" ] || printf '%s\n' "$project_dst" >> "$SEED_CREATED_PROJECTS_FILE"
-    clone_project "$project" "$home"
+    clone_project "$project" "$home" "$SEED_HOME_NOUN"
   done
   sync_project_registry "$home" "$@"
   for project in "$@"; do
@@ -999,16 +1163,22 @@ seed_home() {
     fi
   done
 
-  cp "$SEED_PARENT_BRIEF" "$home/data/charter.md"
-
-  projects_csv=$(join_projects "$@")
-  printf '%s\n' "$id" > "$home/$SUB_HOME_MARKER"
-  write_registry "$id" "$home" "$projects_csv" "$SEED_PARENT_BRIEF"
-  validate_registry
+  if [ "$peer" -eq 1 ]; then
+    printf '%s\n' "$id" > "$home/$PEER_HOME_MARKER"
+  else
+    cp "$SEED_PARENT_BRIEF" "$home/data/charter.md"
+    projects_csv=$(join_projects "$@")
+    printf '%s\n' "$id" > "$home/$SUB_HOME_MARKER"
+    write_registry "$id" "$home" "$projects_csv" "$SEED_PARENT_BRIEF"
+    validate_registry
+  fi
   SEED_COMMITTED=1
   trap - EXIT
   rm -rf -- "$SEED_BACKUP_DIR"
   printf 'home=%s\n' "$home"
+  if [ "$peer" -eq 1 ]; then
+    printf 'next: bin/fm-open.sh %s <harness>\n' "$home"
+  fi
 }
 
 case "${1:-}" in
