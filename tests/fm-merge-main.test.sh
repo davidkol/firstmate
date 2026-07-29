@@ -19,6 +19,7 @@
 #   (h) refuses a project with no origin remote
 #   (i) refuses when the branch is also published on a non-origin remote
 #   (j) landing leaves the task worktree's commits provably landed for teardown
+#   (k) a rejected push reports and preserves the work instead of working around it
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -119,6 +120,49 @@ test_lands_published_head_and_pushes() {
   assert_grep "retired published branch origin/$BRANCH" "$case_dir/stdout" \
     "lands-published: retiring the published branch should be reported"
   pass "fm-merge-main lands the published head on main, pushes it, and retires the branch"
+}
+
+# Branch protection cannot be probed ahead of time, so a rejected push is how it
+# gets discovered. The requirement is that the rejection is reported rather than
+# worked around, and that nothing is lost while it stands: the change stays on
+# local main and the published branch is NOT retired, so the commits keep a remote
+# reference and a later retry can still land them.
+test_rejected_push_reports_and_preserves() {
+  local case_dir rc before landed
+  case_dir=$(make_case rejected-push)
+  publish_branch "$case_dir"
+  before=$(remote_main_sha "$case_dir")
+  # Stand in for branch protection: refuse any update to the default branch.
+  cat > "$case_dir/remote.git/hooks/pre-receive" <<'SH'
+#!/usr/bin/env bash
+while read -r _old _new ref; do
+  case "$ref" in
+    refs/heads/main) echo "remote: protected branch main: updates are not permitted" >&2; exit 1 ;;
+  esac
+done
+exit 0
+SH
+  chmod +x "$case_dir/remote.git/hooks/pre-receive"
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "rejected-push: fm-merge-main should report a rejected push"
+  assert_grep 'was rejected' "$case_dir/stderr" \
+    "rejected-push: the failure should name the rejected push"
+  assert_grep "Re-run bin/fm-merge-main.sh $TASK" "$case_dir/stderr" \
+    "rejected-push: the retry must stay inside the guarded path, not a raw git push"
+  [ "$(remote_main_sha "$case_dir")" = "$before" ] \
+    || fail "rejected-push: the host's main must not have moved"
+  # The work must survive in both places the message promises.
+  landed=$(git -C "$case_dir/project" rev-parse main)
+  [ "$landed" = "$(git -C "$case_dir/project" rev-parse "$BRANCH")" ] \
+    || fail "rejected-push: local main should still hold the merged change"
+  git -C "$case_dir/remote.git" rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null \
+    || fail "rejected-push: the published branch must not be retired while the push is unlanded"
+  pass "fm-merge-main reports a rejected push and preserves the work on local main and the published branch"
 }
 
 # The task worktree is a linked worktree of the project clone, so it shares
@@ -306,6 +350,7 @@ test_refuses_project_without_origin() {
 
 test_lands_published_head_and_pushes
 test_landing_keeps_worktree_work_provably_landed
+test_rejected_push_reports_and_preserves
 test_refuses_fork_routed_branch
 test_refuses_wrong_mode
 test_refuses_unvalidated_local_commits

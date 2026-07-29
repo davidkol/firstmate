@@ -128,9 +128,16 @@ git -C "$PROJ" merge --ff-only "$SOURCE" >/dev/null
 after=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
 # Full sha of what landed, resolved before any ref this script may later delete.
 LANDED=$(git -C "$PROJ" rev-parse "$DEFAULT")
+# A rejected push is reported, never worked around: the forge's own message above
+# is the evidence, and branch protection is discovered this way rather than by
+# guessing at it. Nothing is lost - the work is on local $DEFAULT and still on the
+# published branch, which is why the retirement below is not reached.
+# Re-running this script is the retry: local $DEFAULT already contains $SOURCE, so
+# the merge is a no-op and only the push is attempted again.
 git -C "$PROJ" push --quiet origin "$DEFAULT" || {
-  echo "error: merged $SOURCE_DESC into local $DEFAULT ($before -> $after) but the push to origin/$DEFAULT failed" >&2
-  echo "The local default branch already holds the change; retry the push before tearing the task down." >&2
+  echo "error: merged $SOURCE_DESC into local $DEFAULT ($before -> $after) but the push to origin/$DEFAULT was rejected" >&2
+  echo "The message above is the forge's own reason. The change is safe on local $DEFAULT and on origin/$BRANCH." >&2
+  echo "Re-run bin/fm-merge-main.sh $ID to retry the push once the cause is resolved; do not tear the task down first." >&2
   exit 1
 }
 echo "landed $SOURCE_DESC on $DEFAULT ($before -> $after) and pushed to origin in $PROJ"
