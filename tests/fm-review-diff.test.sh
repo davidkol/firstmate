@@ -11,6 +11,13 @@
 #   (d) pr= present but PR head unreachable -> fallback to local branch + warning
 #   (e) pr= + STALE recorded pr_head= + newer remote pull head -> must use fetched head
 #       (this is the class that bit reviewers holding merges over "missing" fixes)
+#
+# mode=validated-main opens no PR, so it never records pr=, but its pipeline still
+# pushes and bin/fm-merge-main.sh lands origin/<branch>. The review must therefore
+# compare the published head, not the routinely-behind local branch:
+#   (f) mode=validated-main + published origin/fm/<id> -> diff the published head
+#   (g) mode=validated-main + nothing published -> local branch, no warning
+#   (h) mode=validated-main + unreachable remote -> local branch WITH a warning
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -169,8 +176,67 @@ test_unreachable_pr_head_falls_back_with_warning() {
   pass "fm-review-diff falls back to local branch with a warning when PR head is unreachable"
 }
 
+test_validated_main_uses_published_head() {
+  local case_dir out
+  case_dir=$(make_case validated-main-published)
+  stale_and_pr_commits "$case_dir"
+  # The pipeline's push step published its fix round; the local branch is behind.
+  git -C "$case_dir/wt" push -q origin "pr-head-tmp:refs/heads/fm/task-x1"
+  write_task_meta "$case_dir" "mode=validated-main"
+
+  out=$(run_review_diff "$case_dir" task-x1 2> "$case_dir/stderr")
+
+  assert_contains "$out" '+pr-fixed' \
+    "validated-main-published: diff must show the published head fm-merge-main.sh would land"
+  assert_not_contains "$out" 'stale-local' \
+    "validated-main-published: diff must not use the behind local branch"
+  assert_not_contains "$(cat "$case_dir/stderr")" 'warning:' \
+    "validated-main-published: no warning when the published head resolves"
+  pass "fm-review-diff on validated-main compares the published origin branch head"
+}
+
+test_validated_main_unpublished_uses_local_branch() {
+  local case_dir out
+  case_dir=$(make_case validated-main-unpublished)
+  stale_and_pr_commits "$case_dir"
+  # Nothing pushed: the pipeline's push step has not run, so local is the only head.
+  write_task_meta "$case_dir" "mode=validated-main"
+
+  out=$(run_review_diff "$case_dir" task-x1 2> "$case_dir/stderr")
+
+  assert_contains "$out" '+stale-local' \
+    "validated-main-unpublished: diff should use the local branch"
+  assert_not_contains "$(cat "$case_dir/stderr")" 'warning:' \
+    "validated-main-unpublished: an unpublished branch is normal, not a warning"
+  pass "fm-review-diff on validated-main uses the local branch when nothing is published"
+}
+
+test_validated_main_unreachable_remote_warns() {
+  local case_dir out err
+  case_dir=$(make_case validated-main-unreachable)
+  stale_and_pr_commits "$case_dir"
+  # Worktrees share .git/config, so this takes origin away from the project too -
+  # a validated-main task that cannot reach its remote at all.
+  git -C "$case_dir/wt" remote remove origin
+  write_task_meta "$case_dir" "mode=validated-main"
+
+  set +e
+  out=$(run_review_diff "$case_dir" task-x1 2> "$case_dir/stderr")
+  set -e
+  err=$(cat "$case_dir/stderr")
+
+  assert_contains "$err" "warning: published head origin/fm/task-x1 unavailable" \
+    "validated-main-unreachable: must warn when the published head cannot be resolved"
+  assert_contains "$out" '+stale-local' \
+    "validated-main-unreachable: should fall back to the local branch diff"
+  pass "fm-review-diff on validated-main warns when the published head is unreachable"
+}
+
 test_pr_meta_uses_pr_head_not_stale_local
 test_pr_meta_fetches_pull_head_without_recorded_sha
 test_stale_recorded_pr_head_loses_to_fetched_pull_head
 test_no_pr_meta_uses_local_branch
 test_unreachable_pr_head_falls_back_with_warning
+test_validated_main_uses_published_head
+test_validated_main_unpublished_uses_local_branch
+test_validated_main_unreachable_remote_warns

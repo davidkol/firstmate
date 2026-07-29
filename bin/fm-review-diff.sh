@@ -9,7 +9,20 @@
 # current after no-mistakes fix rounds push to the PR. A recorded pr_head= is
 # only a fallback when fetch fails (stale recorded SHAs must never win over a
 # reachable remote PR head). If neither PR head can be resolved, fall back to
-# the local branch with a warning. Without pr=, compare the local branch.
+# the local branch with a warning.
+#
+# A validated-main task never opens a PR, so it never records pr=, but its
+# pipeline still runs the push step and commits its own fix rounds - the local
+# branch is routinely behind what was published, and bin/fm-merge-main.sh lands
+# origin/<branch> whenever it exists. Reviewing the local branch there would show
+# a diff that is not the one that lands, so for mode=validated-main the compare
+# side is a freshly fetched origin/<branch>. No forge call and no PR number are
+# involved. A branch the remote genuinely does not carry means the push step has
+# not run yet, which makes the local branch the only candidate head and is not a
+# warning; a remote that cannot be reached is, because the published head may
+# exist and be newer.
+#
+# Otherwise, compare the local branch.
 # Usage: fm-review-diff.sh <task-id> [--stat]
 #   --stat prints only the stat summary; default prints stat summary plus full diff.
 set -eu
@@ -122,14 +135,41 @@ resolve_pr_head() {
   return 1
 }
 
+fetch_published_head() {
+  local branch=$1 resolved
+  git -C "$WT" remote get-url origin >/dev/null 2>&1 || return 1
+  # Same private-ref reasoning as fetch_pull_head above.
+  git -C "$WT" fetch --quiet origin \
+    "+refs/heads/$branch:refs/fm-review/heads/$branch" >/dev/null 2>&1 || return 1
+  resolved=$(git -C "$WT" rev-parse --verify "refs/fm-review/heads/$branch^{commit}" 2>/dev/null) || return 1
+  [ -n "$resolved" ] || return 1
+  printf '%s' "$resolved"
+}
+
+# A fetch refspec for a ref the remote does not carry fails exactly like an
+# unreachable remote, and the two mean opposite things for review. ls-remote
+# --exit-code answers 2 only when the remote replied and matched nothing.
+published_branch_absent() {
+  local rc=0
+  git -C "$WT" ls-remote --exit-code --heads origin "refs/heads/$1" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ]
+}
+
 PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD_RECORDED=$(grep '^pr_head=' "$META" | tail -1 | cut -d= -f2- || true)
+MODE=$(grep '^mode=' "$META" | tail -1 | cut -d= -f2- || true)
 COMPARE_REF=$BRANCH
 if [ -n "$PR_URL" ]; then
   if PR_HEAD=$(resolve_pr_head "$PR_URL" "$PR_HEAD_RECORDED"); then
     COMPARE_REF=$PR_HEAD
   else
     echo "warning: PR head unavailable; diff may lag the open PR (using local branch $BRANCH)" >&2
+  fi
+elif [ "$MODE" = validated-main ]; then
+  if PUBLISHED_HEAD=$(fetch_published_head "$BRANCH"); then
+    COMPARE_REF=$PUBLISHED_HEAD
+  elif ! published_branch_absent "$BRANCH"; then
+    echo "warning: published head origin/$BRANCH unavailable; diff may lag the validated branch (using local branch $BRANCH)" >&2
   fi
 fi
 
