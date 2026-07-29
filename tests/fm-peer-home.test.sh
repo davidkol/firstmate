@@ -182,7 +182,7 @@ test_seed_refuses_local_only_project() {
 }
 
 test_seed_rolls_back() {
-  local main home out
+  local main home pre out leftover
   main=$(new_main_home rollback)
   # A registered, origin-backed project whose origin has since disappeared: this
   # survives pre-flight validation and fails inside clone_project, after the
@@ -192,7 +192,24 @@ test_seed_rolls_back() {
   out=$(seed_peer "$main" hookgame "$home" --peer hookgame) && fail "peer seed survived an unclonable project"
   assert_absent "$home" "failed peer seed left its created home behind"
   assert_absent "$main/data/secondmates.md" "failed peer seed wrote a secondmate route"
-  pass "a failed peer seed rolls the created home back"
+
+  # An empty directory the captain pre-created is a documented target, so the
+  # rollback must undo exactly the operational dirs the seed added and nothing
+  # the captain put there - otherwise the path is stranded half-built and every
+  # retry is refused as "not empty and is not a peer home".
+  pre="$TMP_ROOT/rollback/homes/precreated"
+  mkdir -p "$pre"
+  out=$(seed_peer "$main" precreated "$pre" --peer hookgame) && fail "peer seed survived an unclonable project"
+  assert_present "$pre" "failed peer seed deleted the directory the captain created"
+  leftover=$(ls -A "$pre")
+  [ -z "$leftover" ] || fail "failed peer seed left the captain's directory half-built: $leftover"
+
+  # Same target, same command, once the origin is reachable again.
+  git clone --quiet --bare "$TMP_ROOT/rollback/src/hookgame" "$TMP_ROOT/rollback/remote-hookgame.git"
+  out=$(seed_peer "$main" precreated "$pre" --peer hookgame) \
+    || fail "a rolled-back peer home target was not seedable again: $out"
+  assert_present "$pre/.fm-peer-home" "retry did not seed the pre-created target"
+  pass "a failed peer seed rolls back to exactly what it found, leaving the target seedable"
 }
 
 # --- launcher ----------------------------------------------------------------
@@ -239,6 +256,14 @@ test_open_refusals() {
   out=$("$OPEN" "$home" true 2>&1); rc=$?
   expect_code 1 "$rc" "unusable marker id"
   assert_contains "$out" "does not name a usable peer home id" "an unusable marker id was not refused"
+
+  # A hand-written marker with no trailing newline is one the backends accept,
+  # so the launcher guarding them must accept it too.
+  printf 'hookgame' > "$home/.fm-peer-home"
+  # shellcheck disable=SC2016 # The launched command must expand FM_HOME itself.
+  out=$("$OPEN" "$home" sh -c 'printf "FM_HOME=%s\n" "$FM_HOME"' 2>&1) \
+    || fail "a marker without a trailing newline was refused: $out"
+  assert_contains "$out" "FM_HOME=$home" "fm-open.sh did not open a newline-less marker home"
   printf 'hookgame\n' > "$home/.fm-peer-home"
 
   rm -rf "$home/state"

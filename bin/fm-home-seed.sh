@@ -710,6 +710,7 @@ SEED_HOME_CREATED=0
 SEED_HOME_BACKED_UP=0
 SEED_BACKUP_DIR=
 SEED_CREATED_PROJECTS_FILE=
+SEED_CREATED_HOME_DIRS=
 SEED_PARENT_REG_EXISTED=0
 SEED_PARENT_BRIEF=
 SEED_PARENT_BRIEF_CREATED=0
@@ -804,6 +805,19 @@ seed_remove_created_project() {
   rm -rf -- "$abs_project" 2>/dev/null || true
 }
 
+# Undo the operational directories THIS seed created inside a home it did not
+# create, so a home the captain pre-created as an empty directory is left empty
+# and seedable again. rmdir, never rm -rf: a directory that gained content is
+# the captain's, and is kept.
+seed_remove_created_home_dirs() {
+  local dir abs_dir
+  [ -n "${SEED_CREATED_HOME_DIRS:-}" ] || return 0
+  for dir in $SEED_CREATED_HOME_DIRS; do
+    abs_dir=$(seed_rollback_target "$SEED_HOME/$dir" "created home directory") || continue
+    rmdir -- "$abs_dir" 2>/dev/null || true
+  done
+}
+
 seed_project_was_created() {
   local project_path=$1
   [ -n "${SEED_CREATED_PROJECTS_FILE:-}" ] || return 1
@@ -841,6 +855,7 @@ seed_rollback() {
         restore_seed_file "$SEED_CHARTER_EXISTED" "$SEED_BACKUP_DIR/charter.md" "$SEED_HOME/data/charter.md"
         restore_seed_file "$SEED_SUB_REG_EXISTED" "$SEED_BACKUP_DIR/sub-projects.md" "$SEED_HOME/data/projects.md"
       fi
+      seed_remove_created_home_dirs
     fi
   fi
 
@@ -992,7 +1007,7 @@ refuse_projectful_projectless_charter() {
 }
 
 seed_home() {
-  local id=$1 requested_home=$2 requested_abs home projects_csv project project_dst charter_summary charter_scope
+  local id=$1 requested_home=$2 requested_abs home home_dir projects_csv project project_dst charter_summary charter_scope
   local no_projects=0 peer=0 arg
   local filtered=()
   shift 2
@@ -1045,6 +1060,7 @@ seed_home() {
   SEED_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-home-seed.XXXXXX")
   SEED_CREATED_PROJECTS_FILE="$SEED_BACKUP_DIR/created-projects"
   : > "$SEED_CREATED_PROJECTS_FILE"
+  SEED_CREATED_HOME_DIRS=
   SEED_PARENT_REG_EXISTED=0
   SEED_PARENT_BRIEF="$DATA/$id/brief.md"
   SEED_PARENT_BRIEF_CREATED=0
@@ -1097,6 +1113,9 @@ seed_home() {
       refuse_projectful_projectless_charter "$id" "$SEED_PARENT_BRIEF" || return 1
     fi
   fi
+  for home_dir in data state config projects; do
+    [ -e "$home/$home_dir" ] || SEED_CREATED_HOME_DIRS="$SEED_CREATED_HOME_DIRS $home_dir"
+  done
   mkdir -p "$DATA" "$home/data" "$home/state" "$home/config" "$home/projects"
   if [ -f "$home/data/projects.md" ]; then
     SEED_SUB_REG_EXISTED=1

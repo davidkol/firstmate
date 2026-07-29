@@ -52,8 +52,11 @@ if [ -L "$HOME_ABS/$PEER_HOME_MARKER" ] || [ ! -f "$HOME_ABS/$PEER_HOME_MARKER" 
   echo "       seed one with: bin/fm-home-seed.sh <id> $REQUESTED --peer {<project>...|--no-projects}" >&2
   exit 1
 fi
-IFS= read -r PEER_ID < "$HOME_ABS/$PEER_HOME_MARKER" || PEER_ID=
-PEER_ID=${PEER_ID//[[:space:]]/}
+# Read the marker exactly as fm_backend_hometag_marker_id and
+# fm_backend_herdr_workspace_label do, so the launcher never refuses an id the
+# backends would happily turn into a container label - including a marker
+# written without a trailing newline.
+PEER_ID=$(tr -d '[:space:]' < "$HOME_ABS/$PEER_HOME_MARKER" 2>/dev/null || true)
 case "$PEER_ID" in
   ''|*[!A-Za-z0-9._-]*)
     echo "error: $HOME_ABS/$PEER_HOME_MARKER does not name a usable peer home id: ${PEER_ID:-<empty>}" >&2
