@@ -74,6 +74,13 @@ test_start_refuses_an_ungraduated_or_unreachable_promotion() {
   expect_code 1 "$code" "start accepted a gitignored destination no other home receives"
   assert_contains "$out" "gitignored" "refusal did not name the unreachable destination"
 
+  # Whitespace would be recorded in full but read back truncated at the space,
+  # so land would gate on the wrong path and destroy the record it protects.
+  out=$("$PROMOTE" start pane-tangle --to 'AGENTS.md extra' \
+    --evidence 'two projects' --checkable 'a check exists' 2>&1) && code=0 || code=$?
+  expect_code 1 "$code" "start accepted a destination the whitespace-delimited marker cannot record"
+  assert_contains "$out" "whitespace" "refusal did not name the unrecordable destination path"
+
   assert_absent "$learnings" "a refused start still wrote to the home's learnings file"
   pass "start refuses an unstated graduation case and a destination no home would receive"
 }

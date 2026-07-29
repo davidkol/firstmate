@@ -66,6 +66,10 @@ LEARNINGS="$DATA/learnings.md"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-ff-lib.sh"
 
+# Marker fields are whitespace-delimited, so every field recorded on this line
+# must be whitespace-free by validation. That invariant is what keeps the sed
+# readers (marker_field, find_marker, cmd_list) and replace_block's awk
+# fixed-string matcher agreeing on where a field ends.
 MARKER='<!-- fm-promotion '
 
 usage() {
@@ -163,6 +167,8 @@ cmd_start() {
   [ -n "$to" ] || fail "start needs --to <repo-relative-path>"
   validate_field "--to" "$to"
   case "$to" in
+    *[[:space:]]*)
+      fail "--to must not contain whitespace, because the in-flight marker records it as a whitespace-delimited field: $to" ;;
     /*|*..*) fail "--to must be a repo-relative path inside $FM_ROOT: $to" ;;
   esac
   # A gitignored destination reaches no other home, which is the whole point of
