@@ -131,6 +131,64 @@ test_an_out_of_repo_memory_store_does_not_suppress_an_in_repo_notes_store() {
   pass "fm-project-reconcile.sh: an out-of-repo store never stands in for an in-repo notes store"
 }
 
+test_a_symlinked_notes_store_is_present_and_never_written_through() {
+  local repo out vault
+  repo=$(new_bare_project symlinked-notes)
+  vault="$TMP_ROOT/notes-vault"
+  mkdir -p "$vault"
+  # find(1) does not report a symlink as a directory, so the inventory alone
+  # cannot see this store. Writing through the link would land outside the repo.
+  ln -s "$vault" "$repo/notes"
+
+  out=$(reconcile --seed "$repo") || fail "seeding alongside a symlinked notes store failed:"$'\n'"$out"
+  assert_contains "$out" "PRESENT: notes" "a notes store reached through a symlink was not reported as present"
+  assert_not_contains "$out" "SEED: notes" "a second notes store was planned over a symlinked one"
+  assert_absent "$vault/README.md" "seeding wrote through the symlink, outside the project repo"
+  assert_present "$repo/DECISIONS.md" "the rest of the plan did not proceed"
+  pass "fm-project-reconcile.sh: a symlinked notes store is present, and nothing is written through the link"
+}
+
+test_a_notes_symlink_to_a_file_is_present_and_its_target_is_untouched() {
+  local repo out vault
+  repo=$(new_bare_project symlinked-notes-file)
+  vault="$TMP_ROOT/notes-vault-file.txt"
+  printf 'the owner wrote this\n' > "$vault"
+  ln -s "$vault" "$repo/notes"
+
+  out=$(reconcile --seed "$repo") || fail "seeding alongside a file-symlinked notes store failed:"$'\n'"$out"
+  assert_contains "$out" "PRESENT: notes" "a notes symlink pointing at a file was not reported as present"
+  assert_not_contains "$out" "SEED: notes" "a notes store was planned over a symlink to a file"
+  assert_grep "the owner wrote this" "$vault" "the symlink target was overwritten"
+  # mkdir -p through a symlink to a file fails, and under set -eu that aborted
+  # the seed after other targets had already landed.
+  assert_present "$repo/DECISIONS.md" "the seed aborted partway instead of skipping the present target"
+  assert_present "$repo/script/check" "the seed aborted partway instead of skipping the present target"
+  pass "fm-project-reconcile.sh: a notes symlink to a file is present, its target untouched, and no seed aborts partway"
+}
+
+test_a_planned_path_resolving_outside_the_repo_refuses_the_whole_plan() {
+  local repo out rc vault
+  repo=$(new_bare_project escaping-plan)
+  vault="$TMP_ROOT/script-vault"
+  mkdir -p "$vault"
+  # script/ resolves outside the repo, so every stub planned under it would be
+  # written onto the captain's disk outside the project.
+  ln -s "$vault" "$repo/script"
+
+  out=$(reconcile --seed "$repo"); rc=$?
+  expect_code 5 "$rc" "seeding a plan that resolves outside the project"
+  assert_contains "$out" "REFUSED:" "an escaping plan was not refused"
+  assert_contains "$out" "resolve outside" "the refusal did not say why the plan was refused"
+  assert_contains "$out" "script/check" "the refusal did not name the escaping path"
+  assert_not_contains "$out" "(creating)" "a refused run reported surfaces as created"
+
+  [ -z "$(ls -A "$vault")" ] || fail "the refused run wrote outside the project repo"
+  # No partial seed: the targets that would have landed inside are refused too.
+  assert_absent "$repo/DECISIONS.md" "a refused plan still wrote the targets that resolve inside"
+  assert_absent "$repo/AGENTS.md" "a refused plan still wrote the targets that resolve inside"
+  pass "fm-project-reconcile.sh: a path resolving outside the project refuses the whole plan and writes nothing"
+}
+
 test_disagreement_stops_and_asks_without_writing() {
   local repo out rc
   repo=$(new_bare_project stale-pointer)
@@ -196,6 +254,23 @@ test_a_branch_word_in_prose_is_not_a_missing_branch() {
   pass "fm-project-reconcile.sh: the branch words in prose raise nothing without branch-shaped context"
 }
 
+test_an_unwrapped_paragraph_mentioning_a_branch_is_not_a_missing_branch() {
+  local repo out
+  repo=$(new_bare_project unwrapped-paragraph)
+  git_in "$repo" branch -m master
+  # One sentence per line is this repo's convention, not one the projects this
+  # script exists for share. A detector that only holds for wrapped prose keeps
+  # failing on the entry points it actually has to read.
+  printf '# Agent memory\n\nCreate a feature branch off master and open a PR when it is ready. The main entry point is src/index.ts.\n' \
+    > "$repo/AGENTS.md"
+  commit_all "$repo" entry
+
+  out=$(reconcile "$repo")
+  assert_not_contains "$out" "DISAGREEMENT:" \
+    "a branch word elsewhere in the same paragraph was read as naming the branch main"
+  pass "fm-project-reconcile.sh: a branch word elsewhere in an unwrapped paragraph raises nothing"
+}
+
 test_no_check_command_degrades_to_a_named_gap_never_a_silent_pass() {
   local repo out rc
   repo=$(new_bare_project no-check)
@@ -227,6 +302,27 @@ test_the_seeded_gap_stub_keeps_reporting_the_gap_until_it_is_replaced() {
   assert_contains "$out" "SURFACE: check-command repo script/check - a seeded placeholder" \
     "the placeholder was inventoried as a real check command"
   pass "fm-project-reconcile.sh: a seeded placeholder keeps the check gap named instead of hiding it"
+}
+
+test_a_placeholder_does_not_hide_a_real_check_that_appears_later() {
+  local repo out before
+  repo=$(new_bare_project stub-then-real-check)
+  reconcile --seed "$repo" >/dev/null || fail "seeding a project with no check failed"
+  before=$(cat "$repo/script/check")
+
+  mkdir -p "$repo/tests"
+  printf '#!/bin/sh\necho gate ran\n' > "$repo/tests/gate.sh"
+  chmod +x "$repo/tests/gate.sh"
+
+  out=$(reconcile "$repo")
+  assert_contains "$out" "GAP: check-command" \
+    "the check gap disappeared the moment a real check became detectable, while the stub still exits 78"
+  assert_contains "$out" "never a silent pass" "the check gap stopped saying a silent pass is the failure"
+  assert_contains "$out" "SURFACE: check-command repo ./tests/gate.sh" \
+    "the real check was hidden behind the placeholder the script planted itself"
+  assert_contains "$out" "shadowed by the placeholder" "the report did not say the real command is shadowed"
+  [ "$(cat "$repo/script/check")" = "$before" ] || fail "the placeholder was rewritten instead of reported"
+  pass "fm-project-reconcile.sh: a placeholder never hides a real check, and the report chooses neither"
 }
 
 test_existing_check_command_is_wrapped_under_the_conventional_name() {
@@ -463,11 +559,16 @@ test_bare_project_seeds_the_full_set_and_nothing_else
 test_existing_surfaces_are_reported_not_duplicated
 test_a_notes_store_under_another_name_is_present_not_reseeded
 test_an_out_of_repo_memory_store_does_not_suppress_an_in_repo_notes_store
+test_a_symlinked_notes_store_is_present_and_never_written_through
+test_a_notes_symlink_to_a_file_is_present_and_its_target_is_untouched
+test_a_planned_path_resolving_outside_the_repo_refuses_the_whole_plan
 test_disagreement_stops_and_asks_without_writing
 test_entry_point_naming_a_missing_branch_is_a_disagreement
 test_a_branch_word_in_prose_is_not_a_missing_branch
+test_an_unwrapped_paragraph_mentioning_a_branch_is_not_a_missing_branch
 test_no_check_command_degrades_to_a_named_gap_never_a_silent_pass
 test_the_seeded_gap_stub_keeps_reporting_the_gap_until_it_is_replaced
+test_a_placeholder_does_not_hide_a_real_check_that_appears_later
 test_existing_check_command_is_wrapped_under_the_conventional_name
 test_check_command_from_project_config_is_anchored_to_the_repo
 test_repo_with_no_remote_reports_what_landed_means

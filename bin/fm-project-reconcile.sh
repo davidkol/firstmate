@@ -54,11 +54,17 @@
 # path, the same posture as bin/fm-ensure-agents-md.sh, and it refuses to run
 # against a clone sitting directly under a firstmate home's projects/ directory.
 #
+# The reconciler writes inside the project directory and nowhere else. Every
+# planned path is resolved through its symlinks before anything is written, and
+# the whole plan is refused if any one of them lands outside, so a detector that
+# is wrong about what is missing still cannot put a file outside the repo.
+#
 # Exit status:
 #   0  report produced (and seeding completed when --seed was given)
 #   1  usage or environment error
 #   3  --seed refused: an unaccepted disagreement is open
 #   4  --seed refused: the target is a firstmate-owned project clone
+#   5  --seed refused: a planned path resolves outside the project directory
 #
 # This is a project-inspection utility, not a supervision script, so it does not
 # call fm-guard.sh.
@@ -367,15 +373,23 @@ CHECK_CMD=$(detect_check_command)
 SETUP_CMD=$(detect_setup_command)
 RUN_CMD=$(detect_run_command)
 
-if [ -n "$CHECK_CMD" ] && [ ! -e "$DIR/script/check" ]; then
-  add_surface check-command repo "$CHECK_CMD" "under another name"
-fi
-if [ -n "$SETUP_CMD" ] && [ ! -e "$DIR/script/setup" ]; then
-  add_surface setup-command repo "$SETUP_CMD" "under another name"
-fi
-if [ -n "$RUN_CMD" ] && [ ! -e "$DIR/script/run" ]; then
-  add_surface run-command repo "$RUN_CMD" "under another name"
-fi
+# A command this project already has, under whatever name it uses. A reconciler
+# whose whole job is finding what already exists must not hide one behind a
+# placeholder it planted itself, so the placeholder does not suppress it - the
+# report names both and chooses neither.
+add_command_surface() {  # <name> <command>
+  local name=$1 cmd=$2 path="script/$1"
+  [ -n "$cmd" ] || return 0
+  if [ ! -e "$DIR/$path" ]; then
+    add_surface "$name-command" repo "$cmd" "under another name"
+  elif seeded_gap_stub "$path"; then
+    add_surface "$name-command" repo "$cmd" "under another name, shadowed by the placeholder at $path"
+  fi
+}
+
+add_command_surface check "$CHECK_CMD"
+add_command_surface setup "$SETUP_CMD"
+add_command_surface run "$RUN_CMD"
 
 # --- surfaces outside the repo ----------------------------------------------
 
@@ -497,14 +511,17 @@ fi
 # Branch-shaped context is required before raising this. "main" is an ordinary
 # English word - "the main entry point", "the main loop" - and a detector that
 # reads prose as a branch name puts a question the captain cannot answer onto
-# the board this whole script exists to keep clean.
+# the board this whole script exists to keep clean. The branch word has to sit
+# next to the name within one sentence, not merely somewhere on the same line:
+# an entry point written as one unwrapped paragraph is the common shape, and a
+# same-line test only holds for documents written one sentence per line.
 entry_names_branch() {  # <branch-name>
-  local b=$1
+  local b=$1 w_before='(^|[^a-zA-Z0-9_/-])' w_after='([^a-zA-Z0-9_/-]|$)'
   if grep -Eq "(origin/|refs/heads/)$b([^a-zA-Z0-9_/-]|$)" "$ENTRY_FILE" 2>/dev/null; then
     return 0
   fi
-  grep -Ei 'branch(es)?' "$ENTRY_FILE" 2>/dev/null |
-    grep -Eq "(^|[^a-zA-Z0-9_/-])$b([^a-zA-Z0-9_/-]|$)"
+  grep -Eiq "branch(es)?[^.]{0,24}${w_before}${b}${w_after}|${w_before}${b}${w_after}[^.]{0,24}branch(es)?" \
+    "$ENTRY_FILE" 2>/dev/null
 }
 
 if [ -n "$ENTRY_FILE" ] && [ "$is_git" -eq 1 ]; then
@@ -619,16 +636,17 @@ done < "$DISAGREEMENTS"
 
 # What is absent or unlanded that this script cannot resolve for the project.
 # Every one of these is named out loud and none is ever skipped in silence.
-if [ -z "$CHECK_CMD" ] && { [ ! -e "$DIR/script/check" ] || seeded_gap_stub script/check; }; then
-  absent="no check command exists under any conventional name"
-  if seeded_gap_stub script/check; then
-    absent="script/check is still the seeded placeholder that exits $GAP_EXIT, so no check command exists under any conventional name"
-  fi
-  if [ -n "$ENTRY_FILE" ]; then
-    echo "GAP: check-command - $absent; read ${ENTRY_FILE##*/} for one this project names, and if there is none, a done claim here degrades to this named gap, never a silent pass"
-  else
-    echo "GAP: check-command - $absent and there is no entry point naming one; a done claim here degrades to this named gap, never a silent pass"
-  fi
+if [ -n "$ENTRY_FILE" ]; then
+  read_entry="; read ${ENTRY_FILE##*/} for one this project names, and if there is none,"
+else
+  read_entry=" and there is no entry point naming one;"
+fi
+if seeded_gap_stub script/check && [ -n "$CHECK_CMD" ]; then
+  echo "GAP: check-command - script/check is still the seeded placeholder that exits $GAP_EXIT, standing in front of $CHECK_CMD, which this project already has; which of the two is authoritative is the captain's call, and until it is made a done claim here degrades to this named gap, never a silent pass"
+elif seeded_gap_stub script/check; then
+  echo "GAP: check-command - script/check is still the seeded placeholder that exits $GAP_EXIT, so no check command exists under any conventional name$read_entry a done claim here degrades to this named gap, never a silent pass"
+elif [ -z "$CHECK_CMD" ] && [ ! -e "$DIR/script/check" ]; then
+  echo "GAP: check-command - no check command exists under any conventional name$read_entry a done claim here degrades to this named gap, never a silent pass"
 fi
 if [ "$UNCOMMITTED_COUNT" -gt 0 ]; then
   echo "GAP: uncommitted-state - $UNCOMMITTED_COUNT path(s) hold work that is not committed and that no document describes: $UNCOMMITTED_LIST; read them before rebuilding state this project already has"
@@ -671,16 +689,67 @@ refuse_never_seeded() {  # <target>
 
 entry_point_present() { [ -e "$DIR/AGENTS.md" ] || [ -e "$DIR/CLAUDE.md" ]; }
 
-# Presence is decided from the inventory, not from the one name this script
-# would have chosen. A project carrying findings/, build-log/ or playbooks/
-# already has a notes store; a different name for it is a naming difference, not
-# an absence, and seeding a second one is the duplication this exists to prevent.
+# Presence is decided from the inventory AND from the filesystem, because
+# neither sees everything. A project carrying findings/, build-log/ or
+# playbooks/ already has a notes store and only the inventory knows that; a
+# store reached through a symlink is not a directory to find(1) and only the
+# filesystem knows that. Either is a naming difference rather than an absence,
+# and seeding a second store is the duplication this exists to prevent. -L is
+# tested alongside -e so a dangling symlink still counts as something there.
+notes_path_present() {
+  [ -e "$DIR/notes" ] || [ -L "$DIR/notes" ] || [ -e "$DIR/notes.md" ] || [ -L "$DIR/notes.md" ]
+}
+
 target_present() {  # <target>
   case "$1" in
     AGENTS.md) entry_point_present ;;
-    notes) [ "$(repo_count_of_kind notes-store)" -gt 0 ] ;;
+    notes) [ "$(repo_count_of_kind notes-store)" -gt 0 ] || notes_path_present ;;
     DECISIONS.md) [ "$(repo_count_of_kind decision-record)" -gt 0 ] ;;
     *) [ -e "$DIR/$1" ] ;;
+  esac
+}
+
+# --- the write boundary -----------------------------------------------------
+
+# Where a write to a path would actually land, following every symlink on the
+# way, the same physical resolution the target directory itself already gets
+# from pwd -P. A path that cannot be resolved returns non-zero and is treated as
+# an escape, because "cannot tell" is not permission to write.
+phys_of() {  # <absolute-path> [depth]
+  local p=$1 depth=${2:-0} target d b
+  [ "$depth" -lt 40 ] || return 1
+  if [ -d "$p" ]; then
+    if ! (cd "$p" 2>/dev/null && pwd -P); then return 1; fi
+    return 0
+  fi
+  if [ -L "$p" ]; then
+    target=$(readlink "$p" 2>/dev/null) || return 1
+    case "$target" in
+      /*) ;;
+      *) target="$(dirname "$p")/$target" ;;
+    esac
+    if phys_of "$target" "$((depth + 1))"; then return 0; fi
+    return 1
+  fi
+  d=$(phys_of "$(dirname "$p")" "$((depth + 1))") || return 1
+  b=$(basename "$p")
+  printf '%s/%s\n' "$d" "$b"
+}
+
+inside_repo() {  # <physical-path>
+  case "$1" in
+    "$DIR"|"$DIR"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Every path seeding one target writes, so the whole plan can be checked before
+# any of it runs.
+seed_paths() {  # <target>
+  case "$1" in
+    AGENTS.md) printf 'AGENTS.md\nCLAUDE.md\n' ;;
+    notes) printf 'notes\nnotes/README.md\n' ;;
+    *) printf '%s\n' "$1" ;;
   esac
 }
 
@@ -770,27 +839,51 @@ done <<EOF
 $(seed_targets)
 EOF
 
+# Resolve the whole plan before writing any of it. Validating each target as it
+# is written would leave the targets ahead of the bad one already on disk, and a
+# half-seeded project is worse than a refused one.
+ESCAPES="$WORK/escapes"
+: > "$ESCAPES"
+while IFS= read -r t; do
+  [ -n "$t" ] || continue
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    phys=$(phys_of "$DIR/$p") || phys=
+    if [ -z "$phys" ] || ! inside_repo "$phys"; then
+      printf '%s -> %s\n' "$p" "${phys:-unresolvable}" >> "$ESCAPES"
+    fi
+  done <<EOF
+$(seed_paths "$t")
+EOF
+done < "$planned"
+
 # --- seed refusals ----------------------------------------------------------
 
-# Both refusals are decided before a single SEED line prints, so a refused run
+# Every refusal is decided before a single SEED line prints, so a refused run
 # never says it created anything. Grepping SEED lines is the documented way to
 # consume this report, and "(creating)" is reserved for a run that goes on to
 # write; a refused run still shows the plan, as "(would create)".
 REFUSAL=
 REFUSAL_CODE=0
 if [ "$SEED" -eq 1 ]; then
+  parent=$(dirname "$DIR")
+  n_escaped=$(grep -c . "$ESCAPES" || true)
   if [ "$open_disagreements" -gt 0 ]; then
     REFUSAL="REFUSED: $open_disagreements disagreement(s) are open; two surfaces disagree about what is true and the captain owns which one survives. Nothing was written. Re-run with --accept-disagreement <key> once each is ruled on."
     REFUSAL_CODE=3
-  else
-    # Firstmate reads projects and crewmates change them. A clone sitting
-    # directly under a firstmate home's projects/ directory is the copy firstmate
-    # operates from, so seeding into it would bypass the delivery path.
-    parent=$(dirname "$DIR")
-    if [ "$(basename "$parent")" = projects ] && [ -f "$(dirname "$parent")/data/projects.md" ]; then
-      REFUSAL="REFUSED: $DIR is a firstmate-owned project clone. Seed from the crewmate worktree that carries the change through this project's delivery path, not from the copy firstmate reads. Nothing was written."
-      REFUSAL_CODE=4
+  # Firstmate reads projects and crewmates change them. A clone sitting directly
+  # under a firstmate home's projects/ directory is the copy firstmate operates
+  # from, so seeding into it would bypass the delivery path.
+  elif [ "$(basename "$parent")" = projects ] && [ -f "$(dirname "$parent")/data/projects.md" ]; then
+    REFUSAL="REFUSED: $DIR is a firstmate-owned project clone. Seed from the crewmate worktree that carries the change through this project's delivery path, not from the copy firstmate reads. Nothing was written."
+    REFUSAL_CODE=4
+  elif [ "$n_escaped" -gt 0 ]; then
+    escaped=$(head -"$MAX_LIST" "$ESCAPES" | paste -sd, - | sed 's/,/, /g')
+    if [ "$n_escaped" -gt "$MAX_LIST" ]; then
+      escaped="$escaped, and $((n_escaped - MAX_LIST)) more"
     fi
+    REFUSAL="REFUSED: $n_escaped planned path(s) resolve outside $DIR: $escaped. This script writes inside the project directory and nowhere else, so the whole plan is refused rather than the part of it that would have landed inside. Nothing was written."
+    REFUSAL_CODE=5
   fi
 fi
 
