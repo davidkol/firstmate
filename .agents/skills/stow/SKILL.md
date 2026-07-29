@@ -32,7 +32,7 @@ The goal is a session that is safe to reset or destroy because everything durabl
    - Captain preferences and fleet-local operational facts: hand-write directly to the destination selected by AGENTS.md's knowledge-routing table, using inspect-then-update every time.
      Before writing, inspect the destination, find the existing bullet or section the finding duplicates or supersedes, and rewrite it in place rather than adding a new trailing entry.
      `data/learnings.md` may not exist yet; create it on first local learning, in the same dated, evidence-backed, curated style as the captain-preference files.
-     If it holds an `fm-promotion` marker line, that block belongs to `bin/fm-learning-promote.sh` and ends at the blank line after it: curate around it and keep that blank line, because `land` otherwise deletes every entry down to the next one, and this file is gitignored with no recovery.
+     If it holds an `fm-promotion` marker line, that block belongs to `bin/fm-learning-promote.sh`: curate around it and leave its shape alone, because `land` refuses a block it did not write rather than risk deleting entries that are not part of it, and this file is gitignored with no recovery.
    - Project-intrinsic knowledge: never hand-write a project's `AGENTS.md`.
      Route it through a normal ship task so a crewmate records it via `bin/fm-ensure-agents-md.sh` and commits it through that project's delivery pipeline, exactly as section 6 describes.
      If the fleet is live, delegate this to a crewmate rather than doing it inline.
@@ -69,11 +69,13 @@ Promotion is the rare move, never the tidy default.
 
 Promotion runs in two phases with a gate between them, because retiring the local entry before the tracked change lands destroys it, and never retiring it leaves the same lesson in two places:
 
-1. `bin/fm-learning-promote.sh start <slug> --to <path> --evidence <where it proved true> --checkable <what makes it checkable>` records the promotion in flight in this home's `data/learnings.md`, so the session-start digest prints it every session until it is finished.
+1. `bin/fm-learning-promote.sh start <slug> --to <path> --evidence <where it proved true> --checkable <what makes it checkable> --landed-text <the distinguishing phrase the landed change will put in the destination>` records the promotion in flight in this home's `data/learnings.md`, so the session-start digest prints it every session until it is finished.
    It refuses an unstated graduation case and a destination no other home would receive; it cannot judge whether your stated evidence is true, so that judgment stays with you and the review pipeline.
+   Choose `--landed-text` from the sentence you actually intend to add, not a paraphrase, because it is the only thing proving this lesson landed rather than someone else's.
 2. Ship the tracked change through this repo's normal branch, no-mistakes, PR, and captain-merge path, exactly like any other shared-material change.
    Never hand-commit it to the default branch.
-3. `bin/fm-learning-promote.sh land <slug>` refuses while the destination is unchanged on the default branch, and on success replaces the in-flight record with a one-line pointer to the tracked owner.
+3. `bin/fm-learning-promote.sh land <slug>` refuses until the destination on the default branch actually contains that phrase, and on success replaces the in-flight record with a one-line pointer to the tracked owner.
+   A merely changed destination is not enough: `AGENTS.md` is touched by nearly every shared-material PR, so a weaker check would retire a lesson that never landed.
    Delete the original local entry that pointer supersedes in the same pass, so the lesson lives in exactly one place.
 
 Read `bin/fm-learning-promote.sh --help` for exact flags, paths, and refusals.

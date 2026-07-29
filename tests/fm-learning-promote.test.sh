@@ -10,6 +10,10 @@ set -u
 
 PROMOTE="$ROOT/bin/fm-learning-promote.sh"
 
+# The distinguishing phrase a promotion says will appear in the destination once
+# the tracked change lands. Landing it is what `land` requires as proof.
+LANDED_TEXT='the promoted lesson sentence'
+
 # Build a fake code root plus an empty home, export the overrides every case
 # uses, and set T to the temp root. Sets globals, so call it directly rather than
 # in a subshell.
@@ -26,11 +30,20 @@ setup_home() {
   export FM_ROOT_OVERRIDE="$root" FM_HOME="$T/home" FM_DATA_OVERRIDE="$T/home/data"
 }
 
-# Land a real change to <path> on the code root's default branch.
+# Land the promoted text itself into <path> on the default branch - the real
+# landing the gate is meant to recognise.
 land_tracked_change() {  # <root> <path>
-  printf 'a promoted lesson\n' >> "$1/$2"
+  printf '%s\n' "$LANDED_TEXT" >> "$1/$2"
   git -C "$1" add -A
   git -C "$1" -c user.name=t -c user.email=t@e.invalid commit -qm promoted
+}
+
+# Land an UNRELATED change to <path>: the file changes, but the promoted text is
+# nowhere in it. This is the ordinary case of another PR touching AGENTS.md.
+land_unrelated_change() {  # <root> <path>
+  printf 'an unrelated shared-material change\n' >> "$1/$2"
+  git -C "$1" add -A
+  git -C "$1" -c user.name=t -c user.email=t@e.invalid commit -qm unrelated
 }
 
 test_start_records_an_in_flight_promotion() {
@@ -41,7 +54,8 @@ test_start_records_an_in_flight_promotion() {
   assert_absent "$learnings" "learnings.md existed before the first promotion"
   out=$("$PROMOTE" start pane-tangle --to AGENTS.md \
     --evidence 'hit on both hookgame and Delivery' \
-    --checkable 'the tangle check names the case') || fail "start failed: $out"
+    --checkable 'the tangle check names the case' \
+    --landed-text 'a worktree tangle names the stranded checkout') || fail "start failed: $out"
 
   assert_present "$learnings" "start did not create the home's learnings file"
   assert_grep 'slug=pane-tangle to=AGENTS.md' "$learnings" "start did not record the promotion marker"
@@ -61,23 +75,23 @@ test_start_refuses_an_ungraduated_or_unreachable_promotion() {
   setup_home
   learnings="$T/home/data/learnings.md"
 
-  out=$("$PROMOTE" start pane-tangle --to AGENTS.md --checkable 'a check exists' 2>&1) && code=0 || code=$?
+  out=$("$PROMOTE" start pane-tangle --to AGENTS.md --checkable 'a check exists' --landed-text "$LANDED_TEXT" 2>&1) && code=0 || code=$?
   expect_code 1 "$code" "start accepted a promotion with no stated cross-project evidence"
   assert_contains "$out" "--evidence" "refusal did not name the missing evidence"
 
-  out=$("$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' 2>&1) && code=0 || code=$?
+  out=$("$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --landed-text "$LANDED_TEXT" 2>&1) && code=0 || code=$?
   expect_code 1 "$code" "start accepted a promotion with nothing making it checkable"
   assert_contains "$out" "--checkable" "refusal did not name the missing checkability"
 
   out=$("$PROMOTE" start pane-tangle --to data/learnings.md \
-    --evidence 'two projects' --checkable 'a check exists' 2>&1) && code=0 || code=$?
+    --evidence 'two projects' --checkable 'a check exists' --landed-text "$LANDED_TEXT" 2>&1) && code=0 || code=$?
   expect_code 1 "$code" "start accepted a gitignored destination no other home receives"
   assert_contains "$out" "gitignored" "refusal did not name the unreachable destination"
 
   # Whitespace would be recorded in full but read back truncated at the space,
   # so land would gate on the wrong path and destroy the record it protects.
   out=$("$PROMOTE" start pane-tangle --to 'AGENTS.md extra' \
-    --evidence 'two projects' --checkable 'a check exists' 2>&1) && code=0 || code=$?
+    --evidence 'two projects' --checkable 'a check exists' --landed-text "$LANDED_TEXT" 2>&1) && code=0 || code=$?
   expect_code 1 "$code" "start accepted a destination the whitespace-delimited marker cannot record"
   assert_contains "$out" "whitespace" "refusal did not name the unrecordable destination path"
 
@@ -88,11 +102,13 @@ test_start_refuses_an_ungraduated_or_unreachable_promotion() {
 test_start_refuses_a_duplicate_in_flight_slug() {
   local out code before after
   setup_home
-  "$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' >/dev/null \
+  "$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' \
+    --landed-text "$LANDED_TEXT" >/dev/null \
     || fail "first start failed"
   before=$(cat "$T/home/data/learnings.md")
 
-  out=$("$PROMOTE" start pane-tangle --to README.md --evidence 'two projects' --checkable 'a check' 2>&1) \
+  out=$("$PROMOTE" start pane-tangle --to README.md --evidence 'two projects' --checkable 'a check' \
+    --landed-text "$LANDED_TEXT" 2>&1) \
     && code=0 || code=$?
   expect_code 1 "$code" "start accepted a second promotion for a slug already in flight"
   assert_contains "$out" "already in flight" "duplicate refusal did not say why"
@@ -105,7 +121,8 @@ test_start_refuses_a_duplicate_in_flight_slug() {
 test_land_refuses_until_the_tracked_change_is_on_the_default_branch() {
   local out code
   setup_home
-  "$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' >/dev/null \
+  "$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' \
+    --landed-text "$LANDED_TEXT" >/dev/null \
     || fail "start failed"
 
   # An unrelated commit must not read as the promotion landing.
@@ -125,7 +142,8 @@ test_land_replaces_the_record_with_one_pointer() {
   learnings="$T/home/data/learnings.md"
   printf '# Operational learnings\n\n- 2026-07-01 an unrelated curated learning.\n' > "$learnings"
 
-  "$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' >/dev/null \
+  "$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' \
+    --landed-text "$LANDED_TEXT" >/dev/null \
     || fail "start failed"
   land_tracked_change "$T/root" AGENTS.md
 
@@ -145,6 +163,79 @@ test_land_replaces_the_record_with_one_pointer() {
   out=$("$PROMOTE" list) || fail "list failed after landing"
   [ -z "$out" ] || fail "a landed promotion is still listed as in flight: $out"
   pass "land swaps the in-flight record for one pointer and leaves other learnings alone"
+}
+
+test_land_refuses_when_an_unrelated_change_touched_the_destination() {
+  local learnings out code
+  setup_home
+  learnings="$T/home/data/learnings.md"
+
+  "$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' \
+    --landed-text "$LANDED_TEXT" >/dev/null || fail "start failed"
+
+  # The destination really changes on the default branch, exactly as it would
+  # when any other shared-material PR lands - but this promotion's lesson is not
+  # in it. A gate that only proved the file changed would go green here and
+  # destroy an in-flight record whose lesson never landed.
+  land_unrelated_change "$T/root" AGENTS.md
+
+  out=$("$PROMOTE" list) || fail "list failed"
+  assert_contains "$out" "waiting	pane-tangle	AGENTS.md" \
+    "list called an unrelated change to the destination a landing"
+
+  out=$("$PROMOTE" land pane-tangle 2>&1) && code=0 || code=$?
+  expect_code 1 "$code" "land retired a record because an unrelated change touched the destination"
+  assert_contains "$out" "does not contain the promoted text" "refusal did not name the missing promoted text"
+  assert_grep 'Promotion in flight' "$learnings" "a refused land destroyed the in-flight record"
+
+  # And it still lands once the lesson itself is really there.
+  land_tracked_change "$T/root" AGENTS.md
+  out=$("$PROMOTE" land pane-tangle) || fail "land failed after the real landing: $out"
+  assert_grep 'was promoted to `AGENTS.md`' "$learnings" "land did not leave a pointer after the real landing"
+  pass "land requires the promoted text itself, not merely a changed destination"
+}
+
+test_start_refuses_landed_text_the_destination_already_carries() {
+  local learnings out code
+  setup_home
+  learnings="$T/home/data/learnings.md"
+
+  out=$("$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' \
+    --landed-text '# Agents' 2>&1) && code=0 || code=$?
+  expect_code 1 "$code" "start accepted landed text the destination already carries"
+  assert_contains "$out" "already appears" "refusal did not say the phrase proves nothing"
+  assert_absent "$learnings" "a refused start still wrote to the home's learnings file"
+
+  out=$("$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' 2>&1) \
+    && code=0 || code=$?
+  expect_code 1 "$code" "start accepted a promotion with no landed text to prove it landed"
+  assert_contains "$out" "--landed-text" "refusal did not name the missing landed text"
+  pass "start refuses landed text that could never prove a landing"
+}
+
+test_land_refuses_a_block_whose_terminating_blank_line_is_gone() {
+  local learnings out code before
+  setup_home
+  learnings="$T/home/data/learnings.md"
+
+  "$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' \
+    --landed-text "$LANDED_TEXT" >/dev/null || fail "start failed"
+  land_tracked_change "$T/root" AGENTS.md
+
+  # Hand curation removed the blank line that closes the block, and further
+  # curated entries follow. Deleting through to the next blank line would eat
+  # them, in a gitignored file with no recovery.
+  printf -- '- 2026-07-02 a curated learning below the block.\n\n' >> "$learnings"
+  perl -0pi -e 's/\n\n- 2026-07-02/\n- 2026-07-02/' "$learnings"
+  before=$(cat "$learnings")
+
+  out=$("$PROMOTE" land pane-tangle 2>&1) && code=0 || code=$?
+  expect_code 1 "$code" "land deleted through a block with no terminating blank line"
+  assert_contains "$out" "delete entries that are not part of it" "refusal did not name the malformed block"
+  [ "$(cat "$learnings")" = "$before" ] || fail "a refused land still edited the learnings file"
+  assert_grep '- 2026-07-02 a curated learning below the block.' "$learnings" \
+    "land destroyed a curated entry below an unterminated block"
+  pass "land refuses an unterminated block instead of eating the entries below it"
 }
 
 test_stow_skill_owns_the_graduation_rule() {
@@ -176,5 +267,8 @@ test_start_refuses_an_ungraduated_or_unreachable_promotion
 test_start_refuses_a_duplicate_in_flight_slug
 test_land_refuses_until_the_tracked_change_is_on_the_default_branch
 test_land_replaces_the_record_with_one_pointer
+test_land_refuses_when_an_unrelated_change_touched_the_destination
+test_start_refuses_landed_text_the_destination_already_carries
+test_land_refuses_a_block_whose_terminating_blank_line_is_gone
 test_stow_skill_owns_the_graduation_rule
 test_agents_routes_upward_without_restating_the_mechanics
