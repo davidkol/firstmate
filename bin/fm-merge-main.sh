@@ -81,6 +81,18 @@ git -C "$PROJ" fetch --quiet origin "+refs/heads/$DEFAULT:refs/remotes/origin/$D
 # not run, and the local branch is then the only candidate head.
 git -C "$PROJ" fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>/dev/null || true
 
+# This path reads the validated head from origin only. Under fork push routing
+# (no-mistakes init --fork-url) the pipeline publishes elsewhere, and silently
+# falling back to the local head would land code the reviewer never saw. No fleet
+# project uses fork routing today, so stop and report instead of guessing.
+elsewhere=$(git -C "$PROJ" for-each-ref --format='%(refname)' "refs/remotes/*/$BRANCH" | grep -v "^refs/remotes/origin/$BRANCH\$" || true)
+if [ -n "$elsewhere" ]; then
+  echo "REFUSED: $BRANCH also exists on a remote other than origin:" >&2
+  printf '%s\n' "$elsewhere" >&2
+  echo "This landing path reads the validated head from origin only; resolve the push routing before landing." >&2
+  exit 1
+fi
+
 SOURCE="$BRANCH"
 SOURCE_DESC="local $BRANCH"
 if git -C "$PROJ" rev-parse --verify --quiet "refs/remotes/origin/$BRANCH" >/dev/null; then

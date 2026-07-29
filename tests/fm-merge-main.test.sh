@@ -17,6 +17,7 @@
 #   (f) lands the local branch when the pipeline published nothing
 #   (g) refuses a dirty project checkout
 #   (h) refuses a project with no origin remote
+#   (i) refuses when the branch is also published on a non-origin remote
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -117,6 +118,31 @@ test_lands_published_head_and_pushes() {
   assert_grep "retired published branch origin/$BRANCH" "$case_dir/stdout" \
     "lands-published: retiring the published branch should be reported"
   pass "fm-merge-main lands the published head on main, pushes it, and retires the branch"
+}
+
+# Under fork push routing the pipeline publishes the validated head to the fork,
+# not to origin. Reading origin only and quietly falling back to the local head
+# would land code the reviewer never saw, so the mismatch has to stop the landing.
+test_refuses_fork_routed_branch() {
+  local case_dir rc before
+  case_dir=$(make_case fork-routed)
+  git clone --quiet --bare "$case_dir/seed" "$case_dir/fork.git"
+  git -C "$case_dir/project" remote add fork "file://$(cd "$case_dir/fork.git" && pwd)"
+  git -C "$case_dir/project" push --quiet fork "$BRANCH"
+  git -C "$case_dir/project" fetch --quiet fork
+  before=$(remote_main_sha "$case_dir")
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "fork-routed: fm-merge-main should refuse a branch published off origin"
+  assert_grep 'also exists on a remote other than origin' "$case_dir/stderr" \
+    "fork-routed: the refusal should name the other remote"
+  [ "$(remote_main_sha "$case_dir")" = "$before" ] \
+    || fail "fork-routed: nothing should land while the validated head may be elsewhere"
+  pass "fm-merge-main refuses when the branch is also published on a non-origin remote"
 }
 
 test_refuses_wrong_mode() {
@@ -257,6 +283,7 @@ test_refuses_project_without_origin() {
 }
 
 test_lands_published_head_and_pushes
+test_refuses_fork_routed_branch
 test_refuses_wrong_mode
 test_refuses_unvalidated_local_commits
 test_refuses_diverged_branch
