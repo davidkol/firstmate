@@ -36,10 +36,12 @@ The run recorded a CI-ready timestamp and the step ended at the merge rather tha
 A second checkless run on this repository reached CI-ready the same way and then logged `no CI checks reported - still monitoring` again across two further base advances, which is the background monitoring the worker must not wait on.
 
 The comparison that matters is against runs on a repository that does register checks: those log `CI checks running, waiting for results...` and then `all CI checks passed`.
-Both shapes set CI-readiness. Elapsed step duration is not evidence either way, because the step runs until the PR merges or closes in both cases, and a run parked on a real CI failure can stay open far longer without ever becoming ready.
+Both shapes set CI-readiness.
+Elapsed step duration is not evidence either way, because the step runs until the PR merges or closes in both cases, and a run parked on a real CI failure can stay open far longer without ever becoming ready.
 
 `bin/fm-crew-state.sh` maps the steady-state checkless marker correctly: its `nm_ci_checks_state` scans the step log for the LAST recognized marker (`tail -1`) and treats `no CI checks reported - still monitoring` as `green`, alongside `checks passed`.
-A trailing `base branch advanced ... re-arming CI monitor timeout` marker instead reads `not-ready`, deliberately and pinned by `tests/fm-crew-state.test.sh`, which is where the PR #1 log quoted above happens to end.
+A trailing `base branch advanced ... re-arming CI monitor timeout` marker instead reads `not-ready`, deliberately and pinned by `tests/fm-crew-state.test.sh`.
+That is the last marker the scan recognizes in the PR #1 log quoted above, because its closing `PR has been merged!` line is not one of the recognized markers.
 That window is pre-existing and self-clears on the next poll, and it does not hold the worker: the pipeline releases the worker at its own CI-ready return point, and the resulting `done: PR ... checks green` line is recognized independently by `log_reports_ci_ready`.
 The prose instructions were the only surface that still described a green check result as the sole ready signal.
 
