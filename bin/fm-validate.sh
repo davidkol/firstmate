@@ -19,7 +19,8 @@
 # --skip is merged with the mode's, never allowed to replace it.
 #
 # Run it from inside the task worktree - it hands off to no-mistakes in the current
-# directory and does not change it. Drive the resulting gates with
+# directory and does not change it, and refuses when that directory is not the one
+# the task's own meta records. Drive the resulting gates with
 # `no-mistakes axi respond` as usual; this script only starts the run.
 # Usage: fm-validate.sh <task-id> --intent "<what the user set out to accomplish>" [extra axi run args...]
 set -eu
@@ -46,6 +47,25 @@ META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ -n "$MODE" ] || MODE=no-mistakes
+
+# The skip set derived below belongs to THIS task's repository, and no-mistakes
+# picks its repository up from the current directory. Started from anywhere else -
+# a wrong directory, a mistyped or stale task id - it would hand one task's mode to
+# another project's pipeline. The meta already records where the task lives, so the
+# binding is checked here rather than left to a worker remembering to cd first.
+WORKTREE=$(grep '^worktree=' "$META" | cut -d= -f2- || true)
+if [ -n "$WORKTREE" ]; then
+  HERE=$(pwd -P)
+  THERE=$(cd "$WORKTREE" 2>/dev/null && pwd -P) || THERE=$WORKTREE
+  case "$HERE" in
+    "$THERE"|"$THERE"/*) ;;
+    *)
+      echo "error: task $ID's worktree is $WORKTREE, but this is $HERE" >&2
+      echo "Run fm-validate.sh from inside the task worktree; a mode-derived skip set must never be applied to another repository's pipeline." >&2
+      exit 1
+      ;;
+  esac
+fi
 
 # Steps this delivery mode must always omit. Only host-facing steps ever appear
 # here; the local review surface is never skipped by mode.

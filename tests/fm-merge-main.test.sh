@@ -20,6 +20,8 @@
 #   (i) refuses when the branch is also published on a non-origin remote
 #   (j) landing leaves the task worktree's commits provably landed for teardown
 #   (k) a rejected push reports and preserves the work instead of working around it
+#   (l) the local no-mistakes gate remote's tracking refs do not block a landing
+#   (m) a re-run after a successful landing reports it instead of demanding a rebase
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -211,6 +213,64 @@ test_refuses_fork_routed_branch() {
   pass "fm-merge-main refuses when the branch is also published on a non-origin remote"
 }
 
+# The counterpart to (i), and the reason it is not enough on its own. `no-mistakes
+# init` adds a remote named "no-mistakes" for the local bare gate repo, and every
+# gate run leaves refs/remotes/no-mistakes/fm/<id> behind - so EVERY validated-main
+# project carries a non-origin remote holding the task branch. Treating that as
+# off-origin publication would refuse every real landing, which is exactly what a
+# fixture named "fork" cannot catch.
+test_gate_remote_refs_do_not_block_landing() {
+  local case_dir rc branch_sha
+  case_dir=$(make_case gate-remote)
+  publish_branch "$case_dir"
+  branch_sha=$(git -C "$case_dir/project" rev-parse "$BRANCH")
+  # Stand in for the gate: a local bare repo wired up the way `no-mistakes init`
+  # wires it, carrying the task branch.
+  git clone --quiet --bare "$case_dir/seed" "$case_dir/gate.git"
+  git -C "$case_dir/project" remote add no-mistakes "$(cd "$case_dir/gate.git" && pwd)"
+  git -C "$case_dir/project" push --quiet no-mistakes "$BRANCH"
+  git -C "$case_dir/project" fetch --quiet no-mistakes
+  git -C "$case_dir/project" rev-parse --verify --quiet "refs/remotes/no-mistakes/$BRANCH" >/dev/null \
+    || fail "gate-remote: the fixture did not produce the gate tracking ref it is testing"
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "gate-remote: the gate remote's own tracking refs must not refuse a landing"
+  [ "$(remote_main_sha "$case_dir")" = "$branch_sha" ] \
+    || fail "gate-remote: the host's main was not updated - the sanctioned landing path never ran"
+  pass "fm-merge-main lands normally when the local no-mistakes gate remote carries the task branch"
+}
+
+# After a successful landing the published branch is retired, so a re-run reads the
+# local branch as the source - and that head is now BEHIND the default branch rather
+# than ahead of it. Read as a divergence it would tell the worker to rebase and
+# re-validate work that is already on the host.
+test_rerun_after_landing_reports_already_landed() {
+  local case_dir rc after
+  case_dir=$(make_case rerun-landed)
+  publish_branch "$case_dir"
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "rerun-landed: the first landing should succeed"
+  after=$(remote_main_sha "$case_dir")
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout2" 2> "$case_dir/stderr2"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "rerun-landed: a re-run after a successful landing should report, not refuse"
+  assert_grep 'already landed' "$case_dir/stdout2" \
+    "rerun-landed: the re-run should say the work already landed"
+  assert_not_contains "$(cat "$case_dir/stderr2")" 're-validate' \
+    "rerun-landed: the re-run must not demand a rebase and re-validation of landed work"
+  [ "$(remote_main_sha "$case_dir")" = "$after" ] \
+    || fail "rerun-landed: the re-run must not move the host's main again"
+  pass "fm-merge-main reports an already-landed re-run instead of diagnosing a divergence"
+}
+
 test_refuses_wrong_mode() {
   local case_dir rc before
   case_dir=$(make_case wrong-mode no-mistakes)
@@ -352,6 +412,8 @@ test_lands_published_head_and_pushes
 test_landing_keeps_worktree_work_provably_landed
 test_rejected_push_reports_and_preserves
 test_refuses_fork_routed_branch
+test_gate_remote_refs_do_not_block_landing
+test_rerun_after_landing_reports_already_landed
 test_refuses_wrong_mode
 test_refuses_unvalidated_local_commits
 test_refuses_diverged_branch

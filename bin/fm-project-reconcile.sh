@@ -526,8 +526,10 @@ if [ "$is_git" -eq 1 ]; then
   fi
 fi
 
-# A delivery mode that promises a PR, against a repo with nowhere to push, is
-# how work gets marked done while stranded outside the owner's only copy.
+# A delivery mode that promises a push, against a repo with nowhere to push, is
+# how work gets marked done while stranded outside the owner's only copy. That is
+# every mode that reaches the host: the PR modes, and validated-main, which pushes
+# the default branch itself.
 # fm-project-mode.sh warns and falls back to "no-mistakes off" whenever it cannot
 # resolve the name, so a warning means the registry records nothing here. The
 # fallback is not a record and must not be checked against a remote as if it
@@ -541,10 +543,10 @@ if [ -n "$PROJECT_NAME" ] && [ -x "$SCRIPT_DIR/fm-project-mode.sh" ]; then
     MODE_UNRESOLVED=$(sed -e 's/^warn: //' -e 's/;.*$//' "$mode_err" | head -1)
   else
     case "$MODE" in
-      no-mistakes|direct-PR)
+      no-mistakes|direct-PR|validated-main)
         if [ -z "$ORIGIN_URL" ]; then
           add_disagreement delivery-mode-vs-remote \
-            "the registry records $PROJECT_NAME as $MODE, which lands work through a pushed PR, but this repo has no origin remote"
+            "the registry records $PROJECT_NAME as $MODE, which lands work by pushing to origin, but this repo has no origin remote"
         elif [ -n "$LANDING_HAZARD" ]; then
           add_disagreement delivery-mode-vs-remote \
             "the registry records $PROJECT_NAME as $MODE, but $LANDING_HAZARD"

@@ -14,8 +14,9 @@
 # (captain approval, or yolo=on), and only as a clean fast-forward. It refuses a
 # diverged branch, a dirty or off-default project checkout, a task branch carrying
 # local commits the validated head does not contain, a branch published to a remote
-# other than origin, and a default branch that has moved on the host. See AGENTS.md
-# prime directives and task lifecycle.
+# other than origin (the local no-mistakes gate remote is bookkeeping, not
+# publication, and does not count), and a default branch that has moved on the host.
+# See AGENTS.md prime directives and task lifecycle.
 #
 # The merge source is the published head (origin/fm/<id>) whenever it exists,
 # because the pipeline commits its own fix rounds and pushes them - the local task
@@ -82,11 +83,26 @@ git -C "$PROJ" fetch --quiet origin "+refs/heads/$DEFAULT:refs/remotes/origin/$D
 # not run, and the local branch is then the only candidate head.
 git -C "$PROJ" fetch --quiet origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" 2>/dev/null || true
 
+# `no-mistakes init` adds a remote named "no-mistakes" pointing at the local bare
+# gate repository, and every gate run leaves a refs/remotes/no-mistakes/fm/<id>
+# tracking ref behind. Those refs are gate bookkeeping, not a publication target,
+# and a validated-main project is required to be gate-initialized - counting them
+# as off-origin publication would refuse every real landing. The exclusion is
+# narrow: it applies only to a remote of that name whose URL is a local path, so a
+# hosted fork remote still trips the guard below even if it carries that name.
+GATE_REMOTE=
+case "$(git -C "$PROJ" remote get-url no-mistakes 2>/dev/null || true)" in
+  /*|file://*) GATE_REMOTE=no-mistakes ;;
+esac
+
 # This path reads the validated head from origin only. Under fork push routing
 # (no-mistakes init --fork-url) the pipeline publishes elsewhere, and silently
 # falling back to the local head would land code the reviewer never saw. No fleet
 # project uses fork routing today, so stop and report instead of guessing.
 elsewhere=$(git -C "$PROJ" for-each-ref --format='%(refname)' "refs/remotes/*/$BRANCH" | grep -v "^refs/remotes/origin/$BRANCH\$" || true)
+if [ -n "$elsewhere" ] && [ -n "$GATE_REMOTE" ]; then
+  elsewhere=$(printf '%s\n' "$elsewhere" | grep -v "^refs/remotes/$GATE_REMOTE/$BRANCH\$" || true)
+fi
 if [ -n "$elsewhere" ]; then
   echo "REFUSED: $BRANCH also exists on a remote other than origin:" >&2
   printf '%s\n' "$elsewhere" >&2
@@ -109,6 +125,19 @@ if git -C "$PROJ" rev-parse --verify --quiet "refs/remotes/origin/$BRANCH" >/dev
   fi
   SOURCE="refs/remotes/origin/$BRANCH"
   SOURCE_DESC="validated head origin/$BRANCH"
+fi
+
+# A re-run after a successful landing is not a divergence. The published branch was
+# retired, so SOURCE falls back to the local task branch, whose head both $DEFAULT
+# and origin/$DEFAULT already contain - the checks below would read that as "the
+# branch diverged" and send the worker off to rebase and re-validate work that is
+# already on the host. Report it plainly instead, and touch nothing: this path does
+# not push and does not retire a branch. The rejected-push retry is deliberately not
+# caught here, because origin/$DEFAULT does not contain the work in that case.
+if git -C "$PROJ" merge-base --is-ancestor "$SOURCE" "refs/remotes/origin/$DEFAULT" &&
+   git -C "$PROJ" merge-base --is-ancestor "$SOURCE" "$DEFAULT"; then
+  echo "already landed: $DEFAULT and origin/$DEFAULT both contain $SOURCE_DESC ($(git -C "$PROJ" rev-parse --short "$SOURCE")) in $PROJ; nothing to do"
+  exit 0
 fi
 
 # Clean fast-forward only, against both the local and the host default branch.

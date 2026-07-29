@@ -373,6 +373,26 @@ test_pr_delivery_mode_against_a_repo_with_no_remote_is_a_disagreement() {
   pass "fm-project-reconcile.sh: a PR delivery mode with nowhere to push stops and asks"
 }
 
+# validated-main promises a push too - straight to the default branch, with no PR
+# in between - so a remoteless repo strands its work exactly the same way. The
+# check is about having somewhere to push, not about opening a pull request.
+test_validated_main_against_a_repo_with_no_remote_is_a_disagreement() {
+  local repo home out rc
+  repo=$(new_bare_project validated-main-vs-remote)
+  home="$TMP_ROOT/home-validated-main"
+  mkdir -p "$home/data"
+  printf -- '- validated-main-vs-remote [validated-main] - a project (added 2026-07-28)\n' > "$home/data/projects.md"
+
+  out=$(FM_HOME="$home" "$RECONCILE" --offline --project validated-main-vs-remote "$repo" 2>&1)
+  assert_contains "$out" "DISAGREEMENT: delivery-mode-vs-remote" \
+    "a validated-main project against a remoteless repo was not reported"
+  assert_contains "$out" "no origin remote" "the disagreement did not name the missing remote"
+
+  out=$(FM_HOME="$home" "$RECONCILE" --offline --seed --project validated-main-vs-remote "$repo" 2>&1); rc=$?
+  expect_code 3 "$rc" "seeding a validated-main project with nowhere to push"
+  pass "fm-project-reconcile.sh: validated-main with nowhere to push stops and asks like the PR modes"
+}
+
 test_an_unregistered_project_reports_the_lookup_instead_of_inventing_a_mode() {
   local repo home out rc
   repo=$(new_bare_project unregistered)
@@ -547,6 +567,7 @@ test_existing_check_command_is_wrapped_under_the_conventional_name
 test_check_command_from_project_config_is_anchored_to_the_repo
 test_repo_with_no_remote_reports_what_landed_means
 test_pr_delivery_mode_against_a_repo_with_no_remote_is_a_disagreement
+test_validated_main_against_a_repo_with_no_remote_is_a_disagreement
 test_an_unregistered_project_reports_the_lookup_instead_of_inventing_a_mode
 test_uncommitted_work_is_a_named_gap_that_lists_the_paths
 test_a_long_uncommitted_list_is_capped_with_the_remainder_stated

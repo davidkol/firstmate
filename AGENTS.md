@@ -295,7 +295,8 @@ After an autonomous merge or landing, give the captain a one-line outcome: the f
 ### Validate
 
 For a no-mistakes or validated-main ship, trigger validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
-Validation runs start through `bin/fm-validate.sh <id> --intent "..."`, which derives the pipeline's skip set from the task's recorded delivery mode, so a validated-main run omits the PR and CI steps without anyone passing a flag; everything else about driving it is identical.
+A validated-main run starts through `bin/fm-validate.sh <id> --intent "..."`, which derives the pipeline's skip set from the task's recorded delivery mode, so it omits the PR and CI steps without anyone passing a flag; everything else about driving it is identical.
+A no-mistakes ship starts its run directly, the way it always has.
 That skip set never includes review, test, document, or lint for any mode.
 The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.

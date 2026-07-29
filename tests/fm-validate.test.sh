@@ -20,6 +20,7 @@
 #   (f) a missing --intent refuses before starting a run
 #   (g) missing task meta refuses before starting a run
 #   (h) a mode with no recorded value falls back to the full pipeline
+#   (i) running outside the task's recorded worktree refuses before starting a run
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -28,13 +29,14 @@ set -u
 VALIDATE="$ROOT/bin/fm-validate.sh"
 TMP_ROOT=$(fm_test_tmproot fm-validate-tests)
 
-# One sandbox: a state dir with a task meta and a no-mistakes mock on PATH that
-# records the exact argv it was invoked with. Echoes the case dir.
+# One sandbox: a state dir with a task meta, the worktree that meta records, and a
+# no-mistakes mock on PATH that records the exact argv it was invoked with. Echoes
+# the case dir.
 make_case() {
   local name=$1 mode=$2 case_dir fakebin
   case_dir="$TMP_ROOT/$name"
   fakebin="$case_dir/fakebin"
-  mkdir -p "$case_dir/state" "$fakebin"
+  mkdir -p "$case_dir/state" "$case_dir/wt" "$fakebin"
   if [ "$mode" != "__none__" ]; then
     fm_write_meta "$case_dir/state/task-v1.meta" \
       "window=fm-task-v1" \
@@ -58,13 +60,24 @@ SH
   printf '%s\n' "$case_dir"
 }
 
+# The script hands off to no-mistakes in the current directory, so every call runs
+# from somewhere explicit. run_validate uses the worktree the task meta records,
+# which is where a worker is supposed to be.
+run_validate_from() {
+  local case_dir=$1 from=$2; shift 2
+  (
+    cd "$from" || exit 1
+    FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_TEST_NM_LOG="$case_dir/nm.log" \
+    PATH="$case_dir/fakebin:$PATH" \
+      "$VALIDATE" "$@"
+  )
+}
+
 run_validate() {
   local case_dir=$1; shift
-  FM_ROOT_OVERRIDE="$ROOT" \
-  FM_STATE_OVERRIDE="$case_dir/state" \
-  FM_TEST_NM_LOG="$case_dir/nm.log" \
-  PATH="$case_dir/fakebin:$PATH" \
-    "$VALIDATE" "$@"
+  run_validate_from "$case_dir" "$case_dir/wt" "$@"
 }
 
 invoked() {
@@ -169,6 +182,43 @@ test_absent_mode_falls_back_to_full_pipeline() {
   pass "fm-validate falls back to the full pipeline when the task records no mode"
 }
 
+# The skip set is a property of ONE task's repository. Started from anywhere else -
+# a wrong directory, a stale or mistyped id - it would hand that task's mode to
+# whatever pipeline lives in the current directory, which is the worker-discipline
+# failure this script exists to remove.
+test_wrong_worktree_refuses() {
+  local case_dir rc elsewhere
+  case_dir=$(make_case wrong-worktree validated-main)
+  elsewhere="$case_dir/somewhere-else"
+  mkdir -p "$elsewhere"
+
+  set +e
+  run_validate_from "$case_dir" "$elsewhere" task-v1 --intent "add a thing" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "wrong-worktree: fm-validate should refuse outside the task's worktree"
+  assert_grep "worktree is $case_dir/wt" "$case_dir/stderr" \
+    "wrong-worktree: the refusal should name the worktree the task records"
+  [ ! -s "$case_dir/nm.log" ] \
+    || fail "wrong-worktree: another repository's pipeline was started with this task's skip set"
+  pass "fm-validate refuses to apply a task's mode-derived skip set outside that task's worktree"
+}
+
+# A subdirectory is still inside the task's repository, so no-mistakes resolves the
+# same repo there; refusing it would only make the guard annoying.
+test_subdirectory_of_worktree_is_accepted() {
+  local case_dir
+  case_dir=$(make_case worktree-subdir validated-main)
+  mkdir -p "$case_dir/wt/src"
+  run_validate_from "$case_dir" "$case_dir/wt/src" task-v1 --intent "add a thing" >/dev/null 2>&1 \
+    || fail "worktree-subdir: fm-validate should accept a subdirectory of the task's worktree"
+  assert_contains "$(invoked "$case_dir")" 'axi run --skip pr,ci' \
+    "worktree-subdir: the run should start normally from inside the worktree"
+  pass "fm-validate accepts a subdirectory of the task's worktree"
+}
+
 test_validated_main_derives_skip
 test_no_mistakes_runs_full_pipeline
 test_caller_skip_is_merged_not_substituted
@@ -177,3 +227,5 @@ test_no_mode_skips_the_local_review_surface
 test_missing_intent_refuses
 test_missing_meta_refuses
 test_absent_mode_falls_back_to_full_pipeline
+test_wrong_worktree_refuses
+test_subdirectory_of_worktree_is_accepted
