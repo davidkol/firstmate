@@ -85,8 +85,10 @@ Then route what it reports:
 - A `DISAGREEMENT:` line means two surfaces disagree about what is true, and the captain owns which one survives.
   Load `decision-hold-lifecycle` and register each one as a durable hold with a stated default.
   Never pick a side, and never pre-empt a hold that is already open on the board.
-- A `GAP:` line names something absent that no script can author for the project.
+- A `GAP:` line names something absent or unlanded that no script can resolve for the project.
   A missing check command is the one that matters most: it degrades the done checklist to a named gap and never to a silent pass.
+  Uncommitted work is reported here too, with the paths named, because state that lives only in a working tree and in no document is how a session rebuilds what the project already has.
+  A gap informs the brief; it is not a captain hold and never blocks the seed.
 - `SEED:` lines are the plan for what is genuinely missing.
 
 Seeding is a project write, so a crewmate carries it through the project's selected delivery path, the same way it creates a project `AGENTS.md`.

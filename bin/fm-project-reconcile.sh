@@ -32,7 +32,8 @@
 #   SURFACE:      <kind> <scope> <path> - one existing state surface
 #   COLLISION:    <kind> - two or more surfaces cover the same job
 #   DISAGREEMENT: <key> - two surfaces disagree; the captain owns which survives
-#   GAP:          something absent that this script cannot author for the project
+#   GAP:          something absent or unlanded that this script cannot resolve
+#                 for the project
 #   SEED:         a surface this run would create, or did create with --seed
 #   PRESENT:      a surface that already exists and was not touched
 #
@@ -113,9 +114,18 @@ DIR=$(cd "$DIR" && pwd -P)
 # --- small portability helpers ----------------------------------------------
 
 mtime_of() {  # <path> -> epoch seconds, or 0
+  # GNU stat reads -f as "filesystem status", where %m is not a directive: it
+  # prints "?" and exits 0, so an exit-status-only fallback never fires. Decide
+  # on the value instead, which leaves both stat flavors working.
   local p=$1 t
-  t=$(stat -f %m "$p" 2>/dev/null) || t=$(stat -c %Y "$p" 2>/dev/null) || t=
-  printf '%s\n' "${t:-0}"
+  t=$(stat -f %m "$p" 2>/dev/null) || t=
+  case "$t" in
+    ''|*[!0-9]*) t=$(stat -c %Y "$p" 2>/dev/null) || t= ;;
+  esac
+  case "$t" in
+    ''|*[!0-9]*) t=0 ;;
+  esac
+  printf '%s\n' "$t"
 }
 
 lower() { printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'; }
@@ -172,6 +182,9 @@ epoch_of() {  # <repo-relative-path> -> epoch seconds
 
 surfaces_of_kind() { grep "^$1	" "$SURFACES" 2>/dev/null || true; }
 count_of_kind() { surfaces_of_kind "$1" | wc -l | tr -d ' '; }
+# In-repo surfaces only. A store that lives outside the repo is invisible from
+# every isolated worktree, so it can never stand in for one the repo carries.
+repo_count_of_kind() { surfaces_of_kind "$1" | awk -F'\t' '$2 == "repo"' | wc -l | tr -d ' '; }
 
 # Classify one repo-relative path into a surface kind, or nothing.
 # The name lists are drawn from what the surveyed projects actually used, not
@@ -328,10 +341,25 @@ detect_run_command() {
   return 0
 }
 
+# A stub this script seeded that only names the gap is a placeholder, not a
+# command. Telling the two apart keeps the gap reported for as long as it is
+# unreplaced, so a re-run after seeding never reads as "this project verifies".
+seeded_gap_stub() {  # <repo-relative-path>
+  local f="$DIR/$1"
+  [ -f "$f" ] || return 1
+  grep -q 'Seeded by firstmate' "$f" 2>/dev/null || return 1
+  grep -qx "exit $GAP_EXIT" "$f" 2>/dev/null
+}
+
 for name in check setup run; do
   path="script/$name"
   if [ -e "$DIR/$path" ]; then
-    add_surface "$name-command" repo "$path" "the conventional name"
+    if seeded_gap_stub "$path"; then
+      add_surface "$name-command" repo "$path" \
+        "a seeded placeholder that names the gap and exits $GAP_EXIT, not a $name command yet"
+    else
+      add_surface "$name-command" repo "$path" "the conventional name"
+    fi
   fi
 done
 
@@ -466,9 +494,22 @@ EOF
 fi
 
 # A branch the entry point names as the place work lands, that has no ref.
+# Branch-shaped context is required before raising this. "main" is an ordinary
+# English word - "the main entry point", "the main loop" - and a detector that
+# reads prose as a branch name puts a question the captain cannot answer onto
+# the board this whole script exists to keep clean.
+entry_names_branch() {  # <branch-name>
+  local b=$1
+  if grep -Eq "(origin/|refs/heads/)$b([^a-zA-Z0-9_/-]|$)" "$ENTRY_FILE" 2>/dev/null; then
+    return 0
+  fi
+  grep -Ei 'branch(es)?' "$ENTRY_FILE" 2>/dev/null |
+    grep -Eq "(^|[^a-zA-Z0-9_/-])$b([^a-zA-Z0-9_/-]|$)"
+}
+
 if [ -n "$ENTRY_FILE" ] && [ "$is_git" -eq 1 ]; then
   for b in main master develop trunk; do
-    grep -Eq "(^|[^a-zA-Z0-9_/-])$b([^a-zA-Z0-9_/-]|$)" "$ENTRY_FILE" 2>/dev/null || continue
+    entry_names_branch "$b" || continue
     git -C "$DIR" rev-parse --verify --quiet "refs/heads/$b" >/dev/null 2>&1 && continue
     git -C "$DIR" rev-parse --verify --quiet "refs/remotes/origin/$b" >/dev/null 2>&1 && continue
     add_disagreement "entry-point-names-missing-branch-$b" \
@@ -476,31 +517,51 @@ if [ -n "$ENTRY_FILE" ] && [ "$is_git" -eq 1 ]; then
   done
 fi
 
-# Every document here describes committed state, and the tree contradicts them.
+# Work that lives only in the working tree is named in no document, so a session
+# following the project's own onboarding rebuilds what already exists. That is
+# not two surfaces disagreeing about which is authoritative and there is nothing
+# for the captain to rule on, so it is a named gap that lists what is uncommitted
+# rather than a hold that blocks the seed.
+UNCOMMITTED_COUNT=0
+UNCOMMITTED_LIST=
 if [ "$is_git" -eq 1 ]; then
-  dirty=$(git -C "$DIR" status --porcelain 2>/dev/null | grep -c . || true)
-  if [ -n "$dirty" ] && [ "$dirty" -gt 0 ] 2>/dev/null; then
-    add_disagreement uncommitted-state \
-      "$dirty path(s) are uncommitted or untracked, so the tree and every document describing this project disagree"
+  uncommitted="$WORK/uncommitted"
+  git -C "$DIR" status --porcelain 2>/dev/null | cut -c4- | grep . > "$uncommitted" || : > "$uncommitted"
+  UNCOMMITTED_COUNT=$(grep -c . "$uncommitted" || true)
+  if [ "$UNCOMMITTED_COUNT" -gt 0 ]; then
+    UNCOMMITTED_LIST=$(head -"$MAX_LIST" "$uncommitted" | paste -sd, - | sed 's/,/, /g')
+    if [ "$UNCOMMITTED_COUNT" -gt "$MAX_LIST" ]; then
+      UNCOMMITTED_LIST="$UNCOMMITTED_LIST, and $((UNCOMMITTED_COUNT - MAX_LIST)) more"
+    fi
   fi
 fi
 
 # A delivery mode that promises a PR, against a repo with nowhere to push, is
 # how work gets marked done while stranded outside the owner's only copy.
+# fm-project-mode.sh warns and falls back to "no-mistakes off" whenever it cannot
+# resolve the name, so a warning means the registry records nothing here. The
+# fallback is not a record and must not be checked against a remote as if it
+# were: that manufactures a hold about a mode nobody ever chose.
+MODE_UNRESOLVED=
 if [ -n "$PROJECT_NAME" ] && [ -x "$SCRIPT_DIR/fm-project-mode.sh" ]; then
-  mode_line=$("$SCRIPT_DIR/fm-project-mode.sh" "$PROJECT_NAME" 2>/dev/null || true)
+  mode_err="$WORK/mode.err"
+  mode_line=$("$SCRIPT_DIR/fm-project-mode.sh" "$PROJECT_NAME" 2>"$mode_err" || true)
   MODE=${mode_line%% *}
-  case "$MODE" in
-    no-mistakes|direct-PR)
-      if [ -z "$ORIGIN_URL" ]; then
-        add_disagreement delivery-mode-vs-remote \
-          "the registry records $PROJECT_NAME as $MODE, which lands work through a pushed PR, but this repo has no origin remote"
-      elif [ -n "$LANDING_HAZARD" ]; then
-        add_disagreement delivery-mode-vs-remote \
-          "the registry records $PROJECT_NAME as $MODE, but $LANDING_HAZARD"
-      fi
-      ;;
-  esac
+  if [ -s "$mode_err" ]; then
+    MODE_UNRESOLVED=$(sed -e 's/^warn: //' -e 's/;.*$//' "$mode_err" | head -1)
+  else
+    case "$MODE" in
+      no-mistakes|direct-PR)
+        if [ -z "$ORIGIN_URL" ]; then
+          add_disagreement delivery-mode-vs-remote \
+            "the registry records $PROJECT_NAME as $MODE, which lands work through a pushed PR, but this repo has no origin remote"
+        elif [ -n "$LANDING_HAZARD" ]; then
+          add_disagreement delivery-mode-vs-remote \
+            "the registry records $PROJECT_NAME as $MODE, but $LANDING_HAZARD"
+        fi
+        ;;
+    esac
+  fi
 fi
 
 # --- report -----------------------------------------------------------------
@@ -556,13 +617,24 @@ while IFS=$'\t' read -r key text; do
   esac
 done < "$DISAGREEMENTS"
 
-# What is absent that this script cannot author for the project.
-if [ -z "$CHECK_CMD" ] && [ ! -e "$DIR/script/check" ]; then
-  if [ -n "$ENTRY_FILE" ]; then
-    echo "GAP: check-command - no check command exists under any conventional name; read ${ENTRY_FILE##*/} for one this project names, and if there is none, a done claim here degrades to this named gap, never a silent pass"
-  else
-    echo "GAP: check-command - no check command exists under any conventional name and there is no entry point naming one; a done claim here degrades to this named gap, never a silent pass"
+# What is absent or unlanded that this script cannot resolve for the project.
+# Every one of these is named out loud and none is ever skipped in silence.
+if [ -z "$CHECK_CMD" ] && { [ ! -e "$DIR/script/check" ] || seeded_gap_stub script/check; }; then
+  absent="no check command exists under any conventional name"
+  if seeded_gap_stub script/check; then
+    absent="script/check is still the seeded placeholder that exits $GAP_EXIT, so no check command exists under any conventional name"
   fi
+  if [ -n "$ENTRY_FILE" ]; then
+    echo "GAP: check-command - $absent; read ${ENTRY_FILE##*/} for one this project names, and if there is none, a done claim here degrades to this named gap, never a silent pass"
+  else
+    echo "GAP: check-command - $absent and there is no entry point naming one; a done claim here degrades to this named gap, never a silent pass"
+  fi
+fi
+if [ "$UNCOMMITTED_COUNT" -gt 0 ]; then
+  echo "GAP: uncommitted-state - $UNCOMMITTED_COUNT path(s) hold work that is not committed and that no document describes: $UNCOMMITTED_LIST; read them before rebuilding state this project already has"
+fi
+if [ -n "$MODE_UNRESOLVED" ]; then
+  echo "GAP: delivery-mode-unresolved - $MODE_UNRESOLVED, so what landing means for $PROJECT_NAME is unrecorded; register the project before its delivery mode can be checked against this repo"
 fi
 if [ -n "$MEMORY_DIR" ]; then
   echo "GAP: memory-outside-repo - $MEMORY_DIR is keyed to this absolute path, so it is invisible from every isolated worktree"
@@ -599,11 +671,15 @@ refuse_never_seeded() {  # <target>
 
 entry_point_present() { [ -e "$DIR/AGENTS.md" ] || [ -e "$DIR/CLAUDE.md" ]; }
 
+# Presence is decided from the inventory, not from the one name this script
+# would have chosen. A project carrying findings/, build-log/ or playbooks/
+# already has a notes store; a different name for it is a naming difference, not
+# an absence, and seeding a second one is the duplication this exists to prevent.
 target_present() {  # <target>
   case "$1" in
     AGENTS.md) entry_point_present ;;
-    notes) [ -e "$DIR/notes" ] || [ -e "$DIR/notes.md" ] ;;
-    DECISIONS.md) [ "$(count_of_kind decision-record)" -gt 0 ] ;;
+    notes) [ "$(repo_count_of_kind notes-store)" -gt 0 ] ;;
+    DECISIONS.md) [ "$(repo_count_of_kind decision-record)" -gt 0 ] ;;
     *) [ -e "$DIR/$1" ] ;;
   esac
 }
@@ -694,32 +770,47 @@ done <<EOF
 $(seed_targets)
 EOF
 
+# --- seed refusals ----------------------------------------------------------
+
+# Both refusals are decided before a single SEED line prints, so a refused run
+# never says it created anything. Grepping SEED lines is the documented way to
+# consume this report, and "(creating)" is reserved for a run that goes on to
+# write; a refused run still shows the plan, as "(would create)".
+REFUSAL=
+REFUSAL_CODE=0
+if [ "$SEED" -eq 1 ]; then
+  if [ "$open_disagreements" -gt 0 ]; then
+    REFUSAL="REFUSED: $open_disagreements disagreement(s) are open; two surfaces disagree about what is true and the captain owns which one survives. Nothing was written. Re-run with --accept-disagreement <key> once each is ruled on."
+    REFUSAL_CODE=3
+  else
+    # Firstmate reads projects and crewmates change them. A clone sitting
+    # directly under a firstmate home's projects/ directory is the copy firstmate
+    # operates from, so seeding into it would bypass the delivery path.
+    parent=$(dirname "$DIR")
+    if [ "$(basename "$parent")" = projects ] && [ -f "$(dirname "$parent")/data/projects.md" ]; then
+      REFUSAL="REFUSED: $DIR is a firstmate-owned project clone. Seed from the crewmate worktree that carries the change through this project's delivery path, not from the copy firstmate reads. Nothing was written."
+      REFUSAL_CODE=4
+    fi
+  fi
+fi
+
 while IFS= read -r t; do
   [ -n "$t" ] || continue
-  if [ "$SEED" -eq 1 ]; then
+  if [ "$SEED" -eq 1 ] && [ -z "$REFUSAL" ]; then
     echo "SEED: $t (creating)"
   else
     echo "SEED: $t (would create)"
   fi
 done < "$planned"
 
+if [ -n "$REFUSAL" ]; then
+  echo "$REFUSAL" >&2
+  exit "$REFUSAL_CODE"
+fi
+
 [ "$SEED" -eq 1 ] || exit 0
 
 # --- seeding ----------------------------------------------------------------
-
-if [ "$open_disagreements" -gt 0 ]; then
-  echo "REFUSED: $open_disagreements disagreement(s) are open; two surfaces disagree about what is true and the captain owns which one survives. Nothing was written. Re-run with --accept-disagreement <key> once each is ruled on." >&2
-  exit 3
-fi
-
-# Firstmate reads projects and crewmates change them. A clone sitting directly
-# under a firstmate home's projects/ directory is the copy firstmate operates
-# from, so seeding into it would bypass the project's selected delivery path.
-parent=$(dirname "$DIR")
-if [ "$(basename "$parent")" = projects ] && [ -f "$(dirname "$parent")/data/projects.md" ]; then
-  echo "REFUSED: $DIR is a firstmate-owned project clone. Seed from the crewmate worktree that carries the change through this project's delivery path, not from the copy firstmate reads. Nothing was written." >&2
-  exit 4
-fi
 
 while IFS= read -r t; do
   [ -n "$t" ] || continue
