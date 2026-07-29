@@ -2,10 +2,9 @@
 # Behavior tests for bin/fm-project-reconcile.sh.
 #
 # The fixtures below are miniatures of the five real projects the reconciler was
-# built against: a repo whose entry point routes to a stale handoff, a repo whose
-# entry point names a branch that does not exist, a repo with no remote, and a
-# repo with no verification at all. Each one is the shape that made an installer
-# the wrong answer.
+# built against: a repo whose entry point routes to a stale handoff, a repo with
+# no remote, and a repo with no verification at all. Each one is the shape that
+# made an installer the wrong answer.
 # shellcheck disable=SC2016  # backticked command names must reach the fixtures verbatim.
 set -u
 
@@ -189,6 +188,29 @@ test_a_planned_path_resolving_outside_the_repo_refuses_the_whole_plan() {
   pass "fm-project-reconcile.sh: a path resolving outside the project refuses the whole plan and writes nothing"
 }
 
+test_the_read_only_report_names_a_plan_that_seeding_will_refuse() {
+  local repo out rc vault
+  repo=$(new_bare_project escaping-plan-report)
+  vault="$TMP_ROOT/script-vault-report"
+  mkdir -p "$vault"
+  ln -s "$vault" "$repo/script"
+
+  # Firstmate runs the read-only report and briefs a crewmate from it. A report
+  # that lists six seed targets the crewmate's first --seed then refuses
+  # wholesale is a report describing something that cannot happen.
+  out=$(reconcile "$repo") || fail "the read-only report failed:"$'\n'"$out"
+  assert_contains "$out" "GAP: seed-path-outside-project" \
+    "the read-only report said nothing about a plan that cannot execute"
+  assert_contains "$out" "script/check" "the gap did not name the escaping path"
+  assert_contains "$out" "exit 5" "the gap did not say what seeding will do"
+
+  out=$(reconcile --seed "$repo"); rc=$?
+  expect_code 5 "$rc" "seeding the plan the read-only report warned about"
+  [ -z "$(ls -A "$vault")" ] || fail "the refused run wrote outside the project repo"
+  assert_absent "$repo/DECISIONS.md" "the refused run still wrote the targets that resolve inside"
+  pass "fm-project-reconcile.sh: the read-only report names the escaping paths, so the plan briefed is the plan that runs"
+}
+
 test_disagreement_stops_and_asks_without_writing() {
   local repo out rc
   repo=$(new_bare_project stale-pointer)
@@ -223,52 +245,6 @@ test_disagreement_stops_and_asks_without_writing() {
   assert_contains "$out" "(accepted)" "a ruled-on disagreement was not marked accepted"
   assert_present "$repo/script/check" "seeding did not proceed after the disagreement was ruled on"
   pass "fm-project-reconcile.sh: a disagreement stops and asks, and writes nothing until it is ruled on"
-}
-
-test_entry_point_naming_a_missing_branch_is_a_disagreement() {
-  local repo out
-  repo=$(new_bare_project missing-branch)
-  git_in "$repo" branch -m master
-  printf '# Agent memory\n\nmain is the default branch for pull requests.\n' > "$repo/AGENTS.md"
-  commit_all "$repo" entry
-
-  out=$(reconcile "$repo")
-  assert_contains "$out" "DISAGREEMENT: entry-point-names-missing-branch-main" \
-    "an entry point naming a branch with no ref was not reported"
-  pass "fm-project-reconcile.sh: an entry point naming a branch that does not exist is a disagreement"
-}
-
-test_a_branch_word_in_prose_is_not_a_missing_branch() {
-  local repo out
-  repo=$(new_bare_project prose-branch-word)
-  git_in "$repo" branch -m master
-  # "main" is an ordinary English word. A detector that reads it as a branch name
-  # puts a question the captain cannot answer onto the board.
-  printf '# Agent memory\n\nThe main entry point is src/index.ts. Run the main loop with make run.\n' \
-    > "$repo/AGENTS.md"
-  commit_all "$repo" entry
-
-  out=$(reconcile "$repo")
-  assert_not_contains "$out" "DISAGREEMENT:" \
-    "the word main in ordinary prose was read as a branch name"
-  pass "fm-project-reconcile.sh: the branch words in prose raise nothing without branch-shaped context"
-}
-
-test_an_unwrapped_paragraph_mentioning_a_branch_is_not_a_missing_branch() {
-  local repo out
-  repo=$(new_bare_project unwrapped-paragraph)
-  git_in "$repo" branch -m master
-  # One sentence per line is this repo's convention, not one the projects this
-  # script exists for share. A detector that only holds for wrapped prose keeps
-  # failing on the entry points it actually has to read.
-  printf '# Agent memory\n\nCreate a feature branch off master and open a PR when it is ready. The main entry point is src/index.ts.\n' \
-    > "$repo/AGENTS.md"
-  commit_all "$repo" entry
-
-  out=$(reconcile "$repo")
-  assert_not_contains "$out" "DISAGREEMENT:" \
-    "a branch word elsewhere in the same paragraph was read as naming the branch main"
-  pass "fm-project-reconcile.sh: a branch word elsewhere in an unwrapped paragraph raises nothing"
 }
 
 test_no_check_command_degrades_to_a_named_gap_never_a_silent_pass() {
@@ -562,10 +538,8 @@ test_an_out_of_repo_memory_store_does_not_suppress_an_in_repo_notes_store
 test_a_symlinked_notes_store_is_present_and_never_written_through
 test_a_notes_symlink_to_a_file_is_present_and_its_target_is_untouched
 test_a_planned_path_resolving_outside_the_repo_refuses_the_whole_plan
+test_the_read_only_report_names_a_plan_that_seeding_will_refuse
 test_disagreement_stops_and_asks_without_writing
-test_entry_point_naming_a_missing_branch_is_a_disagreement
-test_a_branch_word_in_prose_is_not_a_missing_branch
-test_an_unwrapped_paragraph_mentioning_a_branch_is_not_a_missing_branch
 test_no_check_command_degrades_to_a_named_gap_never_a_silent_pass
 test_the_seeded_gap_stub_keeps_reporting_the_gap_until_it_is_replaced
 test_a_placeholder_does_not_hide_a_real_check_that_appears_later

@@ -96,6 +96,7 @@ Brief that crewmate to run the script with `--seed` inside its own worktree.
 The script refuses `--seed` (exit 4) against a clone under a firstmate home's `projects/` directory, so the boundary holds even if a brief is wrong.
 It also resolves every planned path through its symlinks first and refuses the whole plan (exit 5) if any one of them lands outside the project directory, so a detector that is wrong about what is missing still cannot write outside the repo.
 Both refusals write nothing at all rather than the part of the plan that would have landed inside.
+The read-only report names those escaping paths as a gap too, so the plan you brief a crewmate from is the plan that will actually run.
 
 Two files are deliberately never seeded, by captain ruling of 2026-07-28.
 There is no repo-side `QUESTIONS.md`, because questions live on firstmate's board, which already reaches the captain and already carries a stated default and a desk-or-play axis; a second register lets a question be open in one place and invisible in the other.

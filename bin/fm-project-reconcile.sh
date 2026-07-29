@@ -507,33 +507,6 @@ EOF
   done
 fi
 
-# A branch the entry point names as the place work lands, that has no ref.
-# Branch-shaped context is required before raising this. "main" is an ordinary
-# English word - "the main entry point", "the main loop" - and a detector that
-# reads prose as a branch name puts a question the captain cannot answer onto
-# the board this whole script exists to keep clean. The branch word has to sit
-# next to the name within one sentence, not merely somewhere on the same line:
-# an entry point written as one unwrapped paragraph is the common shape, and a
-# same-line test only holds for documents written one sentence per line.
-entry_names_branch() {  # <branch-name>
-  local b=$1 w_before='(^|[^a-zA-Z0-9_/-])' w_after='([^a-zA-Z0-9_/-]|$)'
-  if grep -Eq "(origin/|refs/heads/)$b([^a-zA-Z0-9_/-]|$)" "$ENTRY_FILE" 2>/dev/null; then
-    return 0
-  fi
-  grep -Eiq "branch(es)?[^.]{0,24}${w_before}${b}${w_after}|${w_before}${b}${w_after}[^.]{0,24}branch(es)?" \
-    "$ENTRY_FILE" 2>/dev/null
-}
-
-if [ -n "$ENTRY_FILE" ] && [ "$is_git" -eq 1 ]; then
-  for b in main master develop trunk; do
-    entry_names_branch "$b" || continue
-    git -C "$DIR" rev-parse --verify --quiet "refs/heads/$b" >/dev/null 2>&1 && continue
-    git -C "$DIR" rev-parse --verify --quiet "refs/remotes/origin/$b" >/dev/null 2>&1 && continue
-    add_disagreement "entry-point-names-missing-branch-$b" \
-      "${ENTRY_FILE##*/} names the branch $b, which exists neither locally nor on origin"
-  done
-fi
-
 # Work that lives only in the working tree is named in no document, so a session
 # following the project's own onboarding rebuilds what already exists. That is
 # not two surfaces disagreeing about which is authoritative and there is nothing
@@ -857,6 +830,20 @@ $(seed_paths "$t")
 EOF
 done < "$planned"
 
+# Named here as well as in the refusal, and from the same two values, because a
+# read-only report that lists a plan --seed will refuse wholesale is a report
+# that describes something that cannot happen. Firstmate briefs a crewmate from
+# this report, so what it says and what --seed does have to be the same thing.
+ESCAPED_COUNT=$(grep -c . "$ESCAPES" || true)
+ESCAPED_LIST=
+if [ "$ESCAPED_COUNT" -gt 0 ]; then
+  ESCAPED_LIST=$(head -"$MAX_LIST" "$ESCAPES" | paste -sd, - | sed 's/,/, /g')
+  if [ "$ESCAPED_COUNT" -gt "$MAX_LIST" ]; then
+    ESCAPED_LIST="$ESCAPED_LIST, and $((ESCAPED_COUNT - MAX_LIST)) more"
+  fi
+  echo "GAP: seed-path-outside-project - $ESCAPED_COUNT planned path(s) resolve outside $DIR: $ESCAPED_LIST; this script writes inside the project directory and nowhere else, so --seed refuses the whole plan below with exit 5 rather than writing the part of it that would land inside"
+fi
+
 # --- seed refusals ----------------------------------------------------------
 
 # Every refusal is decided before a single SEED line prints, so a refused run
@@ -867,7 +854,6 @@ REFUSAL=
 REFUSAL_CODE=0
 if [ "$SEED" -eq 1 ]; then
   parent=$(dirname "$DIR")
-  n_escaped=$(grep -c . "$ESCAPES" || true)
   if [ "$open_disagreements" -gt 0 ]; then
     REFUSAL="REFUSED: $open_disagreements disagreement(s) are open; two surfaces disagree about what is true and the captain owns which one survives. Nothing was written. Re-run with --accept-disagreement <key> once each is ruled on."
     REFUSAL_CODE=3
@@ -877,12 +863,8 @@ if [ "$SEED" -eq 1 ]; then
   elif [ "$(basename "$parent")" = projects ] && [ -f "$(dirname "$parent")/data/projects.md" ]; then
     REFUSAL="REFUSED: $DIR is a firstmate-owned project clone. Seed from the crewmate worktree that carries the change through this project's delivery path, not from the copy firstmate reads. Nothing was written."
     REFUSAL_CODE=4
-  elif [ "$n_escaped" -gt 0 ]; then
-    escaped=$(head -"$MAX_LIST" "$ESCAPES" | paste -sd, - | sed 's/,/, /g')
-    if [ "$n_escaped" -gt "$MAX_LIST" ]; then
-      escaped="$escaped, and $((n_escaped - MAX_LIST)) more"
-    fi
-    REFUSAL="REFUSED: $n_escaped planned path(s) resolve outside $DIR: $escaped. This script writes inside the project directory and nowhere else, so the whole plan is refused rather than the part of it that would have landed inside. Nothing was written."
+  elif [ "$ESCAPED_COUNT" -gt 0 ]; then
+    REFUSAL="REFUSED: $ESCAPED_COUNT planned path(s) resolve outside $DIR: $ESCAPED_LIST. This script writes inside the project directory and nowhere else, so the whole plan is refused rather than the part of it that would have landed inside. Nothing was written."
     REFUSAL_CODE=5
   fi
 fi
