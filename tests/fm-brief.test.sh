@@ -264,8 +264,12 @@ test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci() {
 
   assert_grep "Skipping the PR does NOT skip the review" "$brief" \
     "validated-main brief lost the review-is-retained statement"
-  assert_grep '--skip pr,ci' "$brief" \
-    "validated-main brief lost the exact skip flags, so a worker could open a PR"
+  assert_grep "bin/fm-validate.sh $id --intent" "$brief" \
+    "validated-main brief lost the mode-derived run command, so the skip set stops being structural"
+  assert_no_grep '--skip pr,ci' "$brief" \
+    "validated-main brief asks a worker to type the skip flags; they must be derived from the recorded mode instead"
+  assert_grep 'never omits review, test, document or lint' "$brief" \
+    "validated-main brief lost the statement that the local review surface is always kept"
   assert_grep "no-mistakes doctor" "$brief" \
     "validated-main brief lost the pipeline setup step, so the pipeline may not be initialized"
   assert_grep "done: validated on fm/$id, ready to land" "$brief" \

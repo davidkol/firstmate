@@ -438,8 +438,10 @@ The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
 Firstmate will then instruct you to run /no-mistakes to validate the branch.
 
-When you start that run, skip the PR and CI steps - pass \`--skip pr,ci\` to \`no-mistakes axi run\` along with your \`--intent\`.
-There is no hosted CI on this fleet, so a CI step would have nothing to watch, and no PR is opened at any point.
+Start the run with this exact command, from inside your worktree:
+\`$FM_ROOT/bin/fm-validate.sh $ID --intent "<what the captain set out to accomplish>"\`
+Do NOT call \`no-mistakes axi run\` directly. This project's delivery path omits the PR and CI steps, and that omission is derived from the task's recorded delivery mode inside that command rather than typed by you - so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart validation.
+It never omits review, test, document or lint for any mode.
 You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 Two firstmate-specific rules layer on top of it:

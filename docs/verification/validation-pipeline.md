@@ -98,8 +98,36 @@ skipping PR creation: %s
 no PR URL found, skipping CI
 ```
 
-So `--skip pr,ci` leaves `intent`, `rebase`, `review`, `test`, `document`, `lint`, and `push` running, which is the entire local review surface.
+Observed end to end on a throwaway repository, complete step table from a real `--skip pr,ci` run:
+
+```text
+steps[9]{step,status,findings,duration_ms}:
+  intent,completed,0,2
+  rebase,completed,0,473
+  review,completed,1,28729
+  test,completed,1,72296
+  document,completed,0,83941
+  lint,completed,0,15
+  push,completed,0,223
+  pr,skipped,0,0
+  ci,skipped,0,0
+outcome: passed
+pr_state: none
+```
+
+The review step ran for 28.7 seconds and parked at its gate with a real finding before anything else advanced, so skipping `pr` does not skip `review`.
+Only `pr` and `ci` report `skipped`; the entire local review surface completed, and `pr_state: none` confirms no pull request was ever created.
 Dropping the PR drops ceremony, not the reviewer; a change that reads "no PR" as "no pipeline" has removed the only thing between an unread change and the default branch.
 
-Scope of this verification: the refusal strings, the step list, and the skip-validation output above were read from the installed binary and its shipped skill, and the invalid-step probe was run.
-A full `--skip pr,ci` run was not executed as part of recording this.
+The same run also pins why landing must read the published head rather than the local branch:
+
+```text
+submitted_head: edb06baa7750c369bfea570c7315097f4cab249b
+current_head:   5cdf532bb69d64b4f49ca71d91e9e4be3c5631d8
+pushed_head:    5cdf532bb69d64b4f49ca71d91e9e4be3c5631d8
+relation: behind
+next_action.code: sync
+```
+
+The pipeline committed its own fix rounds and published them while the local branch stayed at the submitted head.
+Merging the local head would have landed the unfixed commit, which is why `bin/fm-merge-main.sh` takes `origin/<branch>` as the merge source and refuses when the local branch carries commits that head does not contain.

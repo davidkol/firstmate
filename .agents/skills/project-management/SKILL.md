@@ -35,6 +35,8 @@ Choose the delivery mode when adding or creating the project:
 - `direct-PR` pushes and opens a PR without the no-mistakes pipeline.
 - `local-only` has no required remote or PR and lands only through the approved local fast-forward path.
 
+The PR and CI omission is a property of the mode, not of a call site: `bin/fm-validate.sh` derives it from the task's recorded mode, so no worker passes a flag and any re-run inherits it.
+
 `validated-main` and `direct-PR` are not interchangeable, and the difference is the automated review, not the PR.
 `validated-main` keeps the pipeline's local review, test, document, and lint steps and drops only the two host-facing steps, which is what makes landing straight on the default branch safe.
 `direct-PR` drops the pipeline instead, so it keeps the PR as the place a change is looked at.
