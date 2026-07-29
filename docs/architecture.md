@@ -186,6 +186,8 @@ The [`secondmate-provisioning` skill](../.agents/skills/secondmate-provisioning/
 
 The `data/secondmates.md` line contract is owned by the [`secondmate-provisioning` skill](../.agents/skills/secondmate-provisioning/SKILL.md#routing-table), and the secondmate environment variables are documented in [configuration.md](configuration.md).
 
+A home the captain opens and talks to directly is a peer home rather than a direct report, so it carries no charter and no route here; [Home kinds](configuration.md#home-kinds) owns the three home kinds, their markers, and the `bin/fm-open.sh` launcher.
+
 ## Project modes are explicit
 
 `data/projects.md` records each project's delivery mode and optional `+yolo` autonomy flag.

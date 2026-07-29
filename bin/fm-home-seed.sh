@@ -34,7 +34,9 @@
 #       subject is the firstmate repo itself; it is mutually exclusive with a
 #       project list, and omitting both still fails loudly. A project-less seed
 #       refuses a home with project clones or project-registry entries, so it
-#       never converts populated homes in place. The charter brief
+#       never converts populated homes in place. An explicit <home> inside
+#       another firstmate home - any ancestor carrying .fm-secondmate-home or
+#       .fm-peer-home - is refused without change. The charter brief
 #       is copied to data/charter.md, newly cloned no-mistakes projects are
 #       initialized, an ignored .fm-secondmate-home identity marker is written, and
 #       data/secondmates.md is updated.
