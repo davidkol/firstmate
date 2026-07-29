@@ -26,6 +26,7 @@
 # Options:
 #   --json <path>   write a deterministic timing artifact after the run
 #   --list          print selected script paths (one per line) and exit 0
+#                   (see --require-nonempty for the one case that still fails)
 #   --base <ref>    with --changed, compare against this ref (default: origin/main)
 #   --exclude-family <name>
 #                   drop scripts whose primary family matches <name> after selection
@@ -35,7 +36,9 @@
 #                   exit non-zero when the selection is empty instead of
 #                   reporting total=0 and succeeding. Automated gates
 #                   (.no-mistakes.yaml commands.test) pass this so an unmapped
-#                   change cannot read as a pass with nothing run.
+#                   change cannot read as a pass with nothing run. Checked
+#                   before the --list early exit, so previewing the gate's own
+#                   command cannot report a false green either.
 #   --fail-on-gate-skip <token>
 #                   after each script, fail the run if any output line contains
 #                   "skip: <token>" (e.g. --fail-on-gate-skip 'herdr not found').
