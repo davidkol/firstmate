@@ -126,6 +126,8 @@ fi
 before=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
 git -C "$PROJ" merge --ff-only "$SOURCE" >/dev/null
 after=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
+# Full sha of what landed, resolved before any ref this script may later delete.
+LANDED=$(git -C "$PROJ" rev-parse "$DEFAULT")
 git -C "$PROJ" push --quiet origin "$DEFAULT" || {
   echo "error: merged $SOURCE_DESC into local $DEFAULT ($before -> $after) but the push to origin/$DEFAULT failed" >&2
   echo "The local default branch already holds the change; retry the push before tearing the task down." >&2
@@ -133,11 +135,18 @@ git -C "$PROJ" push --quiet origin "$DEFAULT" || {
 }
 echo "landed $SOURCE_DESC on $DEFAULT ($before -> $after) and pushed to origin in $PROJ"
 
-# The task branch's commits are now reachable from the pushed default branch, so
-# retiring the published branch is safe cleanup, not a discard. Best-effort: a
-# failure here leaves a stale branch on the host and nothing else.
+# Retiring the published branch is cleanup, not a discard - but only once another
+# remote ref provably contains its commits. The task worktree is a linked worktree
+# of this clone, so it shares refs/remotes, and fm-teardown.sh proves work is landed
+# with `git log HEAD --not --remotes` there. Deleting origin/<branch> while
+# origin/<default> did not yet contain the commits would remove the last remote
+# reference to landed work and make that check refuse. Push normally updates the
+# remote-tracking ref; refresh it anyway rather than assuming, then verify.
 if git -C "$PROJ" rev-parse --verify --quiet "refs/remotes/origin/$BRANCH" >/dev/null; then
-  if git -C "$PROJ" push --quiet origin --delete "$BRANCH" 2>/dev/null; then
+  git -C "$PROJ" fetch --quiet origin "+refs/heads/$DEFAULT:refs/remotes/origin/$DEFAULT" 2>/dev/null || true
+  if ! git -C "$PROJ" merge-base --is-ancestor "$LANDED" "refs/remotes/origin/$DEFAULT" 2>/dev/null; then
+    echo "note: leaving origin/$BRANCH in place; could not confirm origin/$DEFAULT contains the landed commits" >&2
+  elif git -C "$PROJ" push --quiet origin --delete "$BRANCH" 2>/dev/null; then
     echo "retired published branch origin/$BRANCH"
   else
     echo "note: could not retire published branch origin/$BRANCH; it is redundant now that $DEFAULT contains it" >&2

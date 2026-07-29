@@ -18,6 +18,7 @@
 #   (g) refuses a dirty project checkout
 #   (h) refuses a project with no origin remote
 #   (i) refuses when the branch is also published on a non-origin remote
+#   (j) landing leaves the task worktree's commits provably landed for teardown
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -118,6 +119,27 @@ test_lands_published_head_and_pushes() {
   assert_grep "retired published branch origin/$BRANCH" "$case_dir/stdout" \
     "lands-published: retiring the published branch should be reported"
   pass "fm-merge-main lands the published head on main, pushes it, and retires the branch"
+}
+
+# The task worktree is a linked worktree of the project clone, so it shares
+# refs/remotes, and fm-teardown.sh proves work is landed with
+# `git log HEAD --not --remotes` inside it. Retiring the published branch removes
+# one of those remote refs, so landing has to leave the commits reachable from the
+# default branch's remote-tracking ref or teardown would refuse work that did land.
+test_landing_keeps_worktree_work_provably_landed() {
+  local case_dir wt unpushed
+  case_dir=$(make_case worktree-landed)
+  publish_branch "$case_dir"
+  wt="$case_dir/wt"
+  git -C "$case_dir/project" worktree add --quiet "$wt" "$BRANCH"
+
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "worktree-landed: fm-merge-main should succeed"
+
+  unpushed=$(git -C "$wt" log --oneline HEAD --not --remotes -- 2>/dev/null)
+  [ -z "$unpushed" ] \
+    || fail "worktree-landed: teardown would refuse landed work; commits still on no remote:"$'\n'"$unpushed"
+  pass "fm-merge-main leaves the task worktree's commits provably landed after retiring the branch"
 }
 
 # Under fork push routing the pipeline publishes the validated head to the fork,
@@ -283,6 +305,7 @@ test_refuses_project_without_origin() {
 }
 
 test_lands_published_head_and_pushes
+test_landing_keeps_worktree_work_provably_landed
 test_refuses_fork_routed_branch
 test_refuses_wrong_mode
 test_refuses_unvalidated_local_commits
