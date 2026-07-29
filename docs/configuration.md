@@ -136,6 +136,7 @@ Shared captain preferences that apply across secondmate domains live only in the
 Fleet-local operational facts and gotchas live locally in `data/learnings.md`; it is gitignored and printed after the captain-preference files in the session-start context digest.
 The file is created lazily on first learning and follows the same dated, evidence-backed, curated style as `data/captain.md`: inspect the current file first, then rewrite or prune stale entries instead of appending forever.
 There is no shared learnings file by captain decision.
+The only path that reaches every home runs upward into this repo's shared tracked material, where the next fast-forward delivers it; `bin/fm-learning-promote.sh --help` owns that path's mechanics, including the in-flight promotion records it keeps inside `data/learnings.md`, and the `stow` skill owns when a learning has earned it.
 
 ## Secondmate routes (data/secondmates.md)
 

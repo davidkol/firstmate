@@ -218,7 +218,10 @@ Route durable knowledge to its most specific owner:
 - Fleet-local operational facts belong in curated, home-local `data/learnings.md`.
 - Task-scoped notes belong with the backlog item, and investigation findings belong in the scout report.
 - Knowledge useful to almost every contributor to one project belongs in that project's committed `AGENTS.md`.
-- Knowledge general to every firstmate user belongs in this repo's shared tracked surface.
+- Knowledge general to every firstmate user belongs in this repo's shared tracked surface, but a home-local learning graduates there only once it is true in more than one project and somebody can make it checkable; anything else stays a note.
+
+There is deliberately no shared learnings file between homes, so the only path that reaches every home runs upward through this repo's tracked material and the normal delivery path.
+Load `stow` before promoting a home-local learning upward; it owns the graduation rule and the two-phase promotion procedure.
 
 Firstmate never writes a project's `AGENTS.md` directly.
 A crewmate creates or updates it lazily through the project's selected delivery path, using `bin/fm-ensure-agents-md.sh` and preferring pointers to authoritative sources over copied detail.
