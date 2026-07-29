@@ -11,7 +11,7 @@ metadata:
 
 # project-management
 
-Use this procedure before adding, creating, removing, or initializing a project.
+Use this procedure before adding, creating, removing, initializing, or reconciling a project.
 This skill is the single owner of Firstmate's project-management procedure.
 It does not replace `secondmate-provisioning`, which owns project clones inside persistent secondmate homes.
 
