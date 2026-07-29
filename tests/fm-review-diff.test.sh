@@ -22,7 +22,8 @@
 # Each fallback above is otherwise indistinguishable from a normal run on stdout,
 # so every case asserts the "compare: " line naming the side actually used, and
 #   (i) mode=validated-main + local branch ahead of the published head -> the diff
-#       names the published head and reports the local commits it omits
+#       names the published head, reports the local commits it omits, and says
+#       that state blocks landing rather than leaving it as an FYI
 #
 # A fetched head and a recorded pr_head= fallback are labelled apart: the recorded
 # one is never confirmed against the remote and warns on nothing, so its label is
@@ -281,6 +282,8 @@ test_validated_main_reports_local_commits_missing_from_published_head() {
     "validated-main-local-ahead: compare side is still the published head"
   assert_contains "$out" 'has 1 commit(s) the published head does not contain' \
     "validated-main-local-ahead: must report the local commits the diff omits"
+  assert_contains "$out" 'they are not in this diff, and bin/fm-merge-main.sh refuses to land while they exist' \
+    "validated-main-local-ahead: must say this state blocks landing, not read as an FYI"
   assert_not_contains "$out" 'extra.txt' \
     "validated-main-local-ahead: the local-only commit is genuinely absent from the diff"
   pass "fm-review-diff on validated-main reports local commits the published head omits"

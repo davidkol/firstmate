@@ -126,6 +126,9 @@ fetch_pull_head() {
   fetch_private_ref "refs/pull/$1/head" "refs/fm-review/pull/$1/head"
 }
 
+# On success prints "<source> <sha>". The sole caller splits on the LAST space,
+# so the SHA is the final field and the source label is everything before it: a
+# label may contain spaces, as the fetched one does, but the SHA never may.
 resolve_pr_head() {
   local pr_url=$1 recorded_head=$2 n resolved
   n=$(pr_number_from_target "$pr_url") || true
@@ -189,7 +192,7 @@ elif [ "$MODE" = validated-main ]; then
     COMPARE_DESC="published head origin/$BRANCH $PUBLISHED_HEAD"
     AHEAD=$(git -C "$WT" rev-list --count "$BRANCH" --not "$PUBLISHED_HEAD" -- 2>/dev/null || true)
     if [ -n "$AHEAD" ] && [ "$AHEAD" -gt 0 ]; then
-      COMPARE_NOTE="note: local branch $BRANCH has $AHEAD commit(s) the published head does not contain; they are not in this diff"
+      COMPARE_NOTE="note: local branch $BRANCH has $AHEAD commit(s) the published head does not contain; they are not in this diff, and bin/fm-merge-main.sh refuses to land while they exist"
     fi
   elif published_branch_absent "$BRANCH"; then
     COMPARE_DESC="local branch $BRANCH (nothing published to origin; not a validated published head)"
