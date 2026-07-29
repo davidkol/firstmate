@@ -38,7 +38,9 @@ A second checkless run on this repository reached CI-ready the same way and then
 The comparison that matters is against runs on a repository that does register checks: those log `CI checks running, waiting for results...` and then `all CI checks passed`.
 Both shapes set CI-readiness. Elapsed step duration is not evidence either way, because the step runs until the PR merges or closes in both cases, and a run parked on a real CI failure can stay open far longer without ever becoming ready.
 
-`bin/fm-crew-state.sh` already maps this case correctly: its `nm_ci_checks_state` treats `no CI checks reported - still monitoring` as `green`, alongside `checks passed`.
+`bin/fm-crew-state.sh` maps the steady-state checkless marker correctly: its `nm_ci_checks_state` scans the step log for the LAST recognized marker (`tail -1`) and treats `no CI checks reported - still monitoring` as `green`, alongside `checks passed`.
+A trailing `base branch advanced ... re-arming CI monitor timeout` marker instead reads `not-ready`, deliberately and pinned by `tests/fm-crew-state.test.sh`, which is where the PR #1 log quoted above happens to end.
+That window is pre-existing and self-clears on the next poll, and it does not hold the worker: the pipeline releases the worker at its own CI-ready return point, and the resulting `done: PR ... checks green` line is recognized independently by `log_reports_ci_ready`.
 The prose instructions were the only surface that still described a green check result as the sole ready signal.
 
 ## No repository-level way to declare an absent CI step
