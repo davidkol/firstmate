@@ -18,6 +18,11 @@
 #   (f) mode=validated-main + published origin/fm/<id> -> diff the published head
 #   (g) mode=validated-main + nothing published -> local branch, no warning
 #   (h) mode=validated-main + unreachable remote -> local branch WITH a warning
+#
+# Each fallback above is otherwise indistinguishable from a normal run on stdout,
+# so every case asserts the "compare: " line naming the side actually used, and
+#   (i) mode=validated-main + local branch ahead of the published head -> the diff
+#       names the published head and reports the local commits it omits
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -97,6 +102,8 @@ test_pr_meta_uses_pr_head_not_stale_local() {
   assert_not_contains "$out" 'stale-local' "pr-head-sha: diff must not use the stale local branch"
   assert_not_contains "$(cat "$case_dir/stderr")" 'warning: PR head unavailable' \
     "pr-head-sha: should not warn when recorded pr_head is reachable offline"
+  assert_contains "$out" "compare: PR head $PR_SHA" \
+    "pr-head-sha: must name the resolved PR head as the compare side"
   pass "fm-review-diff falls back to recorded pr_head when pull head cannot be fetched"
 }
 
@@ -119,6 +126,8 @@ test_stale_recorded_pr_head_loses_to_fetched_pull_head() {
     "stale-recorded: diff must not use the stale local/recorded content"
   assert_not_contains "$(cat "$case_dir/stderr")" 'warning: PR head unavailable' \
     "stale-recorded: fetch of refs/pull/<n>/head should succeed"
+  assert_contains "$out" "compare: PR head $PR_SHA" \
+    "stale-recorded: compare line must name the fetched PR head, not the recorded SHA"
   # Pre-fix behavior preferred reachable recorded pr_head= and would show stale-local.
   [ "$stale_sha" != "$PR_SHA" ] || fail "stale-recorded: fixture did not diverge recorded vs PR head"
   pass "fm-review-diff prefers freshly fetched PR head over a stale recorded pr_head="
@@ -137,6 +146,8 @@ test_pr_meta_fetches_pull_head_without_recorded_sha() {
   assert_not_contains "$out" 'stale-local' "pr-fetch: diff must not use the stale local branch"
   assert_not_contains "$(cat "$case_dir/stderr")" 'warning: PR head unavailable' \
     "pr-fetch: should not warn when fetch succeeds"
+  assert_contains "$out" "compare: PR head $PR_SHA" \
+    "pr-fetch: must name the fetched PR head as the compare side"
   pass "fm-review-diff fetches refs/pull/<n>/head when pr_head= is absent"
 }
 
@@ -152,6 +163,8 @@ test_no_pr_meta_uses_local_branch() {
   assert_not_contains "$out" '+pr-fixed' "no-pr-meta: diff must not jump to the unpushed PR commit"
   assert_not_contains "$(cat "$case_dir/stderr")" 'warning: PR head unavailable' \
     "no-pr-meta: no warning without pr= in meta"
+  assert_contains "$out" 'compare: local branch fm/task-x1' \
+    "no-pr-meta: must name the local branch as the compare side"
   pass "fm-review-diff without pr= keeps the worktree-branch diff"
 }
 
@@ -173,6 +186,8 @@ test_unreachable_pr_head_falls_back_with_warning() {
     "fetch-fallback: must warn when PR head cannot be resolved"
   assert_contains "$out" '+stale-local' "fetch-fallback: should fall back to the local branch diff"
   assert_not_contains "$out" '+pr-fixed' "fetch-fallback: must not invent a PR head diff offline"
+  assert_contains "$out" 'compare: local branch fm/task-x1 (PR head unavailable)' \
+    "fetch-fallback: compare line must disclose the fallback to the local branch"
   pass "fm-review-diff falls back to local branch with a warning when PR head is unreachable"
 }
 
@@ -190,8 +205,12 @@ test_validated_main_uses_published_head() {
     "validated-main-published: diff must show the published head fm-merge-main.sh would land"
   assert_not_contains "$out" 'stale-local' \
     "validated-main-published: diff must not use the behind local branch"
-  assert_not_contains "$(cat "$case_dir/stderr")" 'warning:' \
+  assert_not_contains "$(cat "$case_dir/stderr")" 'warning: published head origin/' \
     "validated-main-published: no warning when the published head resolves"
+  assert_contains "$out" "compare: published head origin/fm/task-x1 $PR_SHA" \
+    "validated-main-published: must name the published head as the compare side"
+  assert_not_contains "$out" 'the published head does not contain' \
+    "validated-main-published: local branch is behind, so there is nothing omitted to report"
   pass "fm-review-diff on validated-main compares the published origin branch head"
 }
 
@@ -206,8 +225,10 @@ test_validated_main_unpublished_uses_local_branch() {
 
   assert_contains "$out" '+stale-local' \
     "validated-main-unpublished: diff should use the local branch"
-  assert_not_contains "$(cat "$case_dir/stderr")" 'warning:' \
+  assert_not_contains "$(cat "$case_dir/stderr")" 'warning: published head origin/' \
     "validated-main-unpublished: an unpublished branch is normal, not a warning"
+  assert_contains "$out" 'compare: local branch fm/task-x1 (nothing published)' \
+    "validated-main-unpublished: stderr stays silent, so the compare line must say nothing is published"
   pass "fm-review-diff on validated-main uses the local branch when nothing is published"
 }
 
@@ -229,7 +250,32 @@ test_validated_main_unreachable_remote_warns() {
     "validated-main-unreachable: must warn when the published head cannot be resolved"
   assert_contains "$out" '+stale-local' \
     "validated-main-unreachable: should fall back to the local branch diff"
+  assert_contains "$out" 'compare: local branch fm/task-x1 (published head unavailable)' \
+    "validated-main-unreachable: compare line must disclose the fallback to the local branch"
   pass "fm-review-diff on validated-main warns when the published head is unreachable"
+}
+
+test_validated_main_reports_local_commits_missing_from_published_head() {
+  local case_dir out
+  case_dir=$(make_case validated-main-local-ahead)
+  stale_and_pr_commits "$case_dir"
+  git -C "$case_dir/wt" push -q origin "pr-head-tmp:refs/heads/fm/task-x1"
+  # Committed after the pipeline published: the head that lands does not carry it,
+  # and bin/fm-merge-main.sh refuses exactly this state, so review must say so.
+  printf 'local-only\n' > "$case_dir/wt/extra.txt"
+  git -C "$case_dir/wt" add extra.txt
+  git -C "$case_dir/wt" commit -qm "edited after validation"
+  write_task_meta "$case_dir" "mode=validated-main"
+
+  out=$(run_review_diff "$case_dir" task-x1 2> "$case_dir/stderr")
+
+  assert_contains "$out" "compare: published head origin/fm/task-x1 $PR_SHA" \
+    "validated-main-local-ahead: compare side is still the published head"
+  assert_contains "$out" 'has 1 commit(s) the published head does not contain' \
+    "validated-main-local-ahead: must report the local commits the diff omits"
+  assert_not_contains "$out" 'extra.txt' \
+    "validated-main-local-ahead: the local-only commit is genuinely absent from the diff"
+  pass "fm-review-diff on validated-main reports local commits the published head omits"
 }
 
 test_pr_meta_uses_pr_head_not_stale_local
@@ -240,3 +286,4 @@ test_unreachable_pr_head_falls_back_with_warning
 test_validated_main_uses_published_head
 test_validated_main_unpublished_uses_local_branch
 test_validated_main_unreachable_remote_warns
+test_validated_main_reports_local_commits_missing_from_published_head

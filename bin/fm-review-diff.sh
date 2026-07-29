@@ -23,6 +23,10 @@
 # exist and be newer.
 #
 # Otherwise, compare the local branch.
+#
+# Every path prints a "compare: " line naming the side it actually used, because
+# the fallbacks above are otherwise indistinguishable from a normal run and a
+# reviewer cannot tell which head they read.
 # Usage: fm-review-diff.sh <task-id> [--stat]
 #   --stat prints only the stat summary; default prints stat summary plus full diff.
 set -eu
@@ -104,16 +108,19 @@ pr_number_from_target() {
   printf '%s' "$n"
 }
 
-fetch_pull_head() {
-  local n=$1 resolved
+# Fetch into a private ref so a later base-branch fetch cannot clobber the
+# compare tip via FETCH_HEAD, and so we never review a stale local object.
+fetch_private_ref() {
+  local src=$1 dst=$2 resolved
   git -C "$WT" remote get-url origin >/dev/null 2>&1 || return 1
-  # Fetch into a private ref so a later base-branch fetch cannot clobber the
-  # compare tip via FETCH_HEAD, and so we never review a stale local object.
-  git -C "$WT" fetch --quiet origin \
-    "+refs/pull/$n/head:refs/fm-review/pull/$n/head" >/dev/null 2>&1 || return 1
-  resolved=$(git -C "$WT" rev-parse --verify "refs/fm-review/pull/$n/head^{commit}" 2>/dev/null) || return 1
+  git -C "$WT" fetch --quiet origin "+$src:$dst" >/dev/null 2>&1 || return 1
+  resolved=$(git -C "$WT" rev-parse --verify "$dst^{commit}" 2>/dev/null) || return 1
   [ -n "$resolved" ] || return 1
   printf '%s' "$resolved"
+}
+
+fetch_pull_head() {
+  fetch_private_ref "refs/pull/$1/head" "refs/fm-review/pull/$1/head"
 }
 
 resolve_pr_head() {
@@ -136,14 +143,7 @@ resolve_pr_head() {
 }
 
 fetch_published_head() {
-  local branch=$1 resolved
-  git -C "$WT" remote get-url origin >/dev/null 2>&1 || return 1
-  # Same private-ref reasoning as fetch_pull_head above.
-  git -C "$WT" fetch --quiet origin \
-    "+refs/heads/$branch:refs/fm-review/heads/$branch" >/dev/null 2>&1 || return 1
-  resolved=$(git -C "$WT" rev-parse --verify "refs/fm-review/heads/$branch^{commit}" 2>/dev/null) || return 1
-  [ -n "$resolved" ] || return 1
-  printf '%s' "$resolved"
+  fetch_private_ref "refs/heads/$1" "refs/fm-review/heads/$1"
 }
 
 # A fetch refspec for a ref the remote does not carry fails exactly like an
@@ -159,16 +159,28 @@ PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD_RECORDED=$(grep '^pr_head=' "$META" | tail -1 | cut -d= -f2- || true)
 MODE=$(grep '^mode=' "$META" | tail -1 | cut -d= -f2- || true)
 COMPARE_REF=$BRANCH
+COMPARE_DESC="local branch $BRANCH"
+COMPARE_NOTE=
 if [ -n "$PR_URL" ]; then
   if PR_HEAD=$(resolve_pr_head "$PR_URL" "$PR_HEAD_RECORDED"); then
     COMPARE_REF=$PR_HEAD
+    COMPARE_DESC="PR head $PR_HEAD"
   else
+    COMPARE_DESC="local branch $BRANCH (PR head unavailable)"
     echo "warning: PR head unavailable; diff may lag the open PR (using local branch $BRANCH)" >&2
   fi
 elif [ "$MODE" = validated-main ]; then
   if PUBLISHED_HEAD=$(fetch_published_head "$BRANCH"); then
     COMPARE_REF=$PUBLISHED_HEAD
-  elif ! published_branch_absent "$BRANCH"; then
+    COMPARE_DESC="published head origin/$BRANCH $PUBLISHED_HEAD"
+    AHEAD=$(git -C "$WT" rev-list --count "$BRANCH" --not "$PUBLISHED_HEAD" -- 2>/dev/null || true)
+    if [ -n "$AHEAD" ] && [ "$AHEAD" -gt 0 ]; then
+      COMPARE_NOTE="note: local branch $BRANCH has $AHEAD commit(s) the published head does not contain; they are not in this diff"
+    fi
+  elif published_branch_absent "$BRANCH"; then
+    COMPARE_DESC="local branch $BRANCH (nothing published)"
+  else
+    COMPARE_DESC="local branch $BRANCH (published head unavailable)"
     echo "warning: published head origin/$BRANCH unavailable; diff may lag the validated branch (using local branch $BRANCH)" >&2
   fi
 fi
@@ -186,6 +198,8 @@ git -C "$WT" rev-parse --verify --quiet "$BASE^{commit}" >/dev/null || { echo "e
 git -C "$WT" rev-parse --verify --quiet "$COMPARE_REF^{commit}" >/dev/null || { echo "error: compare ref $COMPARE_REF does not resolve in $WT" >&2; exit 1; }
 
 echo "diff base: $BASE"
+echo "compare: $COMPARE_DESC"
+[ -z "$COMPARE_NOTE" ] || echo "$COMPARE_NOTE"
 if git -C "$WT" diff --quiet "$BASE...$COMPARE_REF" --; then
   echo "no changes vs $BASE"
   exit 0
