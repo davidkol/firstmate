@@ -592,6 +592,9 @@ select_family() {
 families_for_test_reference() {
   local needle=$1 s
   local found=0
+  # An empty needle would match every script and silently expand to the whole
+  # suite, so it resolves to nothing instead.
+  [ -n "$needle" ] || return 1
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     if grep -Fq "$needle" "$s"; then
@@ -605,7 +608,7 @@ families_for_test_reference() {
 # Conservative path → family map. Over-selects rather than under-selects.
 # Never expands to the complete suite.
 families_for_changed_path() {
-  local path=$1
+  local path=$1 fixture_rest fixture_needle
   case "$path" in
     tests/fm-test-run.test.sh)
       printf '%s\n' pure-contract-unit
@@ -732,9 +735,18 @@ families_for_changed_path() {
         || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/fixtures/*)
-      # Fixtures are named by their containing directory in the tests that read
-      # them, so resolve coverage from that directory name.
-      families_for_test_reference "$(basename "$(dirname "$path")")" \
+      # A fixture in a subdirectory is named by that directory in the tests that
+      # read it, so coverage resolves from the segment directly under
+      # tests/fixtures/. A fixture sitting at the top of tests/fixtures/ has no
+      # such segment: only its own basename is narrow enough to be a needle,
+      # since the enclosing directory name matches every script that merely
+      # mentions fixtures.
+      fixture_rest=${path#tests/fixtures/}
+      case "$fixture_rest" in
+        */*) fixture_needle=${fixture_rest%%/*} ;;
+        *) fixture_needle=$fixture_rest ;;
+      esac
+      families_for_test_reference "$fixture_needle" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     bin/*)
@@ -745,11 +757,13 @@ families_for_changed_path() {
       printf '%s\n' "__unmapped__:$path"
       ;;
     README.md|LICENSE|assets/*|docs/*|.gitignore)
-      # Prose and repo-surface changes still have one owner that can fail: the
-      # documentation audience, README setup routing, local link target, and
-      # owner pointer contract. Selecting nothing here made --changed exit 0
-      # with total=0 for the largest class of firstmate changes.
-      printf '%s\n' "__script__:fm-documentation-audiences.test.sh"
+      # Prose and repo-surface changes are covered by the instruction-generation
+      # contracts: the documentation audience and link target contract, plus the
+      # translation and instruction owner contracts that assert README body text
+      # directly. Selecting nothing here made --changed exit 0 with total=0 for
+      # the largest class of firstmate changes, and selecting the audience
+      # script alone still under-selected against those other owners.
+      printf '%s\n' pure-contract-unit
       ;;
     *)
       families_for_test_reference "$path" \

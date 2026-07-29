@@ -102,6 +102,7 @@ No hosted CI runs on this fork, so those lanes are a reference rather than an ex
 Three consequences follow, and none is optional to state.
 Scripts that need an optional tool skip instead of running: most of the real-Herdr family reports `skip: herdr not found` without a pinned Herdr, and the live-harness-optin, cmux, and zellij families skip the same way without those tools.
 Each lands in the runner's `skipped_gate` tally, and a pass carrying a non-zero `skipped_gate` is not full coverage.
+In the extreme, a selection whose scripts all skip reports `total` equal to `skipped_gate` with `failed=0` and exits 0, so the gate goes green having executed nothing; `--fail-on-gate-skip <token>` is the in-band way to refuse a named skip when a run must actually execute.
 `--changed` refuses rather than guessing when a changed path has no test mapping, so adding a source file the map does not cover fails the gate until `bin/fm-test-run.sh` or a covering test catches up.
 `--require-nonempty` closes the other half of that: an empty selection would otherwise report `total=0` and succeed, so the gate passes it to make "nothing was verified" a failure rather than a pass.
 Use `bin/fm-test-run.sh --help` for lane names, `--jobs` rules, and required gate-skip flags when reproducing a lane locally.

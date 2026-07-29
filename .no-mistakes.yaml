@@ -50,6 +50,10 @@ document:
 # skip the same way on a machine without those tools. Each one lands in the
 # runner's `skipped_gate` tally. A non-zero `skipped_gate` in FM_TEST_SUMMARY
 # means those scripts did not run, and a pass carrying one is not full coverage.
+# In the extreme, a selection whose scripts all skip reports `total` equal to
+# `skipped_gate` with `failed=0` and exits 0, so the gate goes green having
+# executed nothing; `--fail-on-gate-skip <token>` is the in-band way to refuse a
+# named skip when a run must actually execute.
 commands:
   lint: 'bin/fm-lint.sh'
   test: 'bin/fm-test-run.sh --changed --require-nonempty'
