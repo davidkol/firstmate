@@ -32,7 +32,7 @@ The goal is a session that is safe to reset or destroy because everything durabl
    - Captain preferences and fleet-local operational facts: hand-write directly to the destination selected by AGENTS.md's knowledge-routing table, using inspect-then-update every time.
      Before writing, inspect the destination, find the existing bullet or section the finding duplicates or supersedes, and rewrite it in place rather than adding a new trailing entry.
      `data/learnings.md` may not exist yet; create it on first local learning, in the same dated, evidence-backed, curated style as the captain-preference files.
-     If it holds an `fm-promotion` marker line, that block belongs to `bin/fm-learning-promote.sh`: curate around it and leave its shape alone, because `land` refuses a block it did not write rather than risk deleting entries that are not part of it, and this file is gitignored with no recovery.
+     If it holds an `fm-promotion` marker line, that block belongs to `bin/fm-learning-promote.sh`: curate around it, leave its shape alone, and never copy that marker line elsewhere in the file, because `land` refuses a block it did not write and refuses a slug carrying more than one marker line rather than risk deleting entries that are not part of it, and this file is gitignored with no recovery.
    - Project-intrinsic knowledge: never hand-write a project's `AGENTS.md`.
      Route it through a normal ship task so a crewmate records it via `bin/fm-ensure-agents-md.sh` and commits it through that project's delivery pipeline, exactly as section 6 describes.
      If the fleet is live, delegate this to a crewmate rather than doing it inline.

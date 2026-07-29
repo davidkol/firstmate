@@ -52,14 +52,16 @@
 #
 # `land <slug>` refuses until the destination on the default branch contains the
 # recorded phrase, and on success replaces the in-flight block in
-# data/learnings.md with a one-line pointer to the tracked owner. The block is
-# its marker line through the next blank line, which is exactly what `start`
-# wrote; a block whose blank line was removed by hand is REFUSED rather than
-# deleted through, because the alternative is silently eating every entry below
-# it in a gitignored file. Pruning the original local entry that the pointer now
-# supersedes is the agent's edit, in the same pass, under the stow skill's
-# inspect-then-update contract; this script owns the gate and the pointer, not
-# the surrounding curation.
+# data/learnings.md with a one-line pointer to the tracked owner. Every read and
+# the rewrite locate that block through one shared definition, so none of them
+# can disagree about which lines belong to it: the marker line, the body lines
+# `start` wrote, and the blank line that closes them. A block whose shape was
+# disturbed by hand, and a slug carrying more than one marker line, are both
+# REFUSED rather than deleted through, because the alternative is silently
+# eating curated entries in a gitignored file with no recovery. Pruning the
+# original local entry that the pointer now supersedes is the agent's edit, in
+# the same pass, under the stow skill's inspect-then-update contract; this
+# script owns the gate and the pointer, not the surrounding curation.
 #
 # The gate's remaining honest limit: it proves the destination on the default
 # branch carries that phrase, not which commit put it there. Landing the phrase
@@ -78,9 +80,8 @@ LEARNINGS="$DATA/learnings.md"
 . "$SCRIPT_DIR/fm-ff-lib.sh"
 
 # Marker fields are whitespace-delimited, so every field recorded on this line
-# must be whitespace-free by validation. That invariant is what keeps the sed
-# readers (marker_field, find_marker, cmd_list) and replace_block's awk
-# fixed-string matcher agreeing on where a field ends.
+# must be whitespace-free by validation. That invariant is what keeps the
+# locator's field split agreeing with the writer about where a field ends.
 MARKER='<!-- fm-promotion '
 
 # Body lines `start` writes between the marker line and the blank line that
@@ -90,6 +91,10 @@ MARKER='<!-- fm-promotion '
 # curated knowledge gets eaten. Move this with the writer or the guard goes
 # blind.
 BLOCK_BODY_LINES=5
+
+# Body line carrying the distinguishing phrase, written and read back by the one
+# label so the writer and the readers cannot drift apart.
+LANDED_LABEL='Landed text contains'
 
 usage() {
   awk '
@@ -125,81 +130,114 @@ resolve_default_branch() {
   default_branch "$FM_ROOT" || fail "cannot determine the default branch of $FM_ROOT"
 }
 
-# Blob id of <path> on the code root's default branch, or `absent`.
-destination_blob() {  # <default-branch> <path>
-  git -C "$FM_ROOT" rev-parse --verify --quiet "$1:$2" 2>/dev/null || printf '%s\n' absent
-}
-
 # True when <path> on the default branch contains <text> as a fixed string. A
 # destination that does not exist there yet contains nothing, never everything.
 destination_contains() {  # <default-branch> <path> <text>
   git -C "$FM_ROOT" show "$1:$2" 2>/dev/null | grep -qF -- "$3"
 }
 
-# Echo the `key=value` field <key> from a marker line, empty when unset.
-marker_field() {  # <marker-line> <key>
-  printf '%s\n' "$1" | sed -n "s/.*[[:space:]]$2=\\([^[:space:]]*\\).*/\\1/p"
-}
-
-# Echo the marker line for <slug>, or return 1 when no promotion is in flight.
-find_marker() {  # <slug>
-  local slug=$1 line
-  [ -f "$LEARNINGS" ] || return 1
-  while IFS= read -r line; do
-    case "$line" in
-      "$MARKER"*) ;;
-      *) continue ;;
-    esac
-    [ "$(marker_field "$line" slug)" = "$slug" ] || continue
-    printf '%s\n' "$line"
-    return 0
-  done < "$LEARNINGS"
-  return 1
-}
-
-# Echo the `  <label>: ` value recorded inside <slug>'s block, or nothing when
-# the block has no such line. Same fixed-string block match as replace_block, so
-# the two cannot disagree about which block they are reading.
-block_field() {  # <slug> <label>
-  awk -v needle=" slug=$1 " -v marker="$MARKER" -v label="  $2: " '
-    index($0, marker) == 1 && index($0, needle) > 0 { inblock = 1; next }
-    inblock && $0 == "" { exit }
-    inblock && index($0, label) == 1 { print substr($0, length(label) + 1); exit }
+# The ONE definition of where an in-flight record lives, and the only code that
+# reads or rewrites one. Every operation - the duplicate check, the field reads,
+# and the rewrite - runs this same program, so a guard can never prove one block
+# while a rewriter acts on another; that divergence is how curated entries get
+# eaten in a gitignored file with no recovery.
+#
+# `records` prints `slug<TAB>to<TAB>started<TAB>landed-text` for every marker
+# line in file order. The slug-scoped modes act on the ONE block whose marker
+# line carries that slug: `record` prints its `to<TAB>started<TAB>landed-text`,
+# `rewrite` prints the file with the block - marker line through the blank line
+# that closes it - replaced by <replacement>, which may be empty.
+#
+# Exits 0 when it acted, 2 when the slug has no record, 3 when it has more than
+# one, and 4 when the record is not the shape `start` wrote. More than one is
+# refused rather than resolved to the first: `start` refuses a duplicate slug, so
+# a second marker line means the file was edited by hand, and acting on either
+# one is how the entries around the other get deleted.
+promotion_block() {  # <slug|''> <records|record|rewrite> [<replacement>]
+  [ -f "$LEARNINGS" ] || return 2
+  # Fixed-string matching throughout, never a regex: a slug may contain `.` and `-`.
+  awk -v slug="$1" -v mode="$2" -v replacement="${3-}" \
+      -v marker="$MARKER" -v want="$BLOCK_BODY_LINES" -v label="  $LANDED_LABEL: " '
+    function block_end(s,   i, n) {
+      for (i = s + 1; i <= NR; i++) {
+        if (line[i] == "") return (n == want) ? i : 0
+        if (++n > want) return 0
+      }
+      return 0
+    }
+    function marker_value(s, key,   i, n, field) {
+      n = split(line[s], field, /[ \t]+/)
+      for (i = 1; i <= n; i++)
+        if (index(field[i], key "=") == 1) return substr(field[i], length(key) + 2)
+      return ""
+    }
+    function landed_value(s, e,   i) {
+      for (i = s + 1; i < e; i++)
+        if (index(line[i], label) == 1) return substr(line[i], length(label) + 1)
+      return ""
+    }
+    BEGIN { needle = (slug == "") ? "" : " slug=" slug " " }
+    {
+      line[NR] = $0
+      if (index($0, marker) != 1) next
+      seen[++markers] = NR
+      if (needle != "" && index($0, needle) > 0) { found++; at = NR }
+    }
+    END {
+      if (mode == "records") {
+        for (i = 1; i <= markers; i++) {
+          s = seen[i]
+          e = block_end(s)
+          printf "%s\t%s\t%s\t%s\n", marker_value(s, "slug"), marker_value(s, "to"),
+            marker_value(s, "started"), (e ? landed_value(s, e) : "")
+        }
+        exit 0
+      }
+      if (found == 0) exit 2
+      if (found > 1) exit 3
+      e = block_end(at)
+      if (e == 0) exit 4
+      if (mode == "record") {
+        printf "%s\t%s\t%s\n", marker_value(at, "to"), marker_value(at, "started"),
+          landed_value(at, e)
+        exit 0
+      }
+      for (i = 1; i <= NR; i++) {
+        if (i == at) { if (replacement != "") print replacement; continue }
+        if (i > at && i <= e) continue
+        print line[i]
+      }
+    }
   ' "$LEARNINGS"
 }
 
-# Replace the in-flight block for <slug> - its marker line through the next
-# blank line - with <replacement>, which may be empty.
-#
-# The blank line is the only terminator, so a block whose blank line was removed
-# by hand would swallow every entry below it, in a gitignored file with no
-# recovery. Refuse that outright rather than deleting curated knowledge: the
-# caller can restore the blank line, and nothing is lost meanwhile.
+# Refuse with the reason the locator gave, rather than acting on a block it could
+# not prove.
+block_fail() {  # <slug> <exit-code>
+  case "$2" in
+    2) fail "no promotion in flight for '$1' in $LEARNINGS" ;;
+    3) fail "$LEARNINGS holds more than one in-flight record for '$1', which start would never write, so this file was hand-edited; remove the marker line that does not belong and retry" ;;
+    4) fail "the in-flight record for '$1' is not the $BLOCK_BODY_LINES-line block followed by a blank line that start wrote, so landing it would delete entries that are not part of it in $LEARNINGS; restore that shape and retry" ;;
+    *) fail "could not read the in-flight record for '$1' in $LEARNINGS" ;;
+  esac
+}
+
+# Replace the in-flight block for <slug> with <replacement>, which may be empty.
+# The locator proves the block before this writes anything, and the rewritten
+# file is only moved into place once it did.
 replace_block() {  # <slug> <replacement>
-  local slug=$1 replacement=$2 tmp
-  awk -v needle=" slug=$slug " -v marker="$MARKER" -v want="$BLOCK_BODY_LINES" '
-    index($0, marker) == 1 && index($0, needle) > 0 { inblock = 1; n = 0; next }
-    inblock && $0 == "" { ok = (n == want); exit }
-    inblock { n++; if (n > want) exit }
-    END { exit(ok ? 0 : 1) }
-  ' "$LEARNINGS" || fail "the in-flight record for '$slug' is not the $BLOCK_BODY_LINES-line block followed by a blank line that start wrote, so landing it would delete entries that are not part of it in $LEARNINGS; restore that shape and retry"
+  local slug=$1 tmp code=0
   tmp=$(mktemp "${TMPDIR:-/tmp}/fm-learning-promote.XXXXXX")
-  # Fixed-string field match, never a regex: a slug may contain `.` and `-`.
-  awk -v needle=" slug=$slug " -v marker="$MARKER" -v replacement="$replacement" '
-    index($0, marker) == 1 && index($0, needle) > 0 {
-      dropping = 1
-      if (replacement != "") print replacement
-      next
-    }
-    dropping && $0 == "" { dropping = 0; next }
-    dropping { next }
-    { print }
-  ' "$LEARNINGS" > "$tmp" || { rm -f "$tmp"; fail "could not rewrite $LEARNINGS"; }
+  promotion_block "$slug" rewrite "$2" > "$tmp" || code=$?
+  if [ "$code" -ne 0 ]; then
+    rm -f "$tmp"
+    block_fail "$slug" "$code"
+  fi
   mv "$tmp" "$LEARNINGS"
 }
 
 cmd_start() {
-  local slug=${1:-} to='' evidence='' checkable='' landed_text='' default base today
+  local slug=${1:-} to='' evidence='' checkable='' landed_text='' default today code=0
   shift || true
   validate_slug "$slug"
   while [ $# -gt 0 ]; do
@@ -242,12 +280,16 @@ cmd_start() {
   [ -n "$landed_text" ] || fail "start needs --landed-text: the distinguishing phrase the landed change will put in $to"
   validate_field "--landed-text" "$landed_text"
 
-  if find_marker "$slug" >/dev/null; then
-    fail "a promotion for '$slug' is already in flight in $LEARNINGS"
-  fi
+  # Through the same locator `land` uses, so a record it would refuse to land is
+  # never quietly joined by a second one.
+  promotion_block "$slug" record >/dev/null || code=$?
+  case "$code" in
+    0) fail "a promotion for '$slug' is already in flight in $LEARNINGS" ;;
+    2) ;;
+    *) block_fail "$slug" "$code" ;;
+  esac
 
   default=$(resolve_default_branch)
-  base=$(destination_blob "$default" "$to")
   today=$(date +%Y-%m-%d)
 
   # A phrase the destination already carries would make `land` succeed the
@@ -265,59 +307,53 @@ cmd_start() {
 
   # shellcheck disable=SC2016 # Literal Markdown backticks, not expansions.
   {
-    printf '%sslug=%s to=%s base=%s started=%s -->\n' "$MARKER" "$slug" "$to" "$base" "$today"
+    printf '%sslug=%s to=%s started=%s -->\n' "$MARKER" "$slug" "$to" "$today"
     printf -- '- **Promotion in flight:** `%s` -> `%s` (started %s).\n' "$slug" "$to" "$today"
     printf -- '  True in more than one project: %s\n' "$evidence"
     printf -- '  Checkable by: %s\n' "$checkable"
-    printf -- '  Landed text contains: %s\n' "$landed_text"
+    printf -- '  %s: %s\n' "$LANDED_LABEL" "$landed_text"
     printf -- '  Land it with `bin/fm-learning-promote.sh land %s` once the tracked change is on the default branch.\n' "$slug"
     printf '\n'
   } >> "$LEARNINGS"
 
-  printf 'started: %s -> %s (baseline %s on %s)\n' "$slug" "$to" "$base" "$default"
+  printf 'started: %s -> %s (lands once %s on %s carries: %s)\n' "$slug" "$to" "$to" "$default" "$landed_text"
   printf 'ship the tracked change through this repo'"'"'s normal delivery path, then run: %s land %s\n' \
     "$(basename "$0")" "$slug"
 }
 
 cmd_list() {
-  local default line slug to started landed_text
+  local default slug to started landed_text
   [ -f "$LEARNINGS" ] || return 0
   default=$(resolve_default_branch)
-  while IFS= read -r line; do
-    case "$line" in
-      "$MARKER"*) ;;
-      *) continue ;;
-    esac
-    slug=$(marker_field "$line" slug)
-    to=$(marker_field "$line" to)
-    started=$(marker_field "$line" started)
-    # Same predicate `land` enforces, so the two never disagree about whether a
-    # promotion is finished. A record with no recorded phrase can never land, so
-    # it reads as waiting rather than claiming a landing it cannot prove.
-    landed_text=$(block_field "$slug" "Landed text contains")
-    if [ -n "$landed_text" ] && destination_contains "$default" "$to" "$landed_text"; then
+  # Same locator and same predicate `land` enforces, so the two never disagree
+  # about which record is which or whether a promotion is finished. A record
+  # whose phrase cannot be read reads as waiting rather than claiming a landing
+  # it cannot prove.
+  while IFS=$'\t' read -r slug to started landed_text; do
+    if [ -n "$to" ] && [ -n "$landed_text" ] && destination_contains "$default" "$to" "$landed_text"; then
       printf 'landed\t%s\t%s\t%s\n' "$slug" "$to" "$started"
     else
       printf 'waiting\t%s\t%s\t%s\n' "$slug" "$to" "$started"
     fi
-  done < "$LEARNINGS"
+  done < <(promotion_block '' records)
 }
 
 cmd_land() {
-  local slug=${1:-} line to started default landed_text today pointer
+  local slug=${1:-} record to started default landed_text today pointer code=0
   shift || true
   [ $# -eq 0 ] || fail "unknown option: $1"
   validate_slug "$slug"
 
-  line=$(find_marker "$slug") || fail "no promotion in flight for '$slug' in $LEARNINGS"
-  to=$(marker_field "$line" to)
-  started=$(marker_field "$line" started)
+  record=$(promotion_block "$slug" record) || code=$?
+  [ "$code" -eq 0 ] || block_fail "$slug" "$code"
+  IFS=$'\t' read -r to started landed_text <<< "$record"
   default=$(resolve_default_branch)
 
-  # Refuse rather than guess: a record with no recorded phrase cannot prove its
-  # lesson landed, and retiring it on a weaker signal is what loses knowledge.
-  landed_text=$(block_field "$slug" "Landed text contains")
-  [ -n "$landed_text" ] || fail "the in-flight record for '$slug' records no landed text, so this cannot prove the lesson landed; restore its 'Landed text contains:' line and retry"
+  # Refuse rather than guess: a record missing its destination or its recorded
+  # phrase cannot prove its lesson landed, and retiring it on a weaker signal is
+  # what loses knowledge.
+  [ -n "$to" ] || fail "the in-flight record for '$slug' records no destination path; restore its marker line and retry"
+  [ -n "$landed_text" ] || fail "the in-flight record for '$slug' records no landed text, so this cannot prove the lesson landed; restore its '$LANDED_LABEL:' line and retry"
 
   if ! destination_contains "$default" "$to" "$landed_text"; then
     fail "not landed: $to on $default does not contain the promoted text yet, so the local entry must stay (started $started, looking for: $landed_text)"

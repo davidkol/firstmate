@@ -238,6 +238,40 @@ test_land_refuses_a_block_whose_terminating_blank_line_is_gone() {
   pass "land refuses an unterminated block instead of eating the entries below it"
 }
 
+test_land_refuses_a_slug_that_carries_two_marker_lines() {
+  local learnings out code before
+  setup_home
+  learnings="$T/home/data/learnings.md"
+
+  "$PROMOTE" start pane-tangle --to AGENTS.md --evidence 'two projects' --checkable 'a check' \
+    --landed-text "$LANDED_TEXT" >/dev/null || fail "start failed"
+  land_tracked_change "$T/root" AGENTS.md
+
+  # Hand curation left a second line that begins with the marker and names the
+  # same slug, with curated entries below it and no blank line until past them.
+  # The block start wrote is well formed, so a guard that proves only the first
+  # block passes - while a rewriter that fires on every match deletes the proven
+  # block AND everything from this stray marker down to the next blank line.
+  {
+    printf -- '<!-- fm-promotion slug=pane-tangle to=AGENTS.md started=2026-07-02 -->\n'
+    printf -- '- 2026-07-02 a curated learning beside the stray marker.\n'
+    printf -- '- 2026-07-03 another curated learning.\n'
+    printf '\n'
+  } >> "$learnings"
+  before=$(cat "$learnings")
+
+  out=$("$PROMOTE" land pane-tangle 2>&1) && code=0 || code=$?
+  expect_code 1 "$code" "land acted on a slug carrying more than one marker line"
+  assert_contains "$out" "more than one" "refusal did not name the duplicated record"
+  [ "$(cat "$learnings")" = "$before" ] || fail "a refused land still edited the learnings file"
+  assert_grep '- 2026-07-02 a curated learning beside the stray marker.' "$learnings" \
+    "land destroyed a curated entry beside a stray second marker"
+  assert_grep '- 2026-07-03 another curated learning.' "$learnings" \
+    "land destroyed a curated entry beside a stray second marker"
+  assert_grep 'Promotion in flight' "$learnings" "a refused land destroyed the in-flight record"
+  pass "land refuses a slug with two marker lines instead of eating the entries around one"
+}
+
 test_stow_skill_owns_the_graduation_rule() {
   local stow="$ROOT/.agents/skills/stow/SKILL.md"
 
@@ -270,5 +304,6 @@ test_land_replaces_the_record_with_one_pointer
 test_land_refuses_when_an_unrelated_change_touched_the_destination
 test_start_refuses_landed_text_the_destination_already_carries
 test_land_refuses_a_block_whose_terminating_blank_line_is_gone
+test_land_refuses_a_slug_that_carries_two_marker_lines
 test_stow_skill_owns_the_graduation_rule
 test_agents_routes_upward_without_restating_the_mechanics
