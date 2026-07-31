@@ -7,20 +7,26 @@
 # it, so these tests pin that the flags come from the recorded mode and that a
 # caller cannot displace them.
 #
-# The load-bearing negative is that no mode ever skips review, test, document, or
-# lint. Dropping the pull request is not dropping the automated review, and the
-# review is what makes landing without a human reading the diff safe.
+# The load-bearing negative is that no mode ever skips review. Dropping the pull
+# request is not dropping the automated review, and the review is what makes landing
+# without a human reading the diff safe. direct-PR and local-only are the light
+# paths: they keep review alone, which ADDS the reviewer to paths that previously ran
+# no pipeline at all, so a regression that drops review from them returns those paths
+# to having nothing read the change. The full-pipeline modes separately keep test,
+# document, and lint.
 #
 # Matrix:
 #   (a) validated-main derives --skip pr,ci
 #   (b) no-mistakes runs the full pipeline with no --skip
 #   (c) a caller's --skip is merged with the mode's, never replaces it
 #   (d) the --skip=<v> form merges the same way
-#   (e) no mode ever skips review, test, document, or lint
-#   (f) a missing --intent refuses before starting a run
-#   (g) missing task meta refuses before starting a run
-#   (h) a mode with no recorded value falls back to the full pipeline
-#   (i) running outside the task's recorded worktree refuses before starting a run
+#   (e) no mode ever skips review
+#   (f) direct-PR and local-only derive the review-only skip set
+#   (g) the full-pipeline modes never skip test, document, or lint
+#   (h) a missing --intent refuses before starting a run
+#   (i) missing task meta refuses before starting a run
+#   (j) a mode with no recorded value falls back to the full pipeline
+#   (k) running outside the task's recorded worktree refuses before starting a run
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -125,22 +131,67 @@ test_caller_skip_equals_form_is_merged() {
   pass "fm-validate merges the --skip=<value> form the same way"
 }
 
-# The property the whole delivery mode rests on. If a mode ever skipped review,
-# landing straight on a default branch would have nothing standing between an
-# unread change and main.
-test_no_mode_skips_the_local_review_surface() {
-  local case_dir out mode step
+# The property the whole delivery contract rests on. If any mode ever skipped
+# review, that path would have nothing standing between an unread change and the
+# captain's default branch. This is the one assertion that must hold for every mode,
+# including the light one.
+test_no_mode_skips_review() {
+  local case_dir out mode
   for mode in validated-main no-mistakes direct-PR local-only; do
     case_dir=$(make_case "review-kept-$mode" "$mode")
     run_validate "$case_dir" task-v1 --intent "add a thing" >/dev/null 2>&1 \
       || fail "review-kept-$mode: fm-validate should succeed"
     out=$(invoked "$case_dir")
-    for step in review test document lint; do
+    assert_not_contains "$out" "review" \
+      "review-kept-$mode: mode $mode must never skip the review step"
+  done
+  pass "fm-validate never skips the review step for any delivery mode"
+}
+
+# The light paths. Before 2026-07-30 both ran no pipeline at all, so nothing read
+# the change before the PR opened or the branch was declared ready. They now run
+# review and nothing else: the eight omissions are derived here, so no worker types
+# them and a re-run inherits them. A regression that drops review from this set
+# silently restores the no-review light path.
+#
+# push is in the set for both, and for local-only that is load-bearing rather than
+# incidental: local-only forbids reaching any remote, so the review may read the
+# branch but must never publish it.
+test_light_paths_derive_the_review_only_skip_set() {
+  local case_dir out step mode
+  for mode in direct-PR local-only; do
+    case_dir=$(make_case "review-only-$mode" "$mode")
+    run_validate "$case_dir" task-v1 --intent "add a thing" >/dev/null 2>&1 \
+      || fail "review-only-$mode: fm-validate should succeed"
+    out=$(invoked "$case_dir")
+    assert_contains "$out" '--skip intent,rebase,test,document,lint,push,pr,ci' \
+      "review-only-$mode: $mode must derive the review-only skip set"
+    for step in intent rebase test document lint push pr ci; do
+      assert_contains "$out" "$step" \
+        "review-only-$mode: $mode must skip the $step step"
+    done
+    assert_not_contains "$out" "review," \
+      "review-only-$mode: review must never appear in the skip set"
+  done
+  pass "fm-validate derives a review-only run for the light paths"
+}
+
+# Keeping review everywhere must not be read as licence to drop the rest from the
+# modes that carry the full pipeline. validated-main lands straight on the default
+# branch, so its local test, document, and lint steps stay load-bearing.
+test_full_pipeline_modes_keep_test_document_and_lint() {
+  local case_dir out mode step
+  for mode in validated-main no-mistakes; do
+    case_dir=$(make_case "full-surface-$mode" "$mode")
+    run_validate "$case_dir" task-v1 --intent "add a thing" >/dev/null 2>&1 \
+      || fail "full-surface-$mode: fm-validate should succeed"
+    out=$(invoked "$case_dir")
+    for step in test document lint; do
       assert_not_contains "$out" "$step" \
-        "review-kept-$mode: mode $mode must never skip the $step step"
+        "full-surface-$mode: mode $mode must never skip the $step step"
     done
   done
-  pass "fm-validate never skips review, test, document, or lint for any delivery mode"
+  pass "fm-validate keeps test, document, and lint for the full-pipeline modes"
 }
 
 test_missing_intent_refuses() {
@@ -223,7 +274,9 @@ test_validated_main_derives_skip
 test_no_mistakes_runs_full_pipeline
 test_caller_skip_is_merged_not_substituted
 test_caller_skip_equals_form_is_merged
-test_no_mode_skips_the_local_review_surface
+test_no_mode_skips_review
+test_light_paths_derive_the_review_only_skip_set
+test_full_pipeline_modes_keep_test_document_and_lint
 test_missing_intent_refuses
 test_missing_meta_refuses
 test_absent_mode_falls_back_to_full_pipeline

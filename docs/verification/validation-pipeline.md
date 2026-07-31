@@ -149,3 +149,112 @@ failed to fetch default branch into worktree; trusted config disabled (commands/
 Firstmate does not set `allow_repo_commands`.
 The consequence a maintainer will get wrong is that a branch editing `commands.test` still validates under the default branch's command, so a new or changed test command does not take effect for its own validation run and only becomes live once `.no-mistakes.yaml` reaches the default branch.
 The two failure modes matter too: an unparseable trusted config, or a default branch that cannot be fetched into the worktree, drops the pushed branch's `commands` and `agent` rather than honoring them.
+
+## The review step runs alone, and in its own agent process
+
+Verified on 2026-07-30 against `no-mistakes version v1.41.2 (867d64d) 2026-07-24T06:16:23Z`.
+
+This is the evidence the `direct-PR` and `local-only` review-only runs rest on.
+It answers two separate questions: whether the pipeline can run review with every other step omitted, and whether the agent that performs that review is a different context from the worker that wrote the change.
+
+`--skip` accepts every step except the one being kept, so a review-only run is expressible with the shipped flag and needs no new mechanism:
+
+```console
+$ no-mistakes axi run --intent "probe" --skip bogus-step-name
+error: "unknown step \"bogus-step-name\""
+help[1]: "Valid steps: intent, rebase, review, test, document, lint, push, pr, ci"
+```
+
+Observed end to end on a throwaway repository, driving `bin/fm-validate.sh` against a task whose `state/<id>.meta` records `mode=direct-PR`, over a 17-line documentation-only change.
+The worker typed no `--skip`; the eight omissions were derived from the recorded mode.
+Complete step table at the terminal outcome:
+
+```text
+steps[9]{step,status,findings,duration_ms}:
+  intent,skipped,0,0
+  rebase,skipped,0,0
+  review,completed,2,64399
+  test,skipped,0,0
+  document,skipped,0,0
+  lint,skipped,0,0
+  push,skipped,0,0
+  pr,skipped,0,0
+  ci,skipped,0,0
+outcome: passed
+```
+
+The review step is the only one that executed, and the run still reaches a normal terminal `outcome: passed`.
+
+The reviewing agent is a separate operating-system process the daemon starts, not the session that produced the change.
+`no-mistakes axi logs --step review` records the spawn and exit of that process by pid:
+
+```text
+  reviewing changes...
+  claude started pid=25665
+  ...
+  claude exited pid=25665 status=success
+```
+
+`no-mistakes axi run --help` states the same boundary from the other side: "The calling agent drives AXI approval gates but does not become the pipeline agent."
+That is what makes the step a fresh-context review rather than an author re-reading their own work.
+
+The review is a real verdict, not a formality.
+On the 17-line documentation change it returned two findings, the first being that every command the new guide instructs a contributor to run (`./configure`, `make`, `make test`) exists nowhere in the repository, which it established by listing the tracked files.
+On a separate 6-line shell helper it returned three findings including a confirmed command-injection defect, which it demonstrated by executing the committed script rather than reasoning about it:
+
+```text
+| `./divide.sh 'HOME[$(cmd)]+1' 1` | **`cmd` executes** - arbitrary command execution |
+```
+
+### The local-only review publishes nothing
+
+`local-only` forbids reaching any remote, so its review is only safe because `push` is one of the eight skipped steps.
+Verified on 2026-07-30 against the same binary, on a repository shaped like the registry's `local-only` project: an `origin` pointing at a local filesystem path rather than a forge.
+
+`bin/fm-validate.sh` announced the derived set, and the review ran:
+
+```text
+fm-validate: task lo-review is mode=local-only; skipping pipeline steps: intent,rebase,test,document,lint,push,pr,ci
+    review,awaiting_approval,4,96475
+```
+
+`git ls-remote --heads origin` returned the identical single `refs/heads/main` line immediately before and immediately after the run.
+The task branch was never published, and no other ref appeared.
+
+### A repository with no remote at all cannot run this review
+
+Verified on 2026-07-30 against the same binary.
+This is a real limit, not a configuration mistake, and it is the one case where a delivery mode cannot carry the reviewer.
+
+`no-mistakes axi run` refuses without an initialized gate:
+
+```console
+$ no-mistakes axi run --intent "add b" --skip intent,rebase,test,document,lint,push,pr,ci
+error: repo not initialized (run 'no-mistakes init' first)
+```
+
+and `no-mistakes init` refuses without an `origin` remote:
+
+```console
+$ no-mistakes init
+init: no 'origin' remote in <path>
+
+no-mistakes pushes your branch and opens a pull request, so it needs a remote to push to.
+```
+
+An `origin` on a local filesystem path satisfies it, which is what a clone of a local repository already has, so the fleet's registered `local-only` project can run the review.
+A project with genuinely no remote cannot, and that must be recorded as a named gap on the project rather than described as a safeguard that is running.
+
+### Measured cost
+
+| Change | Review-only run | Full pipeline, same class of change |
+|---|---|---|
+| 17-line documentation change | 64.4s step, 66s wall clock | about 26 minutes |
+| 6-line shell helper | 107.6s step, 109s wall clock | not measured |
+| 7-line shell helper, local-only | 96.5s step, 99s wall clock | not measured |
+
+Answering the review gate and publishing the branch add about a second between them, so the light path's end-to-end cost is the review step plus the worker's own PR call.
+The 26-minute figure is the captain's own reference case from 2026-07-29 and is what moved the fleet default to `direct-PR`; the review-only run is roughly a twenty-fourth of it, and inside the captain's stated 5-minute end-to-end target for this path with a wide margin.
+
+Cost scales with the change under review, not with repository size, so a large change will cost more than these figures.
+The numbers above are two data points, not a bound.
