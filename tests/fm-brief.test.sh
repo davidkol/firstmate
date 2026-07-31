@@ -305,8 +305,10 @@ test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr() {
     "direct-PR brief lost the statement that review is always kept"
   assert_grep "no-mistakes doctor" "$brief" \
     "direct-PR brief lost the pipeline setup step, so the review may have no gate to run through"
-  assert_grep "Only once the review has reached a terminal outcome" "$brief" \
+  assert_grep "When the run reaches a successful terminal outcome" "$brief" \
     "direct-PR brief lets the worker open the PR before the review finishes"
+  assert_grep "terminal but NOT successful" "$brief" \
+    "direct-PR brief lets a failed or cancelled review satisfy its push gate"
   assert_no_grep "Do NOT run /no-mistakes" "$brief" \
     "direct-PR brief still forbids the pipeline outright, which would skip the review too"
   assert_grep "done: PR {url}" "$brief" \
@@ -337,8 +339,10 @@ test_local_only_brief_runs_a_review_that_publishes_nothing() {
     "local-only brief lost why the review cannot reach a remote"
   assert_grep "Never push to any remote and never open a PR" "$brief" \
     "local-only brief lost its no-remote rule"
-  assert_grep "Only once the review has reached a terminal outcome" "$brief" \
+  assert_grep "When the run reaches a successful terminal outcome" "$brief" \
     "local-only brief declares the branch ready before the review finishes"
+  assert_grep "terminal but NOT successful" "$brief" \
+    "local-only brief lets a failed or cancelled review declare the branch ready"
   assert_grep "done: ready in branch fm/$id" "$brief" \
     "local-only brief lost its ready signal"
   assert_no_grep "done: PR" "$brief" \

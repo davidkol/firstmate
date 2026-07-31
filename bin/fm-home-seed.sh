@@ -915,8 +915,14 @@ sync_project_registry() {
 initialize_no_mistakes_project() {
   local home=$1 project=$2 created=$3 mode dst
   mode=$(project_mode_in_home "$home" "$project")
-  # validated-main drives the same pipeline as no-mistakes, so it needs the same
-  # local gate initialized; only its PR and CI steps are skipped at run time.
+  # Every delivery mode now drives at least the pipeline's review step, so every
+  # project with an origin remote needs a local gate. The seed still creates it
+  # only for the full-pipeline modes, which need it before their first run:
+  # validated-main drives the same pipeline as no-mistakes and only skips its PR
+  # and CI steps at run time. A light-path clone gets its gate lazily instead,
+  # from the `no-mistakes doctor` step in the brief fm-brief.sh generates, which
+  # keeps the seed from touching a preexisting clone the `created != 1` guard
+  # below deliberately refuses to mutate.
   case "$mode" in
     no-mistakes|validated-main) ;;
     *) return 0 ;;

@@ -440,8 +440,9 @@ Two firstmate-specific rules layer on top of it:
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
 
-Only once the review has reached a terminal outcome, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+When the run reaches a successful terminal outcome, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
 Pushing before the review reaches that outcome defeats the one safeguard this path has.
+A failed or cancelled run is terminal but NOT successful: never open the PR on one - escalate to firstmate (rule 6) and stop.
 The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
 EOF
     ;;
@@ -495,7 +496,8 @@ Two firstmate-specific rules layer on top of it:
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
 
-Only once the review has reached a terminal outcome, append \`done: ready in branch fm/$ID\` to the status file and stop.
+When the run reaches a successful terminal outcome, append \`done: ready in branch fm/$ID\` to the status file and stop.
+A failed or cancelled run is terminal but NOT successful: never declare the branch ready on one - escalate to firstmate (rule 6) and stop, because firstmate fast-forwards a ready branch straight into local \`main\`.
 The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path.
 EOF
     ;;

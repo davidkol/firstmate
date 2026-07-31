@@ -64,6 +64,7 @@ After remote creation succeeds, clone it locally, add the registry entry, and in
 
 For a purely `local-only` project, create a local Git repository under its unused `projects/<name>` path, add the registry entry, and make no GitHub call.
 The captain's request to create that local project authorizes this local initialization, but it does not authorize an unmentioned remote repository.
+A repository created this way has no `origin` remote at all, which is exactly the case that cannot run the review, so record the named gap the add-or-clone section above requires rather than dispatching work that ships unread.
 
 ## Initialize
 

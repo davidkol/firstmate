@@ -30,7 +30,12 @@
 #      diverged from it, invalidates attribution.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
-#      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
+#      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: on the
+#      light delivery modes (direct-PR, local-only) the run carries the review
+#      step alone, so a passing run means the REVIEW finished, not the task - the
+#      worker still has to open its PR or declare its branch ready. There a
+#      passing run stays working until the crew appends its own done event, and
+#      the detail never claims a PR (local-only never has one). EXCEPT: while
 #      the active step is ci, `axi status` alone cannot tell "still waiting on
 #      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
 #      a ci-step log-tail check overrides working -> done once checks read
@@ -97,7 +102,10 @@ meta_value() {  # <key>
 WT=$(meta_value worktree)
 KIND=$(meta_value kind)
 HARNESS=$(meta_value harness)
+MODE=$(meta_value mode)
 [ -n "$KIND" ] || KIND=ship
+# An unrecorded mode is the full pipeline, matching bin/fm-validate.sh's fallback.
+[ -n "$MODE" ] || MODE=no-mistakes
 
 # A torn-down (or never-created) worktree has no current state to read.
 if [ -z "$WT" ] || [ ! -d "$WT" ]; then
@@ -285,6 +293,30 @@ nm_gate_findings_count() {
   case "$rest" in ''|*[!0-9]*) return 0 ;; esac
   printf '%s' "$rest"
 }
+# The light delivery modes run the review step alone (bin/fm-validate.sh), so
+# their run finishing is not their task finishing: a direct-PR worker still has to
+# push and open its PR, and a local-only worker still has to declare its branch
+# ready. Neither run reaches a pr step at all, so its terminal detail must never
+# claim a PR - local-only never has one.
+mode_is_light_path() {
+  case "$MODE" in
+    direct-PR|local-only) return 0 ;;
+  esac
+  return 1
+}
+
+# Terminal state for a light-path run. The crew's own done event is what marks the
+# task finished; until it appends one, the review passing leaves it still working.
+set_light_path_terminal_state() {
+  if [ "$LOG_VERB" = "done" ]; then
+    RUN_STATE="done"
+    RUN_DETAIL="review passed: $(status_line_note "$LOG_LINE")"
+  else
+    RUN_STATE=working
+    RUN_DETAIL="review passed: worker has not reported ready yet"
+  fi
+}
+
 log_reports_ci_ready() {
   [ "$LOG_VERB" = "done" ] || return 1
   case "$(status_line_note "$LOG_LINE")" in
@@ -496,7 +528,13 @@ if [ "$HAVE_RUN" = 1 ]; then
     # coarse-vs-full distinction, so a real gate is never silently missed.
     case "$COARSE_STATUS" in
       running)   RUN_STATE=working; RUN_DETAIL="validating (background run)" ;;
-      completed) RUN_STATE="done";  RUN_DETAIL="run completed" ;;
+      completed)
+        if mode_is_light_path; then
+          set_light_path_terminal_state
+        else
+          RUN_STATE="done"; RUN_DETAIL="run completed"
+        fi
+        ;;
       failed)    RUN_STATE=failed;  RUN_DETAIL="run failed" ;;
       cancelled) RUN_STATE=failed;  RUN_DETAIL="run cancelled" ;;
       *)         RUN_STATE=unknown; RUN_DETAIL="runs list status: $COARSE_STATUS" ;;
@@ -512,7 +550,13 @@ if [ "$HAVE_RUN" = 1 ]; then
 
     if [ -n "$outcome" ]; then
       case "$outcome" in
-        passed)        RUN_STATE="done"; RUN_DETAIL="run passed: PR merged/closed" ;;
+        passed)
+          if mode_is_light_path; then
+            set_light_path_terminal_state
+          else
+            RUN_STATE="done"; RUN_DETAIL="run passed: PR merged/closed"
+          fi
+          ;;
         checks-passed) RUN_STATE="done"; RUN_DETAIL="checks green: PR ready for review" ;;
         failed)        RUN_STATE=failed; RUN_DETAIL="run failed" ;;
         cancelled)     RUN_STATE=failed; RUN_DETAIL="run cancelled" ;;

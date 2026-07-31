@@ -13,6 +13,8 @@
 #   (b) needs-decision/blocked log + resumed run = SUPERSEDED     -> run-step
 #   (c) genuine parked run + needs-decision log = NOT superseded  -> run-step
 #   (d) terminal run-step (passed/failed) is authoritative        -> run-step
+#       ...except on a light delivery mode, whose run carries the review step
+#       alone, so passing means the review finished and not the task
 #   (e) cross-branch attribution: this branch's own run found via list lookup
 #   (f) no run + busy pane                                        -> pane
 #   (g) no run + idle pane falls to the status-log verb           -> status-log
@@ -663,6 +665,49 @@ test_terminal_passed() {
   pass "terminal passed run is authoritative"
 }
 
+# A light delivery mode (direct-PR, local-only) runs the review step alone, so its
+# run passing means the REVIEW finished, not the task. Before those modes ran any
+# pipeline they produced no attributable run at all and this reader fell back to
+# the pane, so it was never wrong about them; now that they do, an unqualified
+# passed -> "done: PR merged/closed" reports a direct-PR crew finished before it has
+# pushed anything, and permanently attributes a PR to local-only, which never has
+# one. The crew's own done event is what marks the task finished.
+test_light_path_passed_run_waits_for_the_crew_done_event() {
+  local mode id d out
+  for mode in direct-PR local-only; do
+    reset_fakes
+    id="feat-light-${mode}"
+    d=$(new_case "light-$mode")
+    make_repo_on_branch "$d/wt" "fm/$id"
+    make_fakebin "$d" >/dev/null
+    fm_write_meta "$d/state/$id.meta" "window=fm:fm-$id" "worktree=$d/wt" "kind=ship" "mode=$mode"
+    FM_FAKE_AXI_STATUS="$(run_passed "fm/$id")"
+    out=$(run_crew_state "$d" "$id")
+    assert_contains "$out" "state: working" \
+      "$mode: a passing review-only run must not report the task done before the worker reports"
+    assert_not_contains "$out" "PR merged/closed" \
+      "$mode: a review-only run must never be described as a merged or closed PR"
+  done
+  pass "light-path passing run stays working until the crew reports ready"
+}
+
+test_light_path_passed_run_with_done_event_is_done() {
+  reset_fakes
+  local d; d=$(new_case light-done)
+  make_repo_on_branch "$d/wt" fm/feat-light-done
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-light-done.meta" "window=fm:fm-feat-light-done" \
+    "worktree=$d/wt" "kind=ship" "mode=local-only"
+  printf 'done: ready in branch fm/feat-light-done\n' > "$d/state/feat-light-done.status"
+  FM_FAKE_AXI_STATUS="$(run_passed fm/feat-light-done)"
+  local out; out=$(run_crew_state "$d" feat-light-done)
+  assert_contains "$out" "state: done" "light path with a done event -> done"
+  assert_contains "$out" "source: run-step" "light path done still reads from the run-step"
+  assert_contains "$out" "ready in branch" "the crew's own ready signal should carry into the detail"
+  assert_not_contains "$out" "PR merged/closed" "local-only must never be reported with a PR"
+  pass "light-path passing run reports done once the crew reports ready"
+}
+
 test_terminal_failed() {
   reset_fakes
   local d; d=$(new_case failed)
@@ -1251,6 +1296,8 @@ test_ci_fixing_after_green_stays_working
 test_top_level_fixing_ci_running_after_green_stays_working
 test_top_level_fixing_done_log_stays_working
 test_terminal_passed
+test_light_path_passed_run_waits_for_the_crew_done_event
+test_light_path_passed_run_with_done_event_is_done
 test_terminal_failed
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
