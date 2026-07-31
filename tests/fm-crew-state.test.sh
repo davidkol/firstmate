@@ -703,6 +703,10 @@ test_light_path_passed_run_waits_for_the_crew_done_event() {
       "$mode: a passing review-only run must not report the task done before the worker reports"
     assert_not_contains "$out" "PR merged/closed" \
       "$mode: a review-only run must never be described as a merged or closed PR"
+    assert_not_contains "$out" "source: run-step" \
+      "$mode: a terminal run is not evidence the crew is still working, so it must not be cited as one"
+    PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" crew_is_provably_working "$id" \
+      && fail "$mode: a terminal review run with no crew event must not absorb this crew's wakes"
   done
   pass "light-path passing run stays working until the crew reports ready"
 }
@@ -718,7 +722,8 @@ test_light_path_passed_run_with_done_event_is_done() {
   FM_FAKE_AXI_STATUS="$(run_passed fm/feat-light-done)"
   local out; out=$(run_crew_state "$d" feat-light-done)
   assert_contains "$out" "state: done" "light path with a done event -> done"
-  assert_contains "$out" "source: run-step" "light path done still reads from the run-step"
+  assert_contains "$out" "source: status-log" \
+    "a light-path state decided by the crew's own event must say so, not claim the run step"
   assert_contains "$out" "ready in branch" "the crew's own ready signal should carry into the detail"
   assert_not_contains "$out" "PR merged/closed" "local-only must never be reported with a PR"
   pass "light-path passing run reports done once the crew reports ready"
@@ -754,6 +759,8 @@ test_light_path_terminal_run_keeps_the_crews_own_verb() {
       "$verb: a light-path crew asking for help must never be reported as working"
     assert_not_contains "$out" "superseded" \
       "$verb: a terminal run is not an active run that has moved past the log"
+    assert_contains "$out" "source: status-log" \
+      "$verb: the crew's own event decided this state, so the run step must not be credited for it"
   done
   pass "light-path terminal run keeps the crew's own blocked/needs-decision verb"
 }
@@ -773,7 +780,8 @@ test_light_path_guard_covers_status_completed_transition() {
   out=$(run_crew_state "$d" feat-light-sc)
   assert_contains "$out" "state: working" \
     "a status-completed run with no outcome field must not report a light path done"
-  assert_contains "$out" "source: run-step" "the guard must not change the state source"
+  assert_contains "$out" "source: none" \
+    "a light path with a terminal run and no crew event has no evidence source to claim"
 
   reset_fakes
   d=$(new_case full-status-completed)

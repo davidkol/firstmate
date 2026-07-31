@@ -37,7 +37,9 @@
 #      crew's own status-log verb decides instead, through map_log_state, so a
 #      light-path done/blocked/needs-decision/paused keeps its own meaning and
 #      only an absent or unrecognized event falls back to working; the detail
-#      never claims a PR (local-only never has one). EXCEPT: while
+#      never claims a PR (local-only never has one), and the source is stamped
+#      status-log or none rather than run-step, because a terminal run is not
+#      evidence the crew is still working. EXCEPT: while
 #      the active step is ci, `axi status` alone cannot tell "still waiting on
 #      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
 #      a ci-step log-tail check overrides working -> done once checks read
@@ -505,6 +507,10 @@ fi
 if [ "$HAVE_RUN" = 1 ]; then
   RUN_STATE=working
   RUN_DETAIL=""
+  # Provenance of the line this block emits. The run step is the source for every
+  # state it decides itself; the light-path guard below re-stamps it, because there
+  # the state comes from the crew's own status event or from no evidence at all.
+  RUN_EMIT_SOURCE="run-step"
   CI_STEP_STATUS=""
   CI_LOG_STATE=""
   RUN_STATUS=""
@@ -595,13 +601,23 @@ if [ "$HAVE_RUN" = 1 ]; then
   # keeps that meaning; working is the default only for an absent or unrecognized
   # event. Placed before the ci-ready check below, which is a no-op here: it needs
   # RUN_STATE=working with a done log verb, and a done verb maps to done.
+  #
+  # The source is re-stamped with the state, because `run-step` is not a label here:
+  # crew_absorb_class (bin/fm-classify-lib.sh) reads working plus run-step|pane as
+  # positive evidence a crew is mid-work and ABSORBS a no-verb or stale wake on it.
+  # A terminal run is neither an actively running step nor a busy pane, and it never
+  # transitions again, so claiming run-step for the no-event default would suppress
+  # every later wake for that crew permanently. status-log is the truth when a crew
+  # verb decided the state; none is the truth when nothing did.
   if mode_is_light_path && [ "$RUN_STATE" = "done" ]; then
     RUN_STATE=$(map_log_state "$LOG_LINE")
     if [ "$RUN_STATE" = unknown ]; then
       RUN_STATE=working
       RUN_DETAIL="review passed: worker has not reported ready yet"
+      RUN_EMIT_SOURCE="none"
     else
       RUN_DETAIL="review passed: $(status_line_note "$LOG_LINE")"
+      RUN_EMIT_SOURCE="status-log"
     fi
   fi
 
@@ -640,7 +656,7 @@ if [ "$HAVE_RUN" = 1 ]; then
       ;;
   esac
 
-  emit "$RUN_STATE" run-step "$RUN_DETAIL"
+  emit "$RUN_STATE" "$RUN_EMIT_SOURCE" "$RUN_DETAIL"
 fi
 
 # --- fallback: no run attributed to this crew ------------------------------
@@ -659,6 +675,9 @@ fi
 # from the run-step path was declined because it would make a terminal run's
 # verdict depend on shell liveness, which is the inference this reader exists to
 # remove, and the same blind spot is pre-existing and accepted for an active run.
+# What the window does NOT do is suppress supervision: that state is emitted with
+# source `none`, so crew_absorb_class sees no positive evidence and a no-verb or
+# stale wake for such a crew is surfaced rather than absorbed.
 [ -n "$BACKEND_TARGET" ] || emit unknown none "no backend target recorded"
 pane_readable "$BACKEND_TARGET" || emit unknown none "backend target gone: $BACKEND_TARGET"
 
