@@ -32,10 +32,12 @@
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: on the
 #      light delivery modes (direct-PR, local-only) the run carries the review
-#      step alone, so a passing run means the REVIEW finished, not the task - the
-#      worker still has to open its PR or declare its branch ready. There a
-#      passing run stays working until the crew appends its own done event, and
-#      the detail never claims a PR (local-only never has one). EXCEPT: while
+#      step alone, so a terminal run means the REVIEW finished, not the task - the
+#      worker still has to open its PR or declare its branch ready. There the
+#      crew's own status-log verb decides instead, through map_log_state, so a
+#      light-path done/blocked/needs-decision/paused keeps its own meaning and
+#      only an absent or unrecognized event falls back to working; the detail
+#      never claims a PR (local-only never has one). EXCEPT: while
 #      the active step is ci, `axi status` alone cannot tell "still waiting on
 #      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
 #      a ci-step log-tail check overrides working -> done once checks read
@@ -305,18 +307,6 @@ mode_is_light_path() {
   return 1
 }
 
-# Terminal state for a light-path run. The crew's own done event is what marks the
-# task finished; until it appends one, the review passing leaves it still working.
-set_light_path_terminal_state() {
-  if [ "$LOG_VERB" = "done" ]; then
-    RUN_STATE="done"
-    RUN_DETAIL="review passed: $(status_line_note "$LOG_LINE")"
-  else
-    RUN_STATE=working
-    RUN_DETAIL="review passed: worker has not reported ready yet"
-  fi
-}
-
 log_reports_ci_ready() {
   [ "$LOG_VERB" = "done" ] || return 1
   case "$(status_line_note "$LOG_LINE")" in
@@ -528,13 +518,7 @@ if [ "$HAVE_RUN" = 1 ]; then
     # coarse-vs-full distinction, so a real gate is never silently missed.
     case "$COARSE_STATUS" in
       running)   RUN_STATE=working; RUN_DETAIL="validating (background run)" ;;
-      completed)
-        if mode_is_light_path; then
-          set_light_path_terminal_state
-        else
-          RUN_STATE="done"; RUN_DETAIL="run completed"
-        fi
-        ;;
+      completed) RUN_STATE="done";  RUN_DETAIL="run completed" ;;
       failed)    RUN_STATE=failed;  RUN_DETAIL="run failed" ;;
       cancelled) RUN_STATE=failed;  RUN_DETAIL="run cancelled" ;;
       *)         RUN_STATE=unknown; RUN_DETAIL="runs list status: $COARSE_STATUS" ;;
@@ -550,13 +534,7 @@ if [ "$HAVE_RUN" = 1 ]; then
 
     if [ -n "$outcome" ]; then
       case "$outcome" in
-        passed)
-          if mode_is_light_path; then
-            set_light_path_terminal_state
-          else
-            RUN_STATE="done"; RUN_DETAIL="run passed: PR merged/closed"
-          fi
-          ;;
+        passed)        RUN_STATE="done"; RUN_DETAIL="run passed: PR merged/closed" ;;
         checks-passed) RUN_STATE="done"; RUN_DETAIL="checks green: PR ready for review" ;;
         failed)        RUN_STATE=failed; RUN_DETAIL="run failed" ;;
         cancelled)     RUN_STATE=failed; RUN_DETAIL="run cancelled" ;;
@@ -605,6 +583,28 @@ if [ "$HAVE_RUN" = 1 ]; then
     fi
   fi
 
+  # One guard over the final RUN_STATE, covering every terminal -> done transition
+  # above: the coarse completed row, outcome passed or checks-passed, and a status
+  # of completed with no outcome field. A light delivery mode runs the review step
+  # alone (bin/fm-validate.sh), so all three mean the REVIEW finished, not the task:
+  # a direct-PR worker still has to open its PR and a local-only worker still has to
+  # declare its branch ready, and neither run reaches a pr step at all, so the detail
+  # must never claim a PR. What marks the task is the crew's own status event, and
+  # map_log_state is this file's single owner of that verb -> state mapping, so a
+  # light-path crew that appended blocked, needs-decision, failed or a paused verb
+  # keeps that meaning; working is the default only for an absent or unrecognized
+  # event. Placed before the ci-ready check below, which is a no-op here: it needs
+  # RUN_STATE=working with a done log verb, and a done verb maps to done.
+  if mode_is_light_path && [ "$RUN_STATE" = "done" ]; then
+    RUN_STATE=$(map_log_state "$LOG_LINE")
+    if [ "$RUN_STATE" = unknown ]; then
+      RUN_STATE=working
+      RUN_DETAIL="review passed: worker has not reported ready yet"
+    else
+      RUN_DETAIL="review passed: $(status_line_note "$LOG_LINE")"
+    fi
+  fi
+
   if [ "$RUN_STATE" = working ] && log_reports_ci_ready; then
     if [ "$RUN_SOURCE" = coarse ]; then
       emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
@@ -624,10 +624,13 @@ if [ "$HAVE_RUN" = 1 ]; then
 
   # Reconcile the status log. A needs-decision/blocked log line that the run-step
   # has moved past (anything but a genuinely parked run) is deterministically
-  # stale: the gate resolved and the run resumed or finished.
+  # stale: the gate resolved and the run resumed or finished. A state this reader
+  # took FROM that same log line agrees with it and has nothing to supersede, which
+  # is how a light path's own blocked event survives the guard above; no run-step
+  # mapping yields blocked, so nothing else reaches that arm.
   case "$LOG_VERB" in
     needs-decision|blocked)
-      if [ "$RUN_STATE" != parked ]; then
+      if [ "$RUN_STATE" != parked ] && [ "$RUN_STATE" != "$(map_log_state "$LOG_LINE")" ]; then
         if [ "$RUN_STATE" = working ]; then
           RUN_DETAIL="$RUN_DETAIL${SEP}status-log superseded by active run"
         else
@@ -645,6 +648,17 @@ fi
 # liveness, so a finished-but-pane-closed crew never reaches here. Down here there
 # is no run to consult, so a dead/unreadable target means the crew is gone: report
 # unknown rather than trusting a possibly-stale status log as the current state.
+#
+# NAMED GAP, accepted deliberately rather than closed. A light-path crew whose run
+# is terminal takes its state from its own status event above, and a terminal run
+# never transitions again, so a crew that appended NOTHING and then died or wedged
+# between its review passing and its own event reads `working` indefinitely and
+# never reaches this fallback's liveness check. Routing that state through
+# map_log_state narrowed the window to exactly that case: any append at all -
+# done, blocked, needs-decision, failed, paused - resolves it. Consulting the pane
+# from the run-step path was declined because it would make a terminal run's
+# verdict depend on shell liveness, which is the inference this reader exists to
+# remove, and the same blind spot is pre-existing and accepted for an active run.
 [ -n "$BACKEND_TARGET" ] || emit unknown none "no backend target recorded"
 pane_readable "$BACKEND_TARGET" || emit unknown none "backend target gone: $BACKEND_TARGET"
 

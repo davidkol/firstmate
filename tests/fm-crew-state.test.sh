@@ -14,7 +14,8 @@
 #   (c) genuine parked run + needs-decision log = NOT superseded  -> run-step
 #   (d) terminal run-step (passed/failed) is authoritative        -> run-step
 #       ...except on a light delivery mode, whose run carries the review step
-#       alone, so passing means the review finished and not the task
+#       alone, so terminal means the review finished and not the task: all three
+#       terminal -> done transitions defer to the crew's own status verb there
 #   (e) cross-branch attribution: this branch's own run found via list lookup
 #   (f) no run + busy pane                                        -> pane
 #   (g) no run + idle pane falls to the status-log verb           -> status-log
@@ -269,6 +270,21 @@ run:
   pr: "https://github.com/o/r/pull/1"
   findings: none
 outcome: passed
+EOF
+}
+
+# A finished run read from the `status` field with NO `outcome` field and no gate -
+# the third terminal -> done transition, distinct from run_passed above, which
+# carries both fields so the outcome branch always wins.
+run_status_completed_no_outcome() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: completed
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: ""
+  findings: none
 EOF
 }
 
@@ -706,6 +722,70 @@ test_light_path_passed_run_with_done_event_is_done() {
   assert_contains "$out" "ready in branch" "the crew's own ready signal should carry into the detail"
   assert_not_contains "$out" "PR merged/closed" "local-only must never be reported with a PR"
   pass "light-path passing run reports done once the crew reports ready"
+}
+
+# The light-path guard must defer to the crew's own event, not fabricate a state
+# that outranks it. A direct-PR worker whose review passed and whose push or PR call
+# then failed twice appends `blocked:` and stops, exactly as its brief instructs;
+# that append is what wakes firstmate, so a reader that answers `working` - and
+# annotates the block away as superseded by an "active" run that has in fact
+# finished - tells firstmate there is nothing to act on. Before the light paths ran
+# any pipeline this crew had no attributable run and fell through to map_log_state,
+# which reported it correctly; map_log_state stays the single owner of that mapping.
+test_light_path_terminal_run_keeps_the_crews_own_verb() {
+  local verb expected id d out
+  for verb in blocked needs-decision; do
+    case "$verb" in
+      blocked)        expected=blocked ;;
+      needs-decision) expected=parked ;;
+    esac
+    reset_fakes
+    id="feat-light-$verb"
+    d=$(new_case "light-verb-$verb")
+    make_repo_on_branch "$d/wt" "fm/$id"
+    make_fakebin "$d" >/dev/null
+    fm_write_meta "$d/state/$id.meta" "window=fm:fm-$id" "worktree=$d/wt" "kind=ship" "mode=direct-PR"
+    printf '%s: gh-axi auth expired, cannot open the PR\n' "$verb" > "$d/state/$id.status"
+    FM_FAKE_AXI_STATUS="$(run_passed "fm/$id")"
+    out=$(run_crew_state "$d" "$id")
+    assert_contains "$out" "state: $expected" \
+      "$verb: a light-path crew's own $verb event must survive a terminal review run"
+    assert_not_contains "$out" "state: working" \
+      "$verb: a light-path crew asking for help must never be reported as working"
+    assert_not_contains "$out" "superseded" \
+      "$verb: a terminal run is not an active run that has moved past the log"
+  done
+  pass "light-path terminal run keeps the crew's own blocked/needs-decision verb"
+}
+
+# The third terminal -> done transition, the status-only one, is covered by the same
+# single guard as the coarse and outcome branches. The mode scoping is pinned with
+# it: a full-pipeline task reading the identical run must still report done.
+test_light_path_guard_covers_status_completed_transition() {
+  reset_fakes
+  local d out
+  d=$(new_case light-status-completed)
+  make_repo_on_branch "$d/wt" fm/feat-light-sc
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-light-sc.meta" "window=fm:fm-feat-light-sc" \
+    "worktree=$d/wt" "kind=ship" "mode=direct-PR"
+  FM_FAKE_AXI_STATUS="$(run_status_completed_no_outcome fm/feat-light-sc)"
+  out=$(run_crew_state "$d" feat-light-sc)
+  assert_contains "$out" "state: working" \
+    "a status-completed run with no outcome field must not report a light path done"
+  assert_contains "$out" "source: run-step" "the guard must not change the state source"
+
+  reset_fakes
+  d=$(new_case full-status-completed)
+  make_repo_on_branch "$d/wt" fm/feat-full-sc
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-full-sc.meta" "window=fm:fm-feat-full-sc" \
+    "worktree=$d/wt" "kind=ship" "mode=no-mistakes"
+  FM_FAKE_AXI_STATUS="$(run_status_completed_no_outcome fm/feat-full-sc)"
+  out=$(run_crew_state "$d" feat-full-sc)
+  assert_contains "$out" "state: done" \
+    "a full-pipeline task's completed run must still report done"
+  pass "the light-path guard covers the status-completed transition and stays mode-scoped"
 }
 
 test_terminal_failed() {
@@ -1298,6 +1378,8 @@ test_top_level_fixing_done_log_stays_working
 test_terminal_passed
 test_light_path_passed_run_waits_for_the_crew_done_event
 test_light_path_passed_run_with_done_event_is_done
+test_light_path_terminal_run_keeps_the_crews_own_verb
+test_light_path_guard_covers_status_completed_transition
 test_terminal_failed
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row

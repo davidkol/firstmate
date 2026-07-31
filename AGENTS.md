@@ -318,7 +318,7 @@ Resume fleet supervision immediately after the decision lands.
 
 Judge validation by the current-code-matched run step through `bin/fm-crew-state.sh`, not by shell liveness or the last status event.
 Running, fixing, or CI states remain working; parked approval or fix-review states require the worker to follow the active gate help; passed or checks-passed is done; failed or cancelled is failed.
-On a direct-PR or local-only task the run carries the review step alone, so a passing run means the review finished and not the task; that reader keeps such a task working until the worker appends its own `done` event, and never reports a PR the light path has not opened.
+On a direct-PR or local-only task the run carries the review step alone, so a terminal run means the review finished and not the task; that reader falls back to the worker's own last status event there, so a light path reports done, blocked, or needs-decision exactly as the worker declared it, stays working only while it has declared nothing, and never reports a PR the light path has not opened.
 A worker hand-editing, committing, aborting, or restarting during an active validation run duplicates pipeline ownership; steer it back to the gate response flow.
 The worker reports the PR at the pipeline's CI-ready return point rather than waiting for merge monitoring to finish.
 A repository whose PR registers no checks reaches that same point once the pipeline's registration grace elapses, so no checks is a ready signal, never a fault and never a reason to keep waiting.
