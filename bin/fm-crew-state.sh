@@ -30,7 +30,16 @@
 #      diverged from it, invalidates attribution.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
-#      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
+#      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: on the
+#      light delivery modes (direct-PR, local-only) the run carries the review
+#      step alone, so a terminal run means the REVIEW finished, not the task - the
+#      worker still has to open its PR or declare its branch ready. There the
+#      crew's own status-log verb decides instead, through map_log_state, so a
+#      light-path done/blocked/needs-decision/paused keeps its own meaning and
+#      only an absent or unrecognized event falls back to working; the detail
+#      never claims a PR (local-only never has one), and the source is stamped
+#      status-log or none rather than run-step, because a terminal run is not
+#      evidence the crew is still working. EXCEPT: while
 #      the active step is ci, `axi status` alone cannot tell "still waiting on
 #      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
 #      a ci-step log-tail check overrides working -> done once checks read
@@ -97,7 +106,10 @@ meta_value() {  # <key>
 WT=$(meta_value worktree)
 KIND=$(meta_value kind)
 HARNESS=$(meta_value harness)
+MODE=$(meta_value mode)
 [ -n "$KIND" ] || KIND=ship
+# An unrecorded mode is the full pipeline, matching bin/fm-validate.sh's fallback.
+[ -n "$MODE" ] || MODE=no-mistakes
 
 # A torn-down (or never-created) worktree has no current state to read.
 if [ -z "$WT" ] || [ ! -d "$WT" ]; then
@@ -285,6 +297,18 @@ nm_gate_findings_count() {
   case "$rest" in ''|*[!0-9]*) return 0 ;; esac
   printf '%s' "$rest"
 }
+# The light delivery modes run the review step alone (bin/fm-validate.sh), so
+# their run finishing is not their task finishing: a direct-PR worker still has to
+# push and open its PR, and a local-only worker still has to declare its branch
+# ready. Neither run reaches a pr step at all, so its terminal detail must never
+# claim a PR - local-only never has one.
+mode_is_light_path() {
+  case "$MODE" in
+    direct-PR|local-only) return 0 ;;
+  esac
+  return 1
+}
+
 log_reports_ci_ready() {
   [ "$LOG_VERB" = "done" ] || return 1
   case "$(status_line_note "$LOG_LINE")" in
@@ -483,6 +507,10 @@ fi
 if [ "$HAVE_RUN" = 1 ]; then
   RUN_STATE=working
   RUN_DETAIL=""
+  # Provenance of the line this block emits. The run step is the source for every
+  # state it decides itself; the light-path guard below re-stamps it, because there
+  # the state comes from the crew's own status event or from no evidence at all.
+  RUN_EMIT_SOURCE="run-step"
   CI_STEP_STATUS=""
   CI_LOG_STATE=""
   RUN_STATUS=""
@@ -561,6 +589,38 @@ if [ "$HAVE_RUN" = 1 ]; then
     fi
   fi
 
+  # One guard over the final RUN_STATE, covering every terminal -> done transition
+  # above: the coarse completed row, outcome passed or checks-passed, and a status
+  # of completed with no outcome field. A light delivery mode runs the review step
+  # alone (bin/fm-validate.sh), so all three mean the REVIEW finished, not the task:
+  # a direct-PR worker still has to open its PR and a local-only worker still has to
+  # declare its branch ready, and neither run reaches a pr step at all, so the detail
+  # must never claim a PR. What marks the task is the crew's own status event, and
+  # map_log_state is this file's single owner of that verb -> state mapping, so a
+  # light-path crew that appended blocked, needs-decision, failed or a paused verb
+  # keeps that meaning; working is the default only for an absent or unrecognized
+  # event. Placed before the ci-ready check below, which is a no-op here: it needs
+  # RUN_STATE=working with a done log verb, and a done verb maps to done.
+  #
+  # The source is re-stamped with the state, because `run-step` is not a label here:
+  # crew_absorb_class (bin/fm-classify-lib.sh) reads working plus run-step|pane as
+  # positive evidence a crew is mid-work and ABSORBS a no-verb or stale wake on it.
+  # A terminal run is neither an actively running step nor a busy pane, and it never
+  # transitions again, so claiming run-step for the no-event default would suppress
+  # every later wake for that crew permanently. status-log is the truth when a crew
+  # verb decided the state; none is the truth when nothing did.
+  if mode_is_light_path && [ "$RUN_STATE" = "done" ]; then
+    RUN_STATE=$(map_log_state "$LOG_LINE")
+    if [ "$RUN_STATE" = unknown ]; then
+      RUN_STATE=working
+      RUN_DETAIL="review passed: worker has not reported ready yet"
+      RUN_EMIT_SOURCE="none"
+    else
+      RUN_DETAIL="review passed: $(status_line_note "$LOG_LINE")"
+      RUN_EMIT_SOURCE="status-log"
+    fi
+  fi
+
   if [ "$RUN_STATE" = working ] && log_reports_ci_ready; then
     if [ "$RUN_SOURCE" = coarse ]; then
       emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
@@ -580,10 +640,13 @@ if [ "$HAVE_RUN" = 1 ]; then
 
   # Reconcile the status log. A needs-decision/blocked log line that the run-step
   # has moved past (anything but a genuinely parked run) is deterministically
-  # stale: the gate resolved and the run resumed or finished.
+  # stale: the gate resolved and the run resumed or finished. A state this reader
+  # took FROM that same log line agrees with it and has nothing to supersede, which
+  # is how a light path's own blocked event survives the guard above; no run-step
+  # mapping yields blocked, so nothing else reaches that arm.
   case "$LOG_VERB" in
     needs-decision|blocked)
-      if [ "$RUN_STATE" != parked ]; then
+      if [ "$RUN_STATE" != parked ] && [ "$RUN_STATE" != "$(map_log_state "$LOG_LINE")" ]; then
         if [ "$RUN_STATE" = working ]; then
           RUN_DETAIL="$RUN_DETAIL${SEP}status-log superseded by active run"
         else
@@ -593,7 +656,7 @@ if [ "$HAVE_RUN" = 1 ]; then
       ;;
   esac
 
-  emit "$RUN_STATE" run-step "$RUN_DETAIL"
+  emit "$RUN_STATE" "$RUN_EMIT_SOURCE" "$RUN_DETAIL"
 fi
 
 # --- fallback: no run attributed to this crew ------------------------------
@@ -601,6 +664,20 @@ fi
 # liveness, so a finished-but-pane-closed crew never reaches here. Down here there
 # is no run to consult, so a dead/unreadable target means the crew is gone: report
 # unknown rather than trusting a possibly-stale status log as the current state.
+#
+# NAMED GAP, accepted deliberately rather than closed. A light-path crew whose run
+# is terminal takes its state from its own status event above, and a terminal run
+# never transitions again, so a crew that appended NOTHING and then died or wedged
+# between its review passing and its own event reads `working` indefinitely and
+# never reaches this fallback's liveness check. Routing that state through
+# map_log_state narrowed the window to exactly that case: any append at all -
+# done, blocked, needs-decision, failed, paused - resolves it. Consulting the pane
+# from the run-step path was declined because it would make a terminal run's
+# verdict depend on shell liveness, which is the inference this reader exists to
+# remove, and the same blind spot is pre-existing and accepted for an active run.
+# What the window does NOT do is suppress supervision: that state is emitted with
+# source `none`, so crew_absorb_class sees no positive evidence and a no-verb or
+# stale wake for such a crew is surfaced rather than absorbed.
 [ -n "$BACKEND_TARGET" ] || emit unknown none "no backend target recorded"
 pane_readable "$BACKEND_TARGET" || emit unknown none "backend target gone: $BACKEND_TARGET"
 

@@ -28,12 +28,12 @@ After each drain, `fm-wake-drain.sh` runs the same liveness guard as the supervi
 Routine watcher polling, supervision no-ops, elapsed waiting time, and absorbed benign wakes stay silent.
 A declared external wait trades that silence for one bounded recheck per pause window, so a forgotten pause cannot remain invisible indefinitely.
 Crew status files are append-only wake-event logs, not current-state fields.
-`bin/fm-crew-state.sh <id>` is the cheap current-state read for an actionable heartbeat review: it attributes a no-mistakes run, active or terminal, only when it matches the crew's branch and current code identity, then keeps that run-step authoritative even if the pane has closed.
-The script header owns the exact run-head ancestry rules.
+`bin/fm-crew-state.sh <id>` is the cheap current-state read for an actionable heartbeat review: it attributes a no-mistakes run, active or terminal, only when it matches the crew's branch and current code identity, then keeps that run-step authoritative even if the pane has closed, except on the light delivery modes, where a terminal review-only run yields precedence to the crew's own status event.
+The script header owns the exact run-head ancestry rules and that light-path exception.
 During no-mistakes' `ci` monitor phase, it also reads the ci step log tail because `axi status` reports both "still waiting on checks" and "checks green, waiting on merge" as `ci,running`.
 The most recent recognized ci log marker wins, so checks-green monitoring reports done while a later re-arm, failed-check, or issue marker returns the crew to working.
 [`verification/validation-pipeline.md`](verification/validation-pipeline.md#no-registered-checks-is-a-ci-ready-result) owns active empirical evidence.
-Only when no matching run exists does it fall back to the pane busy-signature and then a status-log event whose verb maps to a recognized run-state; a dead pane without a run reports unknown instead of trusting a stale log.
+Apart from that light-path exception, only when no matching run exists does it fall back to the pane busy-signature and then a status-log event whose verb maps to a recognized run-state; a dead pane without a run reports unknown instead of trusting a stale log.
 Decision-only events such as `resolved` never become current state or leak their prose into the current-state detail.
 In that status-log fallback, a declared external wait reports the distinct `paused` state with its reason.
 For herdr, that pane fallback trusts a native `busy` verdict outright, but corroborates native `idle` or unknown verdicts against the recorded harness's rendered busy signature before deciding the crew is not working.
@@ -155,7 +155,7 @@ That keeps spawn launch compatible across claude, codex, grok, pi, opencode, and
 ## Optional secondmates
 
 `data/secondmates.md` records persistent secondmates with natural-language scopes, project clone lists, and home paths.
-`fm-home-seed.sh` provisions the isolated home, clones the listed remote-backed projects into it, initializes newly cloned pipeline projects (`no-mistakes` and `validated-main`), copies the charter to `data/charter.md`, and `fm-spawn.sh --secondmate` launches it through the same session-provider and status-file path as any direct report.
+`fm-home-seed.sh` provisions the isolated home, clones the listed remote-backed projects into it, initializes newly cloned full-pipeline projects (`no-mistakes` and `validated-main`; a `direct-PR` clone needs the same gate for its review step but initializes it lazily on its first task instead), copies the charter to `data/charter.md`, and `fm-spawn.sh --secondmate` launches it through the same session-provider and status-file path as any direct report.
 For a domain whose subject is the firstmate repo itself, a deliberate `--no-projects` seed creates a project-less home whose crews take pooled worktrees of that repo instead of separate clones.
 The signal cannot be mixed with project names or omitted accidentally, and a populated home cannot be converted in place; the full seed contract is in [configuration.md](configuration.md#secondmate-routes-datasecondmatesmd).
 On the herdr backend, a secondmate launch lands in that secondmate home's labeled workspace, and crewmates spawned from that home land in the same workspace.
@@ -192,8 +192,9 @@ A home the captain opens and talks to directly is a peer home rather than a dire
 ## Project modes are explicit
 
 `data/projects.md` records each project's delivery mode and optional `+yolo` autonomy flag.
-`no-mistakes` projects run the full validation pipeline, `validated-main` projects run that same pipeline with only its PR and CI steps skipped and then land on the default branch through `bin/fm-merge-main.sh`, `direct-PR` projects open PRs without that pipeline, and `local-only` projects stay local until firstmate performs an approved fast-forward merge.
-The difference between `validated-main` and `direct-PR` is the automated review rather than the pull request: `validated-main` keeps the pipeline's local review, test, document, and lint steps, which is what makes landing straight on the default branch safe.
+`no-mistakes` projects run the full validation pipeline, `validated-main` projects run that same pipeline with only its PR and CI steps skipped and then land on the default branch through `bin/fm-merge-main.sh`, `direct-PR` projects run the pipeline's review step alone before opening a PR, and `local-only` projects run that same review-only pass, which publishes nothing, and stay local until firstmate performs an approved fast-forward merge.
+The difference between `validated-main` and `direct-PR` is how much of the pipeline runs rather than the pull request: `validated-main` keeps the local review, test, document, and lint steps, which is what makes landing straight on the default branch safe, while `direct-PR` keeps review alone so a light change is still read by an agent that did not write it.
+`bin/fm-validate.sh` derives every mode's skip set and never skips review for any mode; [`verification/validation-pipeline.md`](verification/validation-pipeline.md#the-review-step-runs-alone-and-in-its-own-agent-process) owns the empirical evidence that the review step runs alone, in a separate agent process, at a fraction of the full pipeline's cost.
 The pipeline refuses to run on a default branch, so it validates and publishes the task branch and firstmate performs the landing; [`verification/validation-pipeline.md`](verification/validation-pipeline.md#the-pipeline-cannot-land-on-the-default-branch-but-it-can-validate-without-a-pr) owns that active empirical evidence.
 When a selected delivery path calls for a diff, `bin/fm-review-diff.sh` refreshes the authoritative base and, when task meta records `pr=`, always fetches and compares against `refs/pull/<n>/head` by default (recorded `pr_head=` is only an offline fallback) before falling back to the local branch with a warning.
 A `validated-main` task records no `pr=`, so that helper compares the published `origin/<branch>` head instead, which is the head `bin/fm-merge-main.sh` lands; the script's own header owns the resolution order.

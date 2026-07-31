@@ -286,11 +286,13 @@ test_compressed_agents_retains_authority_and_supervision_safety() {
     'A lock-refused session must not spawn, steer, merge, drain the wake queue' \
     'A diagnostic request, report, recommendation, or implementation-ready finding is evidence, not authorization to change code.' \
     'The selected delivery path owns its own rigor.' \
-    'When no-mistakes is selected, no-mistakes alone owns review, fixes, tests, documentation, push, PR, and CI; otherwise follow the faster path without adding an independent reviewer.' \
+    'When no-mistakes is selected, no-mistakes alone owns review, fixes, tests, documentation, push, PR, and CI; otherwise follow the faster path and add no reviewer beyond the one that path already runs.' \
+    'No mode ever skips the review step' \
     'Never hold work outside no-mistakes for a manual clean verdict, stack serial manual reviews, or infer authority for one from security, architecture, or risk alone.' \
     'A separate review or audit is allowed only when the captain explicitly requests that deliverable or the authorized task is a knowledge-only review; one named question remains scoped to that question.' \
     'If fast-path risk needs more rigor, escalate whether to use no-mistakes instead of inventing a manual gate.' \
-    '**local-only** has the worker stop with a clean ready branch, then waits for the configured merge authority' \
+    'has the worker stop with a clean ready branch, then waits for the configured merge authority' \
+    '**local-only** runs that same review-only pass, which publishes nothing' \
     'A status line is a wake event, not current state' \
     'keep exactly one live supervision cycle' \
     'Never broadly kill watchers' \

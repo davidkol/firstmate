@@ -13,6 +13,9 @@
 #   (b) needs-decision/blocked log + resumed run = SUPERSEDED     -> run-step
 #   (c) genuine parked run + needs-decision log = NOT superseded  -> run-step
 #   (d) terminal run-step (passed/failed) is authoritative        -> run-step
+#       ...except on a light delivery mode, whose run carries the review step
+#       alone, so terminal means the review finished and not the task: all three
+#       terminal -> done transitions defer to the crew's own status verb there
 #   (e) cross-branch attribution: this branch's own run found via list lookup
 #   (f) no run + busy pane                                        -> pane
 #   (g) no run + idle pane falls to the status-log verb           -> status-log
@@ -267,6 +270,21 @@ run:
   pr: "https://github.com/o/r/pull/1"
   findings: none
 outcome: passed
+EOF
+}
+
+# A finished run read from the `status` field with NO `outcome` field and no gate -
+# the third terminal -> done transition, distinct from run_passed above, which
+# carries both fields so the outcome branch always wins.
+run_status_completed_no_outcome() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: completed
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: ""
+  findings: none
 EOF
 }
 
@@ -661,6 +679,121 @@ test_terminal_passed() {
   assert_contains "$out" "state: done" "passed run -> done"
   assert_contains "$out" "source: run-step" "passed -> run-step source"
   pass "terminal passed run is authoritative"
+}
+
+# A light delivery mode (direct-PR, local-only) runs the review step alone, so its
+# run passing means the REVIEW finished, not the task. Before those modes ran any
+# pipeline they produced no attributable run at all and this reader fell back to
+# the pane, so it was never wrong about them; now that they do, an unqualified
+# passed -> "done: PR merged/closed" reports a direct-PR crew finished before it has
+# pushed anything, and permanently attributes a PR to local-only, which never has
+# one. The crew's own done event is what marks the task finished.
+test_light_path_passed_run_waits_for_the_crew_done_event() {
+  local mode id d out
+  for mode in direct-PR local-only; do
+    reset_fakes
+    id="feat-light-${mode}"
+    d=$(new_case "light-$mode")
+    make_repo_on_branch "$d/wt" "fm/$id"
+    make_fakebin "$d" >/dev/null
+    fm_write_meta "$d/state/$id.meta" "window=fm:fm-$id" "worktree=$d/wt" "kind=ship" "mode=$mode"
+    FM_FAKE_AXI_STATUS="$(run_passed "fm/$id")"
+    out=$(run_crew_state "$d" "$id")
+    assert_contains "$out" "state: working" \
+      "$mode: a passing review-only run must not report the task done before the worker reports"
+    assert_not_contains "$out" "PR merged/closed" \
+      "$mode: a review-only run must never be described as a merged or closed PR"
+    assert_not_contains "$out" "source: run-step" \
+      "$mode: a terminal run is not evidence the crew is still working, so it must not be cited as one"
+    PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" crew_is_provably_working "$id" \
+      && fail "$mode: a terminal review run with no crew event must not absorb this crew's wakes"
+  done
+  pass "light-path passing run stays working until the crew reports ready"
+}
+
+test_light_path_passed_run_with_done_event_is_done() {
+  reset_fakes
+  local d; d=$(new_case light-done)
+  make_repo_on_branch "$d/wt" fm/feat-light-done
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-light-done.meta" "window=fm:fm-feat-light-done" \
+    "worktree=$d/wt" "kind=ship" "mode=local-only"
+  printf 'done: ready in branch fm/feat-light-done\n' > "$d/state/feat-light-done.status"
+  FM_FAKE_AXI_STATUS="$(run_passed fm/feat-light-done)"
+  local out; out=$(run_crew_state "$d" feat-light-done)
+  assert_contains "$out" "state: done" "light path with a done event -> done"
+  assert_contains "$out" "source: status-log" \
+    "a light-path state decided by the crew's own event must say so, not claim the run step"
+  assert_contains "$out" "ready in branch" "the crew's own ready signal should carry into the detail"
+  assert_not_contains "$out" "PR merged/closed" "local-only must never be reported with a PR"
+  pass "light-path passing run reports done once the crew reports ready"
+}
+
+# The light-path guard must defer to the crew's own event, not fabricate a state
+# that outranks it. A direct-PR worker whose review passed and whose push or PR call
+# then failed twice appends `blocked:` and stops, exactly as its brief instructs;
+# that append is what wakes firstmate, so a reader that answers `working` - and
+# annotates the block away as superseded by an "active" run that has in fact
+# finished - tells firstmate there is nothing to act on. Before the light paths ran
+# any pipeline this crew had no attributable run and fell through to map_log_state,
+# which reported it correctly; map_log_state stays the single owner of that mapping.
+test_light_path_terminal_run_keeps_the_crews_own_verb() {
+  local verb expected id d out
+  for verb in blocked needs-decision; do
+    case "$verb" in
+      blocked)        expected=blocked ;;
+      needs-decision) expected=parked ;;
+    esac
+    reset_fakes
+    id="feat-light-$verb"
+    d=$(new_case "light-verb-$verb")
+    make_repo_on_branch "$d/wt" "fm/$id"
+    make_fakebin "$d" >/dev/null
+    fm_write_meta "$d/state/$id.meta" "window=fm:fm-$id" "worktree=$d/wt" "kind=ship" "mode=direct-PR"
+    printf '%s: gh-axi auth expired, cannot open the PR\n' "$verb" > "$d/state/$id.status"
+    FM_FAKE_AXI_STATUS="$(run_passed "fm/$id")"
+    out=$(run_crew_state "$d" "$id")
+    assert_contains "$out" "state: $expected" \
+      "$verb: a light-path crew's own $verb event must survive a terminal review run"
+    assert_not_contains "$out" "state: working" \
+      "$verb: a light-path crew asking for help must never be reported as working"
+    assert_not_contains "$out" "superseded" \
+      "$verb: a terminal run is not an active run that has moved past the log"
+    assert_contains "$out" "source: status-log" \
+      "$verb: the crew's own event decided this state, so the run step must not be credited for it"
+  done
+  pass "light-path terminal run keeps the crew's own blocked/needs-decision verb"
+}
+
+# The third terminal -> done transition, the status-only one, is covered by the same
+# single guard as the coarse and outcome branches. The mode scoping is pinned with
+# it: a full-pipeline task reading the identical run must still report done.
+test_light_path_guard_covers_status_completed_transition() {
+  reset_fakes
+  local d out
+  d=$(new_case light-status-completed)
+  make_repo_on_branch "$d/wt" fm/feat-light-sc
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-light-sc.meta" "window=fm:fm-feat-light-sc" \
+    "worktree=$d/wt" "kind=ship" "mode=direct-PR"
+  FM_FAKE_AXI_STATUS="$(run_status_completed_no_outcome fm/feat-light-sc)"
+  out=$(run_crew_state "$d" feat-light-sc)
+  assert_contains "$out" "state: working" \
+    "a status-completed run with no outcome field must not report a light path done"
+  assert_contains "$out" "source: none" \
+    "a light path with a terminal run and no crew event has no evidence source to claim"
+
+  reset_fakes
+  d=$(new_case full-status-completed)
+  make_repo_on_branch "$d/wt" fm/feat-full-sc
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-full-sc.meta" "window=fm:fm-feat-full-sc" \
+    "worktree=$d/wt" "kind=ship" "mode=no-mistakes"
+  FM_FAKE_AXI_STATUS="$(run_status_completed_no_outcome fm/feat-full-sc)"
+  out=$(run_crew_state "$d" feat-full-sc)
+  assert_contains "$out" "state: done" \
+    "a full-pipeline task's completed run must still report done"
+  pass "the light-path guard covers the status-completed transition and stays mode-scoped"
 }
 
 test_terminal_failed() {
@@ -1251,6 +1384,10 @@ test_ci_fixing_after_green_stays_working
 test_top_level_fixing_ci_running_after_green_stays_working
 test_top_level_fixing_done_log_stays_working
 test_terminal_passed
+test_light_path_passed_run_waits_for_the_crew_done_event
+test_light_path_passed_run_with_done_event_is_done
+test_light_path_terminal_run_keeps_the_crews_own_verb
+test_light_path_guard_covers_status_completed_transition
 test_terminal_failed
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row

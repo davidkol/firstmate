@@ -32,9 +32,12 @@
 #   no-mistakes    implement -> /no-mistakes pipeline -> PR -> captain merge (default)
 #   validated-main implement -> same pipeline with its PR and CI steps skipped ->
 #                  firstmate merges to main and pushes; no PR is ever opened
-#   direct-PR      implement -> push + open PR via gh-axi (no pipeline) -> captain merge
-#   local-only     implement on branch, stop and report "ready in branch" (no push/PR);
-#                  captain approves, firstmate merges to local main
+#   direct-PR      implement -> review-only pipeline run (the fresh-context reviewer,
+#                  with the other eight steps skipped) -> push + open PR via gh-axi
+#                  -> captain merge
+#   local-only     implement on branch -> review-only pipeline run (publishes nothing)
+#                  -> stop and report "ready in branch" (no push/PR); captain
+#                  approves, firstmate merges to local main
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # Scout tasks ignore mode - their deliverable is a report, not a merge.
 # Every scaffold's status protocol distinguishes the configured
@@ -417,13 +420,30 @@ EOF
 
 case "$MODE" in
   direct-PR)
-    SETUP2=""
+    SETUP2="
+3. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
     RULE1='1. Never push to the default branch (push only your `fm/'"$ID"'` branch). Never merge a PR.'
     IFS= read -r -d '' DOD <<EOF || true
-This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
+This project ships **direct-PR**: you raise the PR yourself, and exactly one automated review runs before you do.
+That review is a separate agent the no-mistakes daemon starts. It did not write your change and does not share your session, which is the whole point of it - an agent that watched the code get written is biased toward believing it is correct.
+Review is the ONLY pipeline step that runs on this path; the other eight are skipped, so this costs a couple of minutes rather than a full pipeline run.
+
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
-Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
+When it is implemented and committed, start the review with this exact command, from inside your worktree:
+\`$FM_ROOT/bin/fm-validate.sh $ID --intent "<what the captain set out to accomplish>"\`
+Do NOT call \`no-mistakes axi run\` directly. Which steps this path skips is derived from the task's recorded delivery mode inside that command rather than typed by you, so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart the review.
+It never skips the review step itself, for any mode.
+You drive the review by responding to its gate: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
+Follow the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+Two firstmate-specific rules layer on top of it:
+- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
+  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+
+When the run reaches a successful terminal outcome, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+Pushing before the review reaches that outcome defeats the one safeguard this path has.
+A failed or cancelled run is terminal but NOT successful: never open the PR on one - escalate to firstmate (rule 6) and stop.
+The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
 EOF
     ;;
   validated-main)
@@ -455,13 +475,29 @@ Firstmate lands the validated branch on \`main\` and pushes it; you never merge 
 EOF
     ;;
   local-only)
-    SETUP2=""
+    SETUP2="
+3. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`. This sets up a LOCAL gate only; it publishes nothing."
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
     IFS= read -r -d '' DOD <<EOF || true
-This project ships **local-only**: no remote, no PR, no pipeline.
+This project ships **local-only**: no remote, no PR, and exactly one automated review before the branch is ready.
+That review is a separate agent the no-mistakes daemon starts. It did not write your change and does not share your session, which is the whole point of it - an agent that watched the code get written is biased toward believing it is correct.
+Review is the ONLY pipeline step that runs on this path; the other eight are skipped, so this costs a couple of minutes rather than a full pipeline run. The publishing step is one of the eight skipped, so the review reads your branch and pushes nothing.
+
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
-When it is implemented and committed, append \`done: ready in branch fm/$ID\` to the status file and stop.
+When it is implemented and committed, start the review with this exact command, from inside your worktree:
+\`$FM_ROOT/bin/fm-validate.sh $ID --intent "<what the captain set out to accomplish>"\`
+Do NOT call \`no-mistakes axi run\` directly. Which steps this path skips is derived from the task's recorded delivery mode inside that command rather than typed by you, so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart the review.
+It never skips the review step itself, for any mode.
+You drive the review by responding to its gate: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
+Follow the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+Two firstmate-specific rules layer on top of it:
+- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
+  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+
+When the run reaches a successful terminal outcome, append \`done: ready in branch fm/$ID\` to the status file and stop.
+A failed or cancelled run is terminal but NOT successful: never declare the branch ready on one - escalate to firstmate (rule 6) and stop, because firstmate fast-forwards a ready branch straight into local \`main\`.
 The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path.
 EOF
     ;;

@@ -281,6 +281,75 @@ test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci() {
   pass "fm-brief.sh: validated-main brief keeps the automated review and skips only the PR and CI steps"
 }
 
+# The light path's whole safeguard is one review by an agent that did not write the
+# change. Before 2026-07-30 this brief said "Do NOT run /no-mistakes" and nothing
+# read the change before the PR opened. Pin the four halves that make the safeguard
+# real: the run is started, it is started through the mode-derived command rather
+# than typed flags, the worker knows the reviewer is not itself, and the PR waits for
+# the review's outcome.
+test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr() {
+  local home id brief
+  home="$TMP_ROOT/direct-pr-review-home"
+  write_registry "$home"
+  id="brief-direct-review-a7"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+
+  assert_grep "bin/fm-validate.sh $id --intent" "$brief" \
+    "direct-PR brief lost the mode-derived run command, so the light path runs no review at all"
+  assert_no_grep '--skip intent,rebase' "$brief" \
+    "direct-PR brief asks a worker to type the skip flags; they must be derived from the recorded mode instead"
+  assert_grep "did not write your change and does not share your session" "$brief" \
+    "direct-PR brief lost the statement that the reviewer is a different context"
+  assert_grep "never skips the review step itself" "$brief" \
+    "direct-PR brief lost the statement that review is always kept"
+  assert_grep "no-mistakes doctor" "$brief" \
+    "direct-PR brief lost the pipeline setup step, so the review may have no gate to run through"
+  assert_grep "When the run reaches a successful terminal outcome" "$brief" \
+    "direct-PR brief lets the worker open the PR before the review finishes"
+  assert_grep "terminal but NOT successful" "$brief" \
+    "direct-PR brief lets a failed or cancelled review satisfy its push gate"
+  assert_no_grep "Do NOT run /no-mistakes" "$brief" \
+    "direct-PR brief still forbids the pipeline outright, which would skip the review too"
+  assert_grep "done: PR {url}" "$brief" \
+    "direct-PR brief lost its PR ready signal"
+  pass "fm-brief.sh: direct-PR brief runs one fresh-context review before the PR is opened"
+}
+
+# local-only lands on the captain's local default branch with no PR and no remote, so
+# before 2026-07-30 nothing read it at all. It now runs the same review-only pass.
+# The load-bearing extra half here is that the review must not publish: local-only
+# forbids reaching any remote, and the run's skipped push step is what keeps that
+# true, so the brief has to say so rather than leave a worker guessing.
+test_local_only_brief_runs_a_review_that_publishes_nothing() {
+  local home id brief
+  home="$TMP_ROOT/local-only-review-home"
+  write_registry "$home"
+  id="brief-local-review-a7"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+
+  assert_grep "bin/fm-validate.sh $id --intent" "$brief" \
+    "local-only brief lost the mode-derived run command, so the light path runs no review at all"
+  assert_grep "did not write your change and does not share your session" "$brief" \
+    "local-only brief lost the statement that the reviewer is a different context"
+  assert_grep "publishes nothing" "$brief" \
+    "local-only brief lost the statement that the local gate publishes nothing"
+  assert_grep "The publishing step is one of the eight skipped" "$brief" \
+    "local-only brief lost why the review cannot reach a remote"
+  assert_grep "Never push to any remote and never open a PR" "$brief" \
+    "local-only brief lost its no-remote rule"
+  assert_grep "When the run reaches a successful terminal outcome" "$brief" \
+    "local-only brief declares the branch ready before the review finishes"
+  assert_grep "terminal but NOT successful" "$brief" \
+    "local-only brief lets a failed or cancelled review declare the branch ready"
+  assert_grep "done: ready in branch fm/$id" "$brief" \
+    "local-only brief lost its ready signal"
+  assert_no_grep "done: PR" "$brief" \
+    "local-only brief must never report a PR"
+  pass "fm-brief.sh: local-only brief runs a fresh-context review that publishes nothing"
+}
+
 test_faster_paths_use_configured_authority_without_stacked_review() {
   local home id brief
   home="$TMP_ROOT/configured-authority-home"
@@ -998,6 +1067,8 @@ test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci
+test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr
+test_local_only_brief_runs_a_review_that_publishes_nothing
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_no_mistakes_dod_no_checks_is_ready

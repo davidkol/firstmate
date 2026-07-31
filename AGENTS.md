@@ -275,7 +275,7 @@ Supervise all live work under section 8.
 ### Selected delivery path and approval authority
 
 The selected delivery path owns its own rigor.
-When no-mistakes is selected, no-mistakes alone owns review, fixes, tests, documentation, push, PR, and CI; otherwise follow the faster path without adding an independent reviewer.
+When no-mistakes is selected, no-mistakes alone owns review, fixes, tests, documentation, push, PR, and CI; otherwise follow the faster path and add no reviewer beyond the one that path already runs.
 Never hold work outside no-mistakes for a manual clean verdict, stack serial manual reviews, or infer authority for one from security, architecture, or risk alone.
 A separate review or audit is allowed only when the captain explicitly requests that deliverable or the authorized task is a knowledge-only review; one named question remains scoped to that question.
 If fast-path risk needs more rigor, escalate whether to use no-mistakes instead of inventing a manual gate.
@@ -283,11 +283,13 @@ The path's worker, automated gates, and captain approval remain authoritative:
 
 - **no-mistakes** runs the full pipeline through a PR, then waits for the configured merge authority.
 - **validated-main** runs that same pipeline with only its PR and CI steps skipped, then waits for the configured merge authority before firstmate lands the validated branch on the default branch and pushes it; no PR is opened at any point.
-- **direct-PR** has the worker push and open a PR without the no-mistakes pipeline, then waits for the configured merge authority.
-- **local-only** has the worker stop with a clean ready branch, then waits for the configured merge authority before firstmate uses the guarded fast-forward merge path.
+- **direct-PR** runs one review-only pipeline pass on the same worker, then has that worker push and open a PR, then waits for the configured merge authority.
+- **local-only** runs that same review-only pass, which publishes nothing, then has the worker stop with a clean ready branch, then waits for the configured merge authority before firstmate uses the guarded fast-forward merge path.
 
 Skipping the PR is not skipping the review: the pipeline's review, test, document, and lint steps run locally, and they are what makes landing straight on the default branch safe.
 Never resolve a `validated-main` risk by dropping the pipeline instead of the PR.
+No mode ever skips the review step, because a light path is still a path onto the captain's default branch and the reviewer is the only agent that reads the change without having written it.
+A project with no `origin` remote at all is the one case that cannot run it, because the local gate refuses to initialize without one; treat that as a named gap rather than a mode that quietly ships unread.
 
 Delivery mode and `yolo` are orthogonal.
 With `yolo` off, the captain owns ask-user findings, PR merges, and approval to land a task on a local or hosted default branch.
@@ -295,16 +297,17 @@ With `yolo` on, firstmate decides routine gates only within the captain's origin
 Standing `yolo` authority never approves an ask-user Fix that would materially expand that product or engineering contract; destructive, irreversible, and security-sensitive choices remain stronger captain boundaries.
 Complexity alone is not expansion: a difficult correction genuinely required by accepted intent, including explicitly requested complex architecture, remains autonomous.
 Before deciding any ask-user finding, load `ask-user-authority`; the implementation worker never answers its own finding.
-Never merge a red PR, and never land a `validated-main` branch whose validation did not reach a successful terminal outcome.
+Never merge a red PR, and never land a `validated-main`, `direct-PR`, or `local-only` branch whose validation did not reach a successful terminal outcome.
 Use `bin/fm-pr-merge.sh` for every task PR merge so merge metadata is recorded, `bin/fm-merge-main.sh` for approved `validated-main` landing, and `bin/fm-merge-local.sh` for approved `local-only` landing; never call a lower-level merge command around their guards.
 After an autonomous merge or landing, give the captain a one-line outcome: the full PR URL when there was one, otherwise that the change is now live on the project's default branch.
 
 ### Validate
 
-For a no-mistakes or validated-main ship, trigger validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
-A validated-main run starts through `bin/fm-validate.sh <id> --intent "..."`, which derives the pipeline's skip set from the task's recorded delivery mode, so it omits the PR and CI steps without anyone passing a flag; everything else about driving it is identical.
+For a no-mistakes or validated-main ship, firstmate triggers validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
+For a direct-PR or local-only ship, the worker starts its own review from its brief as soon as it commits, so firstmate triggers nothing for those two and never sends a second `axi run` for a light path already under way.
+Every mode except no-mistakes starts through `bin/fm-validate.sh <id> --intent "..."`, which derives the pipeline's skip set from the task's recorded delivery mode, so nobody passes a flag: validated-main omits the PR and CI steps, while direct-PR and local-only keep review alone and omit the other eight; everything else about driving it is identical.
 A no-mistakes ship starts its run directly, the way it always has.
-That skip set never includes review, test, document, or lint for any mode.
+That skip set never includes review for any mode, and never drops test, document, or lint from a full-pipeline mode.
 The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.
 
@@ -315,6 +318,7 @@ Resume fleet supervision immediately after the decision lands.
 
 Judge validation by the current-code-matched run step through `bin/fm-crew-state.sh`, not by shell liveness or the last status event.
 Running, fixing, or CI states remain working; parked approval or fix-review states require the worker to follow the active gate help; passed or checks-passed is done; failed or cancelled is failed.
+On a direct-PR or local-only task the run carries the review step alone, so a terminal run means the review finished and not the task; that reader falls back to the worker's own last status event there, so a light path reports done or blocked exactly as the worker declared it and parked on the worker's own needs-decision event, stays working only while it has declared nothing, and never reports a PR the light path has not opened.
 A worker hand-editing, committing, aborting, or restarting during an active validation run duplicates pipeline ownership; steer it back to the gate response flow.
 The worker reports the PR at the pipeline's CI-ready return point rather than waiting for merge monitoring to finish.
 A repository whose PR registers no checks reaches that same point once the pipeline's registration grace elapses, so no checks is a ready signal, never a fault and never a reason to keep waiting.
@@ -324,7 +328,7 @@ A repository whose PR registers no checks reaches that same point once the pipel
 A `validated-main` ship reports `done: validated on fm/<id>, ready to land` at its terminal pipeline outcome, and firstmate lands it with `bin/fm-merge-main.sh <id>` once the configured merge authority approves.
 Report that landing to the captain as the change now being live on the project's default branch, with no link to open.
 
-For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green` at the CI-ready return point, whether checks passed or none registered, while `direct-PR` reports `done: PR <url>` after opening the PR.
+For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green` at the CI-ready return point, whether checks passed or none registered, while `direct-PR` reports `done: PR <url>` after its review reaches a successful terminal outcome and it opens the PR.
 Run `bin/fm-pr-check.sh <id> <PR url>` - it records `pr=` and the forge's `pr_head=` when available in the task's meta and arms the watcher's merge poll.
 Tell the captain the PR's full URL, always the complete `https://...` link rather than a bare `#number`, a concise outcome summary, and the no-mistakes risk level when applicable.
 A captain instruction to merge is explicit authority; `yolo` is the only standing routine authority.

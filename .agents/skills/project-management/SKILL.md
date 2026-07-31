@@ -32,14 +32,15 @@ Choose the delivery mode when adding or creating the project:
 
 - `no-mistakes` runs the full validation pipeline before a PR and is the default when the captain does not specify a mode.
 - `validated-main` runs that same pipeline with only its PR and CI steps skipped, then lands on the default branch through the approved `bin/fm-merge-main.sh` path and pushes it; no PR is ever opened.
-- `direct-PR` pushes and opens a PR without the no-mistakes pipeline.
-- `local-only` has no required remote or PR and lands only through the approved local fast-forward path.
+- `direct-PR` runs the pipeline's review step alone, then pushes and opens a PR.
+- `local-only` runs the same review-only pass, which publishes nothing, has no required PR, and lands only through the approved local fast-forward path.
 
 The PR and CI omission is a property of the mode, not of a call site: `bin/fm-validate.sh` derives it from the task's recorded mode, so no worker passes a flag and any re-run inherits it.
 
-`validated-main` and `direct-PR` are not interchangeable, and the difference is the automated review, not the PR.
+`validated-main` and `direct-PR` are not interchangeable, and the difference is how much of the pipeline runs, not the PR.
 `validated-main` keeps the pipeline's local review, test, document, and lint steps and drops only the two host-facing steps, which is what makes landing straight on the default branch safe.
-`direct-PR` drops the pipeline instead, so it keeps the PR as the place a change is looked at.
+`direct-PR` keeps the review step alone and drops the other eight, so a light change is still read by an agent that did not write it before the PR opens.
+Every mode keeps review; no mode may be configured to drop it.
 
 The optional `+yolo` posture changes routine approval authority but does not change the delivery mode.
 Default it off, and enable it only on the captain's explicit instruction.
@@ -50,8 +51,9 @@ Default it off, and enable it only on the captain's explicit instruction.
 Confirm the source URL, local project name, delivery mode, and autonomy posture.
 Clone into `projects/<name>` and add the registry entry only after the destination is known to be unused.
 A `no-mistakes` or `validated-main` project must have an `origin` remote and must complete the initialization procedure below.
-A `direct-PR` project needs an `origin` remote but skips no-mistakes initialization.
-A `local-only` project may have no remote and skips no-mistakes initialization.
+A `direct-PR` project needs an `origin` remote and drives the pipeline's review step, so it needs the same local gate; its first task initializes it lazily through the generated brief's `no-mistakes doctor` step, so an add that skips the procedure below still works.
+A `local-only` project runs the review step too, and its gate initializes from an `origin` pointing at a local filesystem path, which is what a clone of a local repository already has; its first task initializes it lazily the same way.
+A `local-only` project with no `origin` remote at all cannot run the review, because `no-mistakes init` refuses without one - record that as a named gap on the project rather than describing a safeguard that is not running.
 
 ## Create a project
 
@@ -62,10 +64,11 @@ After remote creation succeeds, clone it locally, add the registry entry, and in
 
 For a purely `local-only` project, create a local Git repository under its unused `projects/<name>` path, add the registry entry, and make no GitHub call.
 The captain's request to create that local project authorizes this local initialization, but it does not authorize an unmentioned remote repository.
+A repository created this way has no `origin` remote at all, which is exactly the case that cannot run the review, so record the named gap the add-or-clone section above requires rather than dispatching work that ships unread.
 
 ## Initialize
 
-Run no-mistakes initialization for `no-mistakes` and `validated-main` projects, which both drive the pipeline:
+Run no-mistakes initialization for every project with an `origin` remote, because every delivery mode now drives at least the pipeline's review step:
 
 ```sh
 cd projects/<name> && no-mistakes init && no-mistakes doctor

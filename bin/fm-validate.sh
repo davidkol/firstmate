@@ -13,10 +13,36 @@
 # at dispatch, so the run inherits the mode the task was actually dispatched under
 # rather than a registry that may have changed since.
 #
-# This script NEVER skips review, test, document, or lint, for any mode. Dropping
-# the pull request is not dropping the automated review: the review step is what
-# makes landing on a default branch safe when nobody reads the diff. A caller's own
-# --skip is merged with the mode's, never allowed to replace it.
+# This script NEVER skips review, for any mode. Dropping the pull request is not
+# dropping the automated review: the review step is what makes landing on a default
+# branch safe when nobody reads the diff. A caller's own --skip is merged with the
+# mode's, never allowed to replace it, and `review` is dropped out of that caller
+# half with a warning so the promise holds against whoever types the flag. On a
+# light path review is the only step that runs, so honouring `--skip review` there
+# would start a run with every step skipped that still reports a passing outcome.
+#
+# The full-pipeline modes - no-mistakes and validated-main - additionally never drop
+# test, document, or lint; only the two host-facing steps are ever mode-skipped there.
+#
+# direct-PR and local-only are the light paths and invert that shape. Both ran no
+# pipeline at all until the captain's decision of 2026-07-30, which kept the light
+# path the fleet default but gave it "a fresh-context review on its own - one agent
+# reading the change cold, without the other eight pipeline steps around it". So
+# their derived set keeps review and skips the other eight. That ADDS a reviewer to
+# paths that had none; it does not remove steps from a path that had them, and the
+# review it adds is run by an agent process the no-mistakes daemon starts, never by
+# the worker that wrote the change.
+#
+# push is skipped on both, for different reasons: a direct-PR worker publishes and
+# opens its own pull request afterwards, and a local-only worker must never reach a
+# remote at all. Skipping push is what lets local-only run this review without
+# violating its own no-push rule - the review reads the branch and publishes nothing.
+#
+# The gate the run needs is local, but `no-mistakes init` refuses in a repository
+# with no `origin` remote at all, so a remoteless local-only project cannot run this
+# review; docs/verification/validation-pipeline.md records that refusal. An origin
+# pointing at a local filesystem path is enough, which is what the registry's
+# local-only projects have.
 #
 # Run it from inside the task worktree - it hands off to no-mistakes in the current
 # directory and does not change it, and refuses when that directory is not the one
@@ -67,11 +93,12 @@ if [ -n "$WORKTREE" ]; then
   esac
 fi
 
-# Steps this delivery mode must always omit. Only host-facing steps ever appear
-# here; the local review surface is never skipped by mode.
+# Steps this delivery mode must always omit. review never appears here for any
+# mode; it is the one step every mode keeps.
 case "$MODE" in
-  validated-main) MODE_SKIP="pr,ci" ;;
-  *)              MODE_SKIP="" ;;
+  validated-main)       MODE_SKIP="pr,ci" ;;
+  direct-PR|local-only) MODE_SKIP="intent,rebase,test,document,lint,push,pr,ci" ;;
+  *)                    MODE_SKIP="" ;;
 esac
 
 # Pull any caller-supplied --skip out of the passthrough args so a second --skip
@@ -110,14 +137,27 @@ done
   exit 1
 }
 
-# Merge and de-duplicate, preserving the mode's steps first.
+# Merge and de-duplicate, preserving the mode's steps first. This loop is the one
+# place the final skip set is assembled, so it is where the never-skip-review
+# invariant is enforced: no mode-derived set contains review, so any review here
+# came from the caller and is dropped.
 SKIP=""
+REVIEW_REQUESTED=0
 for step in ${MODE_SKIP//,/ } ${CALLER_SKIP//,/ }; do
+  if [ "$step" = review ]; then
+    REVIEW_REQUESTED=1
+    continue
+  fi
   case ",$SKIP," in
     *",$step,"*) continue ;;
   esac
   SKIP="${SKIP:+$SKIP,}$step"
 done
+
+if [ "$REVIEW_REQUESTED" -eq 1 ]; then
+  echo "fm-validate: dropped 'review' from the requested --skip; no mode may skip the review step." >&2
+  echo "Review is the only step a light path runs, so skipping it would start a run with nothing left to execute that still reports a passing outcome. Re-run the review instead, or escalate to firstmate if it keeps failing." >&2
+fi
 
 if [ -n "$SKIP" ]; then
   echo "fm-validate: task $ID is mode=$MODE; skipping pipeline steps: $SKIP" >&2
