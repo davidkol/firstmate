@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Static regression tests for the captain-facing plain-English translation
-# contract owned by AGENTS.md section 9.
+# contract and the escalation rules owned by AGENTS.md section 9.
 # shellcheck disable=SC2016
 set -u
 
@@ -11,6 +11,7 @@ AGENTS="$ROOT/AGENTS.md"
 BOOTSTRAP="$ROOT/.agents/skills/bootstrap-diagnostics/SKILL.md"
 AFK="$ROOT/.agents/skills/afk/SKILL.md"
 DECISION="$ROOT/.agents/skills/decision-hold-lifecycle/SKILL.md"
+ASK_USER="$ROOT/.agents/skills/ask-user-authority/SKILL.md"
 RECOVERY="$ROOT/.agents/skills/stuck-crewmate-recovery/SKILL.md"
 HARNESS="$ROOT/.agents/skills/harness-adapters/SKILL.md"
 CODEXAPP="$ROOT/.agents/skills/firstmate-codexapp/SKILL.md"
@@ -18,6 +19,7 @@ FMX="$ROOT/.agents/skills/fmx-respond/SKILL.md"
 UPDATE="$ROOT/.agents/skills/updatefirstmate/SKILL.md"
 AHOY="$ROOT/.agents/skills/ahoy/SKILL.md"
 README="$ROOT/README.md"
+BRIEF="$ROOT/bin/fm-brief.sh"
 
 section_9() {
   awk '
@@ -111,6 +113,29 @@ test_routine_no_action_response_is_event_scoped() {
   assert_not_contains "$contract" 'Captain, no decision is needed.' \
     "section 9 implies the visible session has no unrelated open decisions"
   pass "routine no-action response is exact and scoped to its event"
+}
+
+# Section 9 also owns the rule that firstmate never reconciles a contradiction
+# with the captain's word on its own. The adjacent authority owners carry their
+# own scoped contracts - ask-user findings, unresolved decision holds, and the
+# worker-facing brief scaffold - and none of them may grow a second copy of this
+# one, because the copy that is not edited is the one a session will believe.
+test_section_9_owns_the_contradiction_escalation_rule() {
+  local contract file
+  contract=$(section_9)
+  assert_contains "$contract" "**Never resolve a contradiction with the captain's word yourself.**" \
+    "section 9 does not own the contradiction-escalation rule"
+  assert_contains "$contract" "that contradiction is his to resolve, not firstmate's to reconcile" \
+    "section 9 does not leave the contradiction with the captain"
+  assert_contains "$contract" "is inventing under his authority, however much it looks like plumbing from the inside" \
+    "section 9 does not name reinterpretation as inventing under the captain's authority"
+  assert_contains "$contract" "- A contradiction between the captain's word and what firstmate has found, before any work is shaped around it." \
+    "the immediate-escalation list does not carry the contradiction bullet"
+  for file in "$ASK_USER" "$DECISION" "$BRIEF"; do
+    assert_no_grep "not firstmate's to reconcile" "$file" \
+      "$(basename "$file") duplicated section 9's contradiction-escalation owner"
+  done
+  pass "section 9 solely owns the contradiction-escalation rule"
 }
 
 test_outward_facing_skill_points_reference_section_9_owner() {
@@ -284,6 +309,7 @@ test_compressed_safety_labels_have_plain_renderings
 test_mapping_list_covers_high_risk_internal_families
 test_verbatim_internal_evidence_is_rejected_from_chat
 test_routine_no_action_response_is_event_scoped
+test_section_9_owns_the_contradiction_escalation_rule
 test_outward_facing_skill_points_reference_section_9_owner
 test_section_9_owner_is_not_duplicated_into_skills
 test_ahoy_is_an_internal_user_invocable_skill
