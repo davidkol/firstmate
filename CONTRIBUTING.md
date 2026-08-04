@@ -58,6 +58,7 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 ## Development
 
 Tracked changes to firstmate itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, and `skills/` - ship on a feature branch through the delivery path this repo's registry selects, and require an explicit merge approval.
+`bin/fm-project-mode.sh` resolves that path from the maintainer's own gitignored `data/projects.md` registry, and `AGENTS.md` section 7 owns what each mode runs.
 Every one of those paths runs the review step locally, so a change is always read by an agent that did not write it; a human-authored contribution still follows the pull request rule at the top of this file.
 Before making any such change, load the agent-only `firstmate-coding-guidelines` skill (`.agents/skills/firstmate-coding-guidelines/SKILL.md`).
 It has the knowledge-placement rules that keep `AGENTS.md` from regrowing after each diet pass.
