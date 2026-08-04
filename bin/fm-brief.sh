@@ -6,6 +6,19 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
+# Ship and scout scaffolds also split the brief's provenance into two sections
+# firstmate fills in before dispatch. "What the captain decided" takes
+# {CAPTAIN_RULINGS}: one bullet per ruling carrying his own words and the date
+# he said them, or the single bullet "- None recorded for this task." when he
+# ruled on nothing. "What firstmate worked out" takes {FIRSTMATE_INFERENCE}:
+# firstmate's own reasoning about how to satisfy those rulings, which carries
+# none of his authority, is open to challenge, and may never be armoured as
+# "measured", "do not re-derive", "decided", "settled", or "confirmed". Both
+# sections are emitted on every ship and scout brief, including when there is
+# nothing to put in them. bin/fm-authority-receipts.sh judges the filled-in
+# result and bin/fm-spawn.sh runs it before launch. A secondmate charter is
+# standing scope rather than a task built from rulings, so it carries neither
+# section.
 # Usage: fm-brief.sh <task-id> <repo-name> [--scout] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at

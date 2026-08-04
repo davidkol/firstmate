@@ -85,6 +85,11 @@
 #   default-branch commit when safe; skipped syncs warn and launch unchanged.
 #   Ship/scout spawns refuse to launch unless the resolved task path is a real
 #   git worktree root distinct from the primary project checkout.
+#   Every spawn also refuses when the brief or charter claims the captain's
+#   authority with no receipt behind it, or when that check cannot run at all
+#   (bin/fm-authority-receipts.sh, judged once the brief is complete and before
+#   any worker reads it). There is deliberately no flag to skip it: the fix is to
+#   quote him with a date or move the line under "What firstmate worked out".
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
