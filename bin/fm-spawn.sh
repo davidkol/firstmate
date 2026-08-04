@@ -85,6 +85,16 @@
 #   default-branch commit when safe; skipped syncs warn and launch unchanged.
 #   Ship/scout spawns refuse to launch unless the resolved task path is a real
 #   git worktree root distinct from the primary project checkout.
+#   Every spawn also refuses when the brief or charter claims the captain's
+#   authority with no receipt behind it, or when that check cannot run at all
+#   (bin/fm-authority-receipts.sh, judged once the brief is complete and before
+#   any worker reads it). There is deliberately no flag to skip it: the fix is to
+#   quote him with a date or move the line under "What firstmate worked out".
+#   It likewise refuses a brief or charter that still carries an unreplaced
+#   fm-brief.sh placeholder ({TASK}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE}),
+#   naming the ones still unfilled. Only a whole line equal to the token counts,
+#   so brace-bearing task text and the brief's own prose mention of `{TASK}` in
+#   its Herdr declaration do not trip it.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
@@ -813,6 +823,65 @@ else
   BRIEF="$DATA/$ID/brief.md"
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
+
+# fm-brief.sh emits {TASK}, and on ship and scout briefs {CAPTAIN_RULINGS} and
+# {FIRSTMATE_INFERENCE}, each alone on its own line, for firstmate to replace
+# after scaffolding. A rule firstmate has to remember is a rule firstmate
+# forgets, so the hole is closed by refusing here rather than by instruction
+# somewhere: an unfilled {CAPTAIN_RULINGS} in particular clears the receipts
+# check below in silence, because a bare placeholder is prose and not a claim,
+# and the worker then reads a provenance section that says nothing at all.
+# Only a whole line that is exactly one of the three tokens counts. The
+# generated brief itself names `{TASK}` in the prose of its Herdr declaration,
+# and task text firstmate writes may legitimately contain braces, so a substring
+# match would refuse every dispatch of an unguarded brief.
+UNFILLED=""
+for PLACEHOLDER in '{TASK}' '{CAPTAIN_RULINGS}' '{FIRSTMATE_INFERENCE}'; do
+  if grep -Fxq "$PLACEHOLDER" "$BRIEF"; then
+    UNFILLED="$UNFILLED $PLACEHOLDER"
+  fi
+done
+if [ -n "$UNFILLED" ]; then
+  {
+    echo "error: brief still carries unreplaced scaffold placeholders:$UNFILLED"
+    echo "fix: replace each one in $BRIEF with its real text before dispatch."
+  } >&2
+  exit 1
+fi
+
+# The brief is complete here and nowhere earlier: fm-brief.sh writes the
+# scaffold, and firstmate fills {TASK} and the two provenance sections in
+# afterwards. This is therefore the only point at which an unreceipted claim of
+# the captain can still be stopped before a worker reads it and builds it.
+# Refusing is the whole point. On 2026-08-03 a brief that claimed his authority
+# for a mechanism he never approved reached a worker and shipped, and firstmate
+# repeated it back to him as his own decision seven days later. The fix a
+# refusal asks for is small - quote him with a date, or move the line into the
+# section that says firstmate worked it out - and there is deliberately no flag
+# to skip it.
+# Exit 1 is a verdict on the brief; anything else (2 for usage or I/O, 126/127
+# for a check that is missing or no longer executable) means the brief was never
+# judged at all. Both refuse - dispatching an unchecked brief is the failure
+# this gate exists to stop - but sending an operator to fix a brief that is fine
+# burns the trust the refusal depends on, so say which one happened.
+RECEIPTS_RC=0
+RECEIPTS=$("$SCRIPT_DIR/fm-authority-receipts.sh" "$BRIEF" 2>&1) || RECEIPTS_RC=$?
+if [ "$RECEIPTS_RC" -eq 1 ]; then
+  {
+    echo "error: brief claims the captain's authority with no receipt behind it:"
+    printf '%s\n' "$RECEIPTS"
+    echo "fix: give each line a dated quote of his, or move it under \"What firstmate worked out\"."
+  } >&2
+  exit 1
+elif [ "$RECEIPTS_RC" -ne 0 ]; then
+  {
+    echo "error: the captain-receipts check could not run (exit $RECEIPTS_RC), so $BRIEF was never judged:"
+    printf '%s\n' "$RECEIPTS"
+    echo "fix: repair $SCRIPT_DIR/fm-authority-receipts.sh; the brief itself may be fine."
+  } >&2
+  exit 1
+fi
+
 BRIEF_DIR_REAL=$(cd "$(dirname "$BRIEF")" && pwd -P)
 BRIEF_REAL="$BRIEF_DIR_REAL/$(basename "$BRIEF")"
 
