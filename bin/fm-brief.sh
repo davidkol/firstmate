@@ -321,6 +321,39 @@ else
   MEMORY_SECTION=""
 fi
 
+# Provenance split (ship and scout briefs; a secondmate charter is standing
+# scope rather than a task built from rulings, so it has no rulings to split).
+# A brief used to carry captain-sourced rulings and firstmate-derived inference
+# in one document at one authority level, and a worker could not tell them
+# apart. On 2026-08-03 that cost the captain a mechanism he never approved: an
+# inference of firstmate's own reached a work order under a heading that
+# claimed his authority and was armoured with "measured, do not re-derive", so
+# the one load-bearing line was the one line the worker was forbidden to check.
+# Both sections are always emitted, including with nothing to put in them,
+# because a missing section reads as "no rulings" exactly as loudly as a
+# deliberate "none", and only one of those is true.
+# bin/fm-authority-receipts.sh checks the filled-in result, and bin/fm-spawn.sh
+# runs it before launch, so an unreceipted claim of the captain never reaches a
+# worker at all.
+IFS= read -r -d '' PROVENANCE <<'EOF' || true
+# What the captain decided
+{CAPTAIN_RULINGS}
+
+Every entry above is one bullet carrying the captain's own words and the date he said them, and nothing else may be written here.
+Those rulings are closed: build to them, and do not re-litigate them.
+"None recorded for this task" is a complete and honest entry here; a paraphrase written from memory is not, because a paraphrase under this heading is exactly how an invented mechanism reached a shipped game once already.
+
+# What firstmate worked out
+{FIRSTMATE_INFERENCE}
+
+That is firstmate's own reasoning about how to satisfy the section above, and it carries none of the captain's authority.
+It is inference, it is open to challenge, and challenging it is part of your job rather than an interruption of it.
+If you find it wrong, say so and stop; do not build around it and do not quietly repair it.
+If anything in it would replace, weaken, or work around anything in the section above, that contradiction is the captain's to settle and not yours: append `blocked:` naming both lines and stop.
+Nothing here may be marked "measured", "do not re-derive", "decided", "settled", "confirmed", or given any other armour that puts it beyond checking, and firstmate may not add such a label later.
+EOF
+PROVENANCE=${PROVENANCE%$'\n'}
+
 ORIENT_1="Run \`git status\` and \`git log --oneline -15\`, and read both before you trust any plan, status doc, or handoff."
 ORIENT_2="The repository state outranks every document, always: work that exists only in the tree or in unmentioned recent commits gets rebuilt from scratch by a session that believes the document instead."
 
@@ -362,6 +395,8 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 # Task
 {TASK}
+
+$PROVENANCE
 
 $HERDR_SECTION
 
@@ -407,7 +442,7 @@ Before reporting done, read and follow \`$FM_ROOT/.agents/skills/decision-hold-l
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; firstmate may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
 EOF
-echo "scaffolded: $BRIEF (scout; replace {TASK})"
+echo "scaffolded: $BRIEF (scout; replace {TASK}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE})"
 exit 0
 fi
 
@@ -549,6 +584,8 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 # Task
 {TASK}
 
+$PROVENANCE
+
 $HERDR_SECTION
 
 # Setup
@@ -598,4 +635,4 @@ $CHECKLIST
 
 $DOD
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"
+echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE})"

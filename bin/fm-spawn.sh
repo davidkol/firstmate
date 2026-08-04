@@ -813,6 +813,26 @@ else
   BRIEF="$DATA/$ID/brief.md"
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
+
+# The brief is complete here and nowhere earlier: fm-brief.sh writes the
+# scaffold, and firstmate fills {TASK} and the two provenance sections in
+# afterwards. This is therefore the only point at which an unreceipted claim of
+# the captain can still be stopped before a worker reads it and builds it.
+# Refusing is the whole point. On 2026-08-03 a brief that claimed his authority
+# for a mechanism he never approved reached a worker and shipped, and firstmate
+# repeated it back to him as his own decision seven days later. The fix a
+# refusal asks for is small - quote him with a date, or move the line into the
+# section that says firstmate worked it out - and there is deliberately no flag
+# to skip it.
+if ! RECEIPTS=$("$SCRIPT_DIR/fm-authority-receipts.sh" "$BRIEF" 2>&1); then
+  {
+    echo "error: brief claims the captain's authority with no receipt behind it:"
+    printf '%s\n' "$RECEIPTS"
+    echo "fix: give each line a dated quote of his, or move it under \"What firstmate worked out\"."
+  } >&2
+  exit 1
+fi
+
 BRIEF_DIR_REAL=$(cd "$(dirname "$BRIEF")" && pwd -P)
 BRIEF_REAL="$BRIEF_DIR_REAL/$(basename "$BRIEF")"
 

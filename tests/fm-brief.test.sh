@@ -686,6 +686,54 @@ test_scout_and_secondmate_load_decision_hold_policy() {
 # The completion checklist has to arrive inside the brief, because that is the
 # text every worker demonstrably reads; the same rules in a separate document
 # were contradicted by most of the work that was audited.
+# The provenance split. A brief used to carry the captain's rulings and
+# firstmate's own inference at one authority level, and on 2026-08-03 that let an
+# inference reach a worker under a heading claiming his authority, armoured with
+# "measured, do not re-derive" so it was the one line nobody could check. Both
+# sections must be present in every ship and scout brief, structurally distinct,
+# and the inference one must say out loud that it is challengeable.
+test_provenance_split_separates_rulings_from_inference() {
+  local home id brief kind
+  home="$TMP_ROOT/provenance-home"
+  mkdir -p "$home/data"
+  for kind in ship scout; do
+    id="brief-provenance-$kind"
+    if [ "$kind" = scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
+    fi
+    brief="$home/data/$id/brief.md"
+
+    # Two distinct sections, each with its own placeholder to fill.
+    assert_grep "# What the captain decided" "$brief" "$kind brief lost the captain-rulings section"
+    assert_grep "{CAPTAIN_RULINGS}" "$brief" "$kind brief lost the captain-rulings placeholder"
+    assert_grep "# What firstmate worked out" "$brief" "$kind brief lost the inference section"
+    assert_grep "{FIRSTMATE_INFERENCE}" "$brief" "$kind brief lost the inference placeholder"
+
+    # The rulings section takes his words and their date, and nothing else.
+    assert_grep "carrying the captain's own words and the date he said them" "$brief" \
+      "$kind brief no longer requires a dated verbatim quote"
+    assert_grep "a paraphrase written from memory is not" "$brief" \
+      "$kind brief no longer rejects a paraphrase under the captain's heading"
+
+    # The inference section carries none of his authority and invites challenge.
+    assert_grep "it carries none of the captain's authority" "$brief" \
+      "$kind brief no longer separates firstmate's inference from the captain's authority"
+    assert_grep "challenging it is part of your job" "$brief" \
+      "$kind brief no longer invites the worker to challenge firstmate's inference"
+    assert_grep "append \`blocked:\` naming both lines and stop" "$brief" \
+      "$kind brief no longer escalates an inference that contradicts a ruling"
+
+    # The armour that made the original failure uncheckable is banned by name.
+    assert_grep "Nothing here may be marked \"measured\", \"do not re-derive\"" "$brief" \
+      "$kind brief no longer bans marking firstmate's own inference as measured"
+    assert_grep "firstmate may not add such a label later" "$brief" \
+      "$kind brief lets the armour be added after scaffolding"
+  done
+  pass "fm-brief.sh: ship and scout briefs split captain rulings from firstmate inference"
+}
+
 test_ship_checklist_is_in_the_brief() {
   local home id brief
   home="$TMP_ROOT/checklist-home"
@@ -1081,6 +1129,7 @@ test_secondmate_no_projects_charter
 test_secondmate_marked_request_reporting_contract
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
+test_provenance_split_separates_rulings_from_inference
 test_ship_checklist_is_in_the_brief
 test_ship_checklist_omits_unsatisfiable_items
 test_checklist_check_item_is_satisfiable
