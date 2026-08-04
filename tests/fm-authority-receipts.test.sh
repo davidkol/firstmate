@@ -249,6 +249,7 @@ test_the_scaffold_blessed_absence_entry_passes() {
     "$ROOT/bin/fm-brief.sh" absence-gate someproj >/dev/null 2>&1
   brief="$home/data/absence-gate/brief.md"
   [ -f "$brief" ] || fail "brief was not scaffolded"
+  # shellcheck disable=SC2016  # single quotes are deliberate: this is a literal grep pattern, not a string to expand.
   blessed=$(grep -o '`- None[^`]*`' "$brief" | head -1 | tr -d '`')
   [ -n "$blessed" ] || fail "the scaffold no longer shows a literal absence entry to write"
 
@@ -452,6 +453,78 @@ EOF
   pass "fm-spawn.sh: refuses to launch a worker on an unreceipted claim of the captain"
 }
 
+# An unfilled placeholder is the other way a provenance section reaches a worker
+# saying nothing. It clears the receipts check in silence - a bare
+# {CAPTAIN_RULINGS} is prose, not a claim - so the spawn gate refuses it
+# separately, and must say which tokens are still unfilled rather than that
+# something somewhere is wrong.
+test_spawn_refuses_a_brief_with_an_unreplaced_placeholder() {
+  local home out
+  home="$TMP_ROOT/spawn-placeholder"
+  mkdir -p "$home/data/unfilled" "$home/state" "$home/proj"
+  cat > "$home/data/unfilled/brief.md" <<'EOF'
+# Task
+build the violent veer
+
+# What the captain decided
+{CAPTAIN_RULINGS}
+
+# What firstmate worked out
+- the engine bleeds the impulse off in one frame
+EOF
+  out=$(run_spawn_gate "$home" unfilled "$home/proj")
+  expect_code 1 "$?" "spawn must refuse a brief that still carries a placeholder"
+  assert_contains "$out" "unreplaced scaffold placeholders" "the refusal must name what is wrong"
+  assert_contains "$out" "{CAPTAIN_RULINGS}" "the refusal must name the unfilled placeholder"
+  assert_not_contains "$out" "{TASK}" \
+    "the refusal must name only the placeholders actually unfilled"
+  pass "fm-spawn.sh: refuses a brief whose provenance section is still a placeholder"
+}
+
+# Driven against a real scaffold rather than a fixture, because the trap is in
+# the scaffold's own text: a generated brief explains that it "cannot inspect the
+# task text that replaces `{TASK}` later", so a substring match would refuse every
+# unguarded brief forever, filled or not.
+# The filled brief deliberately keeps an unreceipted ruling, so spawn refuses at
+# the receipts gate immediately after this one. Reaching that second refusal is
+# the proof the placeholder gate passed it through, and it costs nothing;
+# driving a wholly clean brief any further starts a real terminal window and
+# waits out a 60-second treehouse timeout, which is the stated gap above.
+test_spawn_lets_a_filled_generated_brief_past_the_placeholder_gate() {
+  local home brief out
+  home="$TMP_ROOT/spawn-filled"
+  mkdir -p "$home/data" "$home/state" "$home/proj" "$TMP_ROOT/claude-config-spawn/projects"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
+    FM_STATE_OVERRIDE="$home/state" CLAUDE_CONFIG_DIR="$TMP_ROOT/claude-config-spawn" \
+    "$ROOT/bin/fm-brief.sh" filled someproj >/dev/null 2>&1
+  brief="$home/data/filled/brief.md"
+  [ -f "$brief" ] || fail "brief was not scaffolded"
+
+  out=$(run_spawn_gate "$home" filled "$home/proj")
+  expect_code 1 "$?" "a freshly generated brief still carries every placeholder"
+  assert_contains "$out" "{TASK}" "the refusal must name the unfilled task placeholder"
+  assert_contains "$out" "{CAPTAIN_RULINGS}" "the refusal must name the unfilled rulings placeholder"
+  assert_contains "$out" "{FIRSTMATE_INFERENCE}" "the refusal must name the unfilled inference placeholder"
+
+  awk '{
+    if ($0 == "{TASK}") print "Replace the veer impulse with sustained force."
+    else if ($0 == "{CAPTAIN_RULINGS}") print "- Gravity goes when you veer."
+    else if ($0 == "{FIRSTMATE_INFERENCE}") print "- the engine bleeds the impulse off in one frame"
+    else print
+  }' "$brief" > "$brief.filled" && mv "$brief.filled" "$brief"
+  # shellcheck disable=SC2016  # single quotes are deliberate: this is a literal grep pattern, not a string to expand.
+  assert_grep 'replaces `{TASK}` later' "$brief" \
+    "the scaffold must still carry the prose mention of the token that this gate has to survive"
+
+  out=$(run_spawn_gate "$home" filled "$home/proj")
+  expect_code 1 "$?" "the filled brief must still be refused, now for its unreceipted ruling"
+  assert_not_contains "$out" "unreplaced scaffold placeholders" \
+    "a filled brief must clear the placeholder gate despite the brief's own prose mention of the token"
+  assert_contains "$out" "claims the captain's authority" \
+    "reaching the receipts gate is the proof the placeholder gate passed the brief through"
+  pass "fm-spawn.sh: a filled generated brief clears the placeholder gate"
+}
+
 test_help_includes_entire_header() {
   local out
   out=$("$CHECK" --help)
@@ -478,4 +551,6 @@ test_a_fenced_code_block_is_not_read_as_structure
 test_a_bullet_keeps_its_indented_evidence
 test_a_sub_bullet_is_judged_on_its_own_text
 test_spawn_refuses_a_brief_that_claims_the_captain_without_a_receipt
+test_spawn_refuses_a_brief_with_an_unreplaced_placeholder
+test_spawn_lets_a_filled_generated_brief_past_the_placeholder_gate
 test_help_includes_entire_header

@@ -90,6 +90,11 @@
 #   (bin/fm-authority-receipts.sh, judged once the brief is complete and before
 #   any worker reads it). There is deliberately no flag to skip it: the fix is to
 #   quote him with a date or move the line under "What firstmate worked out".
+#   It likewise refuses a brief or charter that still carries an unreplaced
+#   fm-brief.sh placeholder ({TASK}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE}),
+#   naming the ones still unfilled. Only a whole line equal to the token counts,
+#   so brace-bearing task text and the brief's own prose mention of `{TASK}` in
+#   its Herdr declaration do not trip it.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
@@ -818,6 +823,31 @@ else
   BRIEF="$DATA/$ID/brief.md"
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
+
+# fm-brief.sh emits {TASK}, and on ship and scout briefs {CAPTAIN_RULINGS} and
+# {FIRSTMATE_INFERENCE}, each alone on its own line, for firstmate to replace
+# after scaffolding. A rule firstmate has to remember is a rule firstmate
+# forgets, so the hole is closed by refusing here rather than by instruction
+# somewhere: an unfilled {CAPTAIN_RULINGS} in particular clears the receipts
+# check below in silence, because a bare placeholder is prose and not a claim,
+# and the worker then reads a provenance section that says nothing at all.
+# Only a whole line that is exactly one of the three tokens counts. The
+# generated brief itself names `{TASK}` in the prose of its Herdr declaration,
+# and task text firstmate writes may legitimately contain braces, so a substring
+# match would refuse every dispatch of an unguarded brief.
+UNFILLED=""
+for PLACEHOLDER in '{TASK}' '{CAPTAIN_RULINGS}' '{FIRSTMATE_INFERENCE}'; do
+  if grep -Fxq "$PLACEHOLDER" "$BRIEF"; then
+    UNFILLED="$UNFILLED $PLACEHOLDER"
+  fi
+done
+if [ -n "$UNFILLED" ]; then
+  {
+    echo "error: brief still carries unreplaced scaffold placeholders:$UNFILLED"
+    echo "fix: replace each one in $BRIEF with its real text before dispatch."
+  } >&2
+  exit 1
+fi
 
 # The brief is complete here and nowhere earlier: fm-brief.sh writes the
 # scaffold, and firstmate fills {TASK} and the two provenance sections in
