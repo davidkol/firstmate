@@ -683,9 +683,6 @@ test_scout_and_secondmate_load_decision_hold_policy() {
   pass "fm-brief.sh: investigation and visual-review completions load the shared decision policy"
 }
 
-# The completion checklist has to arrive inside the brief, because that is the
-# text every worker demonstrably reads; the same rules in a separate document
-# were contradicted by most of the work that was audited.
 # The provenance split. A brief used to carry the captain's rulings and
 # firstmate's own inference at one authority level, and on 2026-08-03 that let an
 # inference reach a worker under a heading claiming his authority, armoured with
@@ -734,6 +731,9 @@ test_provenance_split_separates_rulings_from_inference() {
   pass "fm-brief.sh: ship and scout briefs split captain rulings from firstmate inference"
 }
 
+# The completion checklist has to arrive inside the brief, because that is the
+# text every worker demonstrably reads; the same rules in a separate document
+# were contradicted by most of the work that was audited.
 test_ship_checklist_is_in_the_brief() {
   local home id brief
   home="$TMP_ROOT/checklist-home"

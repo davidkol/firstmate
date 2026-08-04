@@ -341,7 +341,7 @@ IFS= read -r -d '' PROVENANCE <<'EOF' || true
 
 Every entry above is one bullet carrying the captain's own words and the date he said them, and nothing else may be written here.
 Those rulings are closed: build to them, and do not re-litigate them.
-"None recorded for this task" is a complete and honest entry here; a paraphrase written from memory is not, because a paraphrase under this heading is exactly how an invented mechanism reached a shipped game once already.
+If he ruled on nothing that bears on this task, the whole entry is one bullet reading `- None recorded for this task.`, which is complete and honest; a paraphrase written from memory is not, because a paraphrase under this heading is exactly how an invented mechanism reached a shipped game once already.
 
 # What firstmate worked out
 {FIRSTMATE_INFERENCE}

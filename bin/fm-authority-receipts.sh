@@ -41,8 +41,17 @@
 #      RECEIPT: a date (YYYY-MM-DD), a numbered ruling or decision, a quoted
 #      span, or a pointer to a captain-decision record. Prose is context, not a
 #      claim. A list item absorbs its continuation lines, so a bullet whose
-#      quote sits on the line below it passes.
-#   3. "captain" is the whole vocabulary. It also read "owner" once, which
+#      quote sits below it passes: an indented line, an indented line after a
+#      blank one, and a more-indented sub-bullet all belong to the bullet above
+#      them. A bullet at the same or lower indentation opens a new claim.
+#   3. A bullet that opens with "none" declares that there is nothing to record.
+#      It asserts nothing on his behalf, so it is not judged - which is what the
+#      brief scaffold tells firstmate to write when the captain ruled on nothing.
+#   4. Fenced code blocks (``` or ~~~) are skipped whole. Inside a fence no line
+#      is read as a heading, a list item, or a table row, so a shell comment in a
+#      sample cannot silently close an authority block and a literal bullet in
+#      one cannot be read as a claim.
+#   5. "captain" is the whole vocabulary. It also read "owner" once, which
 #      flagged 18 rows across one project whose docs simply talk about an owner,
 #      and nothing true anywhere.
 #
@@ -94,9 +103,9 @@ if [ "${#FILES[@]}" -eq 0 ]; then
 fi
 
 awk '
-  # Claims the captain (or an owner) as the source of a decision. Matched
-  # against a lowercased copy of the line, so the patterns stay case-blind
-  # without depending on a case-insensitive-match extension.
+  # Claims the captain as the source of a decision. Matched against a
+  # lowercased copy of the line, so the patterns stay case-blind without
+  # depending on a case-insensitive-match extension.
   # The trailing [^ ]* absorbs a possessive or trailing punctuation without
   # needing to spell every apostrophe byte, and cannot cross a space, so only
   # an adjacent decision word opens a block.
@@ -124,11 +133,29 @@ awk '
     return 0
   }
 
+  # A bullet that opens with "none" records that there is nothing to record.
+  # Anchored right after the list marker and bounded as a whole word, so it
+  # exempts a declaration of absence and not a claim that merely says "none".
+  function declares_absence(l,   t) {
+    t = tolower(l)
+    return t ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+none([^a-z]|$)/
+  }
+
   function is_heading(l)      { return l ~ /^ *#+ +/ }
   function is_blank(l)        { return l ~ /^[ \t]*$/ }
+  function is_fence(l)        { return l ~ /^[ \t]*(```|~~~)/ }
   function is_table_row(l)    { return l ~ /^[ \t]*\|/ }
   function is_table_rule(l)   { return l ~ /^[ \t]*\|[-:| \t]+\|?[ \t]*$/ }
   function is_list_item(l)    { return l ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+/ }
+
+  # How deeply a line is indented, with a tab counted as four columns so mixed
+  # indentation still orders the same way a reader sees it.
+  function indent_of(l,   s) {
+    s = l
+    sub(/[^ \t].*$/, "", s)
+    gsub(/\t/, "    ", s)
+    return length(s)
+  }
 
   function trim(l) {
     sub(/^[ \t]+/, "", l); sub(/[ \t]+$/, "", l)
@@ -140,9 +167,10 @@ awk '
   # own file, line, and opener: by the time it is judged, FILENAME may already
   # name the next file in the argument list.
   function flush_item() {
+    blank_pending = 0
     if (item_line == 0) return
-    if (!has_receipt(item_text)) report(item_file, item_line, item_first)
-    item_line = 0; item_text = ""; item_first = ""
+    if (!declares_absence(item_first) && !has_receipt(item_text)) report(item_file, item_line, item_first)
+    item_line = 0; item_text = ""; item_first = ""; item_indent = 0
   }
 
   function report(file, line, text) {
@@ -152,12 +180,18 @@ awk '
 
   FNR == 1 {
     flush_item()
-    in_block = 0; table_row = 0
-    item_line = 0; item_text = ""; item_first = ""
+    in_block = 0; table_row = 0; in_fence = 0
+    item_line = 0; item_text = ""; item_first = ""; item_indent = 0
   }
 
   {
     line = $0
+
+    # A fenced block is a sample, not structure. Skipping it whole stops a shell
+    # comment inside one from closing an authority block, and stops a literal
+    # bullet or table row inside one from being read as a claim.
+    if (is_fence(line)) { in_fence = !in_fence; next }
+    if (in_fence) next
 
     if (is_heading(line)) {
       flush_item()
@@ -168,7 +202,15 @@ awk '
 
     if (!in_block) next
 
-    if (is_blank(line)) { flush_item(); table_row = 0; next }
+    # A blank line does not end an open item on its own: an indented quote
+    # conventionally sits one blank line below the bullet it belongs to. What
+    # comes next decides, so hold the item and judge it on the following line.
+    if (is_blank(line)) { if (item_line > 0) blank_pending = 1; table_row = 0; next }
+
+    if (blank_pending) {
+      if (indent_of(line) <= item_indent) flush_item()
+      blank_pending = 0
+    }
 
     if (is_table_row(line)) {
       flush_item()
@@ -180,9 +222,12 @@ awk '
     table_row = 0
 
     if (is_list_item(line)) {
+      # A more-indented bullet elaborates the one above it rather than making a
+      # claim of its own, so it is absorbed. Same or less indentation is new.
+      if (item_line > 0 && indent_of(line) > item_indent) { item_text = item_text " " line; next }
       flush_item()
       item_line = FNR; item_text = line; item_first = line
-      item_file = FILENAME
+      item_file = FILENAME; item_indent = indent_of(line)
       next
     }
 

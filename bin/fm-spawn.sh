@@ -824,11 +824,25 @@ fi
 # refusal asks for is small - quote him with a date, or move the line into the
 # section that says firstmate worked it out - and there is deliberately no flag
 # to skip it.
-if ! RECEIPTS=$("$SCRIPT_DIR/fm-authority-receipts.sh" "$BRIEF" 2>&1); then
+# Exit 1 is a verdict on the brief; anything else (2 for usage or I/O, 126/127
+# for a check that is missing or no longer executable) means the brief was never
+# judged at all. Both refuse - dispatching an unchecked brief is the failure
+# this gate exists to stop - but sending an operator to fix a brief that is fine
+# burns the trust the refusal depends on, so say which one happened.
+RECEIPTS_RC=0
+RECEIPTS=$("$SCRIPT_DIR/fm-authority-receipts.sh" "$BRIEF" 2>&1) || RECEIPTS_RC=$?
+if [ "$RECEIPTS_RC" -eq 1 ]; then
   {
     echo "error: brief claims the captain's authority with no receipt behind it:"
     printf '%s\n' "$RECEIPTS"
     echo "fix: give each line a dated quote of his, or move it under \"What firstmate worked out\"."
+  } >&2
+  exit 1
+elif [ "$RECEIPTS_RC" -ne 0 ]; then
+  {
+    echo "error: the captain-receipts check could not run (exit $RECEIPTS_RC), so $BRIEF was never judged:"
+    printf '%s\n' "$RECEIPTS"
+    echo "fix: repair $SCRIPT_DIR/fm-authority-receipts.sh; the brief itself may be fine."
   } >&2
   exit 1
 fi

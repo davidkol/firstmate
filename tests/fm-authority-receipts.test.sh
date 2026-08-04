@@ -236,6 +236,108 @@ test_generated_briefs_pass_the_check() {
   pass "fm-authority-receipts.sh: generated ship and scout briefs pass their own gate"
 }
 
+# The scaffold blesses a literal bullet to write when the captain ruled on
+# nothing, and the gate refusing that exact bullet would block the common case
+# through a gate with no skip flag. The blessed wording is lifted out of a
+# freshly generated brief rather than retyped here, so the scaffold and the gate
+# cannot drift apart without this going red.
+test_the_scaffold_blessed_absence_entry_passes() {
+  local home brief blessed out
+  home="$TMP_ROOT/absence"
+  mkdir -p "$home/data"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    "$ROOT/bin/fm-brief.sh" absence-gate someproj >/dev/null 2>&1
+  brief="$home/data/absence-gate/brief.md"
+  [ -f "$brief" ] || fail "brief was not scaffolded"
+  blessed=$(grep -o '`- None[^`]*`' "$brief" | head -1 | tr -d '`')
+  [ -n "$blessed" ] || fail "the scaffold no longer shows a literal absence entry to write"
+
+  awk -v entry="$blessed" '{ sub(/\{CAPTAIN_RULINGS\}/, entry); print }' "$brief" > "$home/absent.md"
+  assert_grep "$blessed" "$home/absent.md" "the absence entry was not filled into the brief"
+  out=$(run_check "$home/absent.md")
+  expect_code 0 "$?" "the scaffold's own absence entry must pass its own gate (got: $out)"
+
+  # The exemption must not swallow a claim: the same slot, filled with a
+  # paraphrase, is still refused.
+  awk '{ sub(/\{CAPTAIN_RULINGS\}/, "- Gravity goes when you veer."); print }' "$brief" > "$home/claimed.md"
+  out=$(run_check "$home/claimed.md")
+  expect_code 1 "$?" "an unreceipted claim in the same slot must still be refused"
+  assert_contains "$out" "Gravity goes when you veer" "the refusal must quote the claim"
+  pass "fm-authority-receipts.sh: the scaffold's blessed absence entry passes, a paraphrase does not"
+}
+
+# A fenced block is a sample, not structure. Reading it as structure fails both
+# ways: a shell comment inside one closes the authority block, which is the
+# exact evasion this check exists to stop, and a literal bullet inside one is
+# read as a claim and refuses a brief that is fine.
+test_a_fenced_code_block_is_not_read_as_structure() {
+  local dir out
+  dir="$TMP_ROOT/fenced"; mkdir -p "$dir"
+  cat > "$dir/evasion.md" <<'EOF'
+## The captain decided
+
+```sh
+# rebuild the veer
+```
+
+- an unreceipted claim
+EOF
+  cat > "$dir/sample.md" <<'EOF'
+## The captain decided
+
+- 2026-07-27: "An unmanned veer becomes physically violent."
+
+```
+- literal bullet inside a code block
+| literal | table row |
+```
+EOF
+  out=$(run_check "$dir/evasion.md")
+  expect_code 1 "$?" "a comment inside a fence must not close the authority block"
+  assert_contains "$out" "evasion.md:7" "the claim after the fence must still be judged"
+
+  out=$(run_check "$dir/sample.md")
+  expect_code 0 "$?" "a bullet or table row inside a fence is not a claim (got: $out)"
+  pass "fm-authority-receipts.sh: a fenced block neither closes a block nor makes a claim"
+}
+
+# Two ordinary shapes a correctly receipted section takes. Refusing either sends
+# firstmate to fix a brief that already quotes the captain properly.
+test_a_bullet_keeps_its_indented_continuations() {
+  local dir out
+  dir="$TMP_ROOT/continuation"; mkdir -p "$dir"
+  cat > "$dir/spaced.md" <<'EOF'
+## The captain decided
+
+- On the veer:
+
+  > "An unmanned veer becomes physically violent." (2026-07-27)
+EOF
+  cat > "$dir/nested.md" <<'EOF'
+## The captain decided
+
+- 2026-07-27: "An unmanned veer becomes physically violent."
+  - it holds while the autopilot is broken
+  - it does not hold on foot
+EOF
+  cat > "$dir/sibling.md" <<'EOF'
+## The captain decided
+
+- 2026-07-27: "An unmanned veer becomes physically violent."
+- gravity goes when you veer
+EOF
+  out=$(run_check "$dir/spaced.md")
+  expect_code 0 "$?" "a blank line before an indented quote must not end the bullet (got: $out)"
+
+  out=$(run_check "$dir/nested.md")
+  expect_code 0 "$?" "sub-bullets elaborate a receipted parent, they do not claim (got: $out)"
+
+  out=$(run_check "$dir/sibling.md")
+  expect_code 1 "$?" "a bullet at the same indentation is still a claim of its own"
+  assert_contains "$out" "sibling.md:4" "the unreceipted sibling bullet must be flagged"
+  pass "fm-authority-receipts.sh: a bullet absorbs its indented continuations and sub-bullets"
+}
+
 # The gate itself. fm-spawn.sh reaches the brief checks before any backend or
 # worktree side effect, so this creates no windows.
 run_spawn_gate() {
@@ -291,5 +393,8 @@ test_owner_is_not_an_authority_word
 test_block_ends_at_the_next_heading
 test_absent_and_empty_inputs_refuse_rather_than_pass
 test_generated_briefs_pass_the_check
+test_the_scaffold_blessed_absence_entry_passes
+test_a_fenced_code_block_is_not_read_as_structure
+test_a_bullet_keeps_its_indented_continuations
 test_spawn_refuses_a_brief_that_claims_the_captain_without_a_receipt
 test_help_includes_entire_header
