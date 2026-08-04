@@ -39,7 +39,7 @@
 # `--landed-text` is the distinguishing phrase the tracked change will put in
 # the destination, and it is what makes the gate mean something. Checking only
 # that the destination CHANGED is too weak: AGENTS.md is touched by nearly every
-# shared-material PR, so an unrelated PR landing between `start` and `land`
+# shared-material change, so an unrelated one landing between `start` and `land`
 # would flip that check green and `land` would then retire a local entry whose
 # lesson never landed - unrecoverably, because data/ is gitignored. So `start`
 # refuses a phrase the destination already carries (it could never prove
