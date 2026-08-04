@@ -263,6 +263,15 @@ test_the_scaffold_blessed_absence_entry_passes() {
   out=$(run_check "$home/claimed.md")
   expect_code 1 "$?" "an unreceipted claim in the same slot must still be refused"
   assert_contains "$out" "Gravity goes when you veer" "the refusal must quote the claim"
+
+  # Nor may it swallow a claim that merely opens with the word. A bullet that
+  # declares absence and then goes on to say something is saying something.
+  awk '{ sub(/\{CAPTAIN_RULINGS\}/, "- None of the rulings cover this, so gravity goes when you veer."); print }' \
+    "$brief" > "$home/none-then-claim.md"
+  out=$(run_check "$home/none-then-claim.md")
+  expect_code 1 "$?" "a bullet that opens with none and then claims must be refused"
+  assert_contains "$out" "None of the rulings cover this, so gravity goes when you veer" \
+    "the refusal must quote the claim that hid behind the absence wording"
   pass "fm-authority-receipts.sh: the scaffold's blessed absence entry passes, a paraphrase does not"
 }
 
@@ -301,11 +310,19 @@ EOF
   pass "fm-authority-receipts.sh: a fenced block neither closes a block nor makes a claim"
 }
 
-# Two ordinary shapes a correctly receipted section takes. Refusing either sends
-# firstmate to fix a brief that already quotes the captain properly.
-test_a_bullet_keeps_its_indented_continuations() {
+# Evidence attaches. A bullet keeps the lines below it that are not themselves
+# list items, so the quote that receipts it may sit in an indented blockquote,
+# with or without the blank line that conventionally precedes one. Refusing
+# either shape sends firstmate to fix a brief that already quotes him properly.
+test_a_bullet_keeps_its_indented_evidence() {
   local dir out
   dir="$TMP_ROOT/continuation"; mkdir -p "$dir"
+  cat > "$dir/attached.md" <<'EOF'
+## The captain decided
+
+- On the veer:
+  > "An unmanned veer becomes physically violent." (2026-07-27)
+EOF
   cat > "$dir/spaced.md" <<'EOF'
 ## The captain decided
 
@@ -313,29 +330,55 @@ test_a_bullet_keeps_its_indented_continuations() {
 
   > "An unmanned veer becomes physically violent." (2026-07-27)
 EOF
-  cat > "$dir/nested.md" <<'EOF'
-## The captain decided
-
-- 2026-07-27: "An unmanned veer becomes physically violent."
-  - it holds while the autopilot is broken
-  - it does not hold on foot
-EOF
   cat > "$dir/sibling.md" <<'EOF'
 ## The captain decided
 
 - 2026-07-27: "An unmanned veer becomes physically violent."
 - gravity goes when you veer
 EOF
+  out=$(run_check "$dir/attached.md")
+  expect_code 0 "$?" "an indented blockquote is the bullet's receipt (got: $out)"
+
   out=$(run_check "$dir/spaced.md")
   expect_code 0 "$?" "a blank line before an indented quote must not end the bullet (got: $out)"
-
-  out=$(run_check "$dir/nested.md")
-  expect_code 0 "$?" "sub-bullets elaborate a receipted parent, they do not claim (got: $out)"
 
   out=$(run_check "$dir/sibling.md")
   expect_code 1 "$?" "a bullet at the same indentation is still a claim of its own"
   assert_contains "$out" "sibling.md:4" "the unreceipted sibling bullet must be flagged"
-  pass "fm-authority-receipts.sh: a bullet absorbs its indented continuations and sub-bullets"
+  pass "fm-authority-receipts.sh: a bullet keeps the indented evidence written under it"
+}
+
+# Claims do not inherit. The failure this check exists to catch is firstmate's
+# own substitution written beside the captain's real rulings, and indenting it
+# one level under a genuine dated quote must not be a way to carry it. The
+# reverse laundering matters just as much: a dated child does not receipt the
+# unreceipted parent it hangs from.
+test_a_sub_bullet_is_judged_on_its_own_text() {
+  local dir out
+  dir="$TMP_ROOT/nesting"; mkdir -p "$dir"
+  cat > "$dir/nested-claim.md" <<'EOF'
+## The captain decided
+
+- 2026-07-27: "An unmanned veer becomes physically violent."
+  - and gravity goes cabin-wide when you veer
+EOF
+  cat > "$dir/laundered-parent.md" <<'EOF'
+## The captain decided
+
+- Gravity goes when you veer.
+  - see the log for 2026-07-27
+EOF
+  out=$(run_check "$dir/nested-claim.md")
+  expect_code 1 "$?" "a claim nested under a real ruling must still be judged"
+  assert_contains "$out" "nested-claim.md:4" "the finding must point at the sub-bullet, not its parent"
+  assert_contains "$out" "and gravity goes cabin-wide when you veer" "the refusal must quote the nested claim"
+  assert_not_contains "$out" "physically violent" "the receipted parent must not be flagged"
+
+  out=$(run_check "$dir/laundered-parent.md")
+  expect_code 1 "$?" "a dated child must not receipt its parent"
+  assert_contains "$out" "laundered-parent.md:3" "the unreceipted parent must be flagged on its own line"
+  assert_contains "$out" "Gravity goes when you veer" "the refusal must quote the parent"
+  pass "fm-authority-receipts.sh: a sub-bullet neither borrows a receipt nor lends one"
 }
 
 # The gate itself. fm-spawn.sh reaches the brief checks before any backend or
@@ -395,6 +438,7 @@ test_absent_and_empty_inputs_refuse_rather_than_pass
 test_generated_briefs_pass_the_check
 test_the_scaffold_blessed_absence_entry_passes
 test_a_fenced_code_block_is_not_read_as_structure
-test_a_bullet_keeps_its_indented_continuations
+test_a_bullet_keeps_its_indented_evidence
+test_a_sub_bullet_is_judged_on_its_own_text
 test_spawn_refuses_a_brief_that_claims_the_captain_without_a_receipt
 test_help_includes_entire_header

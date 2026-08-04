@@ -40,13 +40,19 @@
 #   2. Inside that block, every table data row and every list item must carry a
 #      RECEIPT: a date (YYYY-MM-DD), a numbered ruling or decision, a quoted
 #      span, or a pointer to a captain-decision record. Prose is context, not a
-#      claim. A list item absorbs its continuation lines, so a bullet whose
-#      quote sits below it passes: an indented line, an indented line after a
-#      blank one, and a more-indented sub-bullet all belong to the bullet above
-#      them. A bullet at the same or lower indentation opens a new claim.
-#   3. A bullet that opens with "none" declares that there is nothing to record.
-#      It asserts nothing on his behalf, so it is not judged - which is what the
-#      brief scaffold tells firstmate to write when the captain ruled on nothing.
+#      claim. Evidence attaches, claims do not inherit. A bullet absorbs the
+#      lines below it that are not themselves list items, with or without a
+#      blank line between, so a bullet whose quote sits in an indented
+#      blockquote below it passes. Every list item is judged on its own text at
+#      any depth: a sub-bullet needs its own receipt, cannot borrow the one
+#      above it, and cannot lend its own to an unreceipted parent. The failure
+#      this was built from is a substitution written beside real rulings, and
+#      indenting it one level must not be a way to carry it.
+#   3. A bullet that is nothing but a declaration that there is nothing to
+#      record - "None recorded for this task." - asserts nothing on his behalf,
+#      so it is not judged. That is exactly what the brief scaffold tells
+#      firstmate to write when the captain ruled on nothing. A bullet that opens
+#      with "none" and then goes on to say something is judged like any other.
 #   4. Fenced code blocks (``` or ~~~) are skipped whole. Inside a fence no line
 #      is read as a heading, a list item, or a table row, so a shell comment in a
 #      sample cannot silently close an authority block and a literal bullet in
@@ -133,12 +139,13 @@ awk '
     return 0
   }
 
-  # A bullet that opens with "none" records that there is nothing to record.
-  # Anchored right after the list marker and bounded as a whole word, so it
-  # exempts a declaration of absence and not a claim that merely says "none".
+  # A bullet that records that there is nothing to record. The whole bullet has
+  # to be that declaration and nothing else: a comma, a colon, or any clause
+  # after it means the line went on to say something, and a line that says
+  # something under his heading is a claim like any other.
   function declares_absence(l,   t) {
     t = tolower(l)
-    return t ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+none([^a-z]|$)/
+    return t ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+none[a-z ]*[.]?[ \t]*$/
   }
 
   function is_heading(l)      { return l ~ /^ *#+ +/ }
@@ -222,9 +229,8 @@ awk '
     table_row = 0
 
     if (is_list_item(line)) {
-      # A more-indented bullet elaborates the one above it rather than making a
-      # claim of its own, so it is absorbed. Same or less indentation is new.
-      if (item_line > 0 && indent_of(line) > item_indent) { item_text = item_text " " line; next }
+      # Every bullet is judged on its own text, however deeply it is nested: a
+      # sub-bullet neither borrows the receipt above it nor lends it one.
       flush_item()
       item_line = FNR; item_text = line; item_first = line
       item_file = FILENAME; item_indent = indent_of(line)
