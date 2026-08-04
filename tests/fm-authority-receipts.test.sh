@@ -275,6 +275,36 @@ test_the_scaffold_blessed_absence_entry_passes() {
   pass "fm-authority-receipts.sh: the scaffold's blessed absence entry passes, a paraphrase does not"
 }
 
+# Punctuation is not what makes a bullet a claim. An earlier bound exempted any
+# bullet that opened with the letters "none" and carried no punctuation, so all
+# three claims below went out under the exemption unjudged. Each asserts a
+# mechanism on the captain's behalf and each must be refused; the two real
+# absence entries beside them must still pass, or the gate blocks the honest
+# common case through a check with no skip flag.
+test_an_unpunctuated_claim_is_not_an_absence_entry() {
+  local dir out claim
+  dir="$TMP_ROOT/absence-bound"
+  mkdir -p "$dir"
+
+  for claim in \
+    '- nonetheless gravity goes when you veer' \
+    '- none whatsoever gravity goes when you veer' \
+    '- none of the above and gravity goes cabin wide'
+  do
+    printf '# What the captain decided\n%s\n' "$claim" > "$dir/claim.md"
+    out=$(run_check "$dir/claim.md")
+    expect_code 1 "$?" "an unpunctuated claim must be judged, not exempted: $claim"
+    assert_contains "$out" "gravity goes" "the refusal must quote the claim: $claim"
+  done
+
+  for claim in '- None recorded for this task.' '- None.'; do
+    printf '# What the captain decided\n%s\n' "$claim" > "$dir/absent.md"
+    out=$(run_check "$dir/absent.md")
+    expect_code 0 "$?" "a bullet that only declares absence must pass (got: $out): $claim"
+  done
+  pass "fm-authority-receipts.sh: absence wording does not carry an unpunctuated claim out"
+}
+
 # A fenced block is a sample, not structure. Reading it as structure fails both
 # ways: a shell comment inside one closes the authority block, which is the
 # exact evasion this check exists to stop, and a literal bullet inside one is
@@ -383,6 +413,12 @@ EOF
 
 # The gate itself. fm-spawn.sh reaches the brief checks before any backend or
 # worktree side effect, so this creates no windows.
+#
+# The harness is named explicitly. Left off, fm-spawn.sh resolves it from
+# config/crew-harness and then from whatever harness it detects around itself,
+# and a suite running detached from any harness ancestry detects none - so spawn
+# aborts on the missing launch template long before the brief is read, and this
+# reads as the gate failing when the gate was never reached.
 run_spawn_gate() {
   local home=$1 id=$2 proj=$3
   FM_ROOT_OVERRIDE='' \
@@ -393,7 +429,7 @@ run_spawn_gate() {
     FM_CONFIG_OVERRIDE='' \
     FM_SPAWN_NO_GUARD=1 \
     FM_BACKEND=tmux \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" 2>&1
+    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude 2>&1
 }
 
 test_spawn_refuses_a_brief_that_claims_the_captain_without_a_receipt() {
@@ -437,6 +473,7 @@ test_block_ends_at_the_next_heading
 test_absent_and_empty_inputs_refuse_rather_than_pass
 test_generated_briefs_pass_the_check
 test_the_scaffold_blessed_absence_entry_passes
+test_an_unpunctuated_claim_is_not_an_absence_entry
 test_a_fenced_code_block_is_not_read_as_structure
 test_a_bullet_keeps_its_indented_evidence
 test_a_sub_bullet_is_judged_on_its_own_text

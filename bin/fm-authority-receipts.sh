@@ -140,12 +140,18 @@ awk '
   }
 
   # A bullet that records that there is nothing to record. The whole bullet has
-  # to be that declaration and nothing else: a comma, a colon, or any clause
-  # after it means the line went on to say something, and a line that says
-  # something under his heading is a claim like any other.
+  # to be that declaration and nothing else: any clause after it means the line
+  # went on to say something, and a line that says something under his heading is
+  # a claim like any other.
+  #
+  # The words allowed after none are a closed list rather than any run of
+  # letters. Unpunctuated prose is still prose: "none whatsoever gravity goes
+  # when you veer" and "none of the above and gravity goes cabin wide" each
+  # assert a mechanism on his behalf, so neither may ride out on the exemption.
+  # The list ends at none itself so that nonetheless cannot open a bullet either.
   function declares_absence(l,   t) {
     t = tolower(l)
-    return t ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+none[a-z ]*[.]?[ \t]*$/
+    return t ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+none([ \t]+(recorded|yet|so far|for this task))*[ \t]*[.]?[ \t]*$/
   }
 
   function is_heading(l)      { return l ~ /^ *#+ +/ }
