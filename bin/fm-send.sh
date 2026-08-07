@@ -315,6 +315,17 @@ if [ -n "$RESOLVE_KEYS" ]; then
       "$k"$'\t'*|*$'\n'"$k"$'\t'*) ;;
       *)
         echo "error: --resolve-key '$k': no open decision or blocker with that key in $RESOLVE_STATUS_FILE (already closed, mistyped, or transferred). Re-check the OPEN DECISIONS listing, then resend without that key or with the right one; nothing was sent." >&2
+        # One extra line for the single most common cause: the worker wrote the
+        # token AFTER the colon, where it keys nothing (contract:
+        # bin/fm-classify-lib.sh's key grammar), so the slug reads like a key in
+        # the worker's own text while the record really folded to "default".
+        # Advisory only - a hint printed on a path that already refused.
+        if [ -f "$RESOLVE_STATUS_FILE" ] && [ ! -L "$RESOLVE_STATUS_FILE" ] &&
+          awk -v k="[key=$k]" 'index($0, ":") > 0 {
+            if (index(substr($0, index($0, ":") + 1), k)) { found = 1; exit }
+          } END { exit found ? 0 : 1 }' "$RESOLVE_STATUS_FILE" 2>/dev/null; then
+          echo "hint: '$k' appears in that log only AFTER a colon, where it does not key the record - that decision opened under the key 'default'. Retry with --resolve-key default." >&2
+        fi
         exit 1
         ;;
     esac

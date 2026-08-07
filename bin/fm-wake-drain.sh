@@ -45,7 +45,7 @@ assert_watcher_liveness() {
 # common case.
 print_open_decisions_section() {
   local open task key verb note line global_bytes=4000
-  local output='' used=0 shown=0 omitted=0 bytes
+  local output='' used=0 shown=0 omitted=0 bytes misplaced=0
 
   open=$(scan_open_decisions_incremental "$STATE") || return 0
   [ -n "$open" ] || return 0
@@ -72,6 +72,14 @@ print_open_decisions_section() {
 "
     used=$((used + bytes))
     shown=$((shown + 1))
+    # A second "[key=...]" in the rendered entry came from the NOTE, which is on
+    # the wrong side of the colon and so keyed nothing (contract:
+    # bin/fm-classify-lib.sh's key grammar). The record itself is intact and is
+    # listed with the key that really closes it; the count below only stops that
+    # note slug from reading as that key, which otherwise sends the answerer to
+    # a --resolve-key the ledger refuses. Counted on the CAPPED line and only
+    # for entries actually shown, so the warning describes what is on screen.
+    case "${line#*]}" in *'[key='*) misplaced=$((misplaced + 1)) ;; esac
   done <<EOF
 $open
 EOF
@@ -87,6 +95,9 @@ EOF
   # depends on the busy worker writing a matching resolved line (contract:
   # bin/fm-send.sh header).
   printf "OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>' - <key> is the exact literal in that entry's [key=...], 'default' included.\n"
+  if [ "$misplaced" -gt 0 ]; then
+    printf 'OPEN DECISIONS: %d entry(ies) above carry a [key=...] inside the note text, after the colon, where it keys nothing - close those with the [key=...] printed before the state word, not the slug in the note.\n' "$misplaced"
+  fi
 }
 
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.

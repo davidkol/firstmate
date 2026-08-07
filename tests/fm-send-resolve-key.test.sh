@@ -194,6 +194,49 @@ test_not_open_key_refuses_before_send() {
   pass "fm-send --resolve-key: a key that is not open refuses loudly before anything is sent"
 }
 
+# The refusal above is correct but counterintuitive in its most common cause: the
+# worker wrote the token after the colon, so the slug is plainly visible in its
+# own text while the record folded to "default". Passing the visible slug is then
+# the obvious move and it refuses, mid-supervision, with the worker parked. The
+# refusal stays - reinterpreting the key would weaken the deliberate fold - but
+# it names the actual fix instead of leaving the operator to infer "default".
+test_misplaced_key_refusal_names_the_default_fallback() {
+  local dir fb log home err rc
+  dir="$TMP_ROOT/misplaced-key"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"; err="$dir/send.err"
+  home=$(setup_home misplaced-key)
+  fm_write_meta "$home/state/t9.meta" "window=sess:fm-t9" "kind=ship"
+  printf 'needs-decision: [key=review-gate] approve or not\n' > "$home/state/t9.status"
+
+  : > "$log"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t9 --resolve-key review-gate "the answer" >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a misplaced key token must still refuse rather than resolve"
+  assert_contains "$(cat "$err")" "Retry with --resolve-key default" \
+    "the refusal did not name the key that actually closes a misplaced-token decision"
+  [ ! -s "$log" ] || fail "a refused answer still typed text: $(cat "$log")"
+
+  # The hint is specific to that cause: an ordinary mistype must not draw it.
+  printf 'needs-decision [key=real-key]: choose\n' > "$home/state/t9.status"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t9 --resolve-key typo "the answer" >/dev/null 2>"$err" || true
+  if grep -F 'Retry with --resolve-key default' "$err" >/dev/null; then
+    fail "an ordinary mistype drew the misplaced-token hint: $(cat "$err")"
+  fi
+
+  # And the named fallback really is the key that closes it.
+  printf 'needs-decision: [key=review-gate] approve or not\n' > "$home/state/t9.status"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t9 --resolve-key default "approved" >/dev/null 2>"$err" \
+    || fail "answering against default failed: $(cat "$err")"
+  grep -F 'resolved' "$home/state/t9.status" >/dev/null \
+    || fail "the default fallback the hint names did not close the decision: $(cat "$home/state/t9.status")"
+  pass "fm-send --resolve-key: a misplaced key token refuses with the fallback key that closes it"
+}
+
 test_failed_send_does_not_close() {
   local dir fb log home rc out
   dir="$TMP_ROOT/send-fail"; mkdir -p "$dir"
@@ -319,6 +362,7 @@ test_answer_send_closes_open_decision
 test_answer_starts_work_never_orphans
 test_routine_steer_never_closes
 test_not_open_key_refuses_before_send
+test_misplaced_key_refusal_names_the_default_fallback
 test_failed_send_does_not_close
 test_multiple_keys_close_together
 test_local_secondmate_answer_marked_and_closed

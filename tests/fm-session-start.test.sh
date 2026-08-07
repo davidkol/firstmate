@@ -994,7 +994,7 @@ EOF
   make_fake_ps_claude "$fakebin"
   make_fake_tmux "$fakebin" "fm-sess:live"
 
-  lede='needs-decision: [key=cap] pick the rendering strategy'
+  lede='needs-decision [key=cap]: pick the rendering strategy'
   printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-cap.meta"
   {
     printf '%s' "$lede"

@@ -204,7 +204,73 @@ test_over_long_decision_note_is_capped_with_a_marker() {
   pass "an over-long open decision is cut to the shared per-line cap with its truncation marker"
 }
 
+# A "[key=...]" token written AFTER the colon keys nothing: the record folds to
+# "default" and the slug survives as note text. That fold is deliberate and stays,
+# but it used to be silent, and the listing then showed a slug that looks exactly
+# like a key next to a key the operator could not see was different - so the
+# obvious --resolve-key was the note slug, which the ledger refuses outright,
+# mid-supervision, with a worker parked. The record must still be listed in full;
+# only the ambiguity gets a warning.
+test_misplaced_key_token_is_flagged_not_dropped() {
+  local dir state out
+  dir=$(make_case misplaced-key)
+  state="$dir/state"
+  out="$dir/drain.out"
+  printf 'needs-decision: [key=review-gate] approve the gate or not\n' > "$state/task-mis.status"
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on a misplaced key token"
+
+  grep -F 'task-mis [key=default] needs-decision: [key=review-gate] approve the gate or not' "$out" >/dev/null \
+    || fail "a misplaced key token cost the record its listing or its real key: $(cat "$out")"
+  grep -F 'carry a [key=...] inside the note text' "$out" >/dev/null \
+    || fail "a misplaced key token was folded silently, with no warning: $(cat "$out")"
+
+  # The warning is precise: a correctly keyed decision must not draw it.
+  printf 'needs-decision [key=review-gate]: approve the gate or not\n' > "$state/task-ok.status"
+  rm -f "$state/task-mis.status" "$state/.task-mis.open-decisions-cursor"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on a correctly keyed decision"
+  grep -F 'task-ok [key=review-gate] needs-decision:' "$out" >/dev/null \
+    || fail "a correctly keyed decision stopped listing"
+  if grep -F 'inside the note text' "$out" >/dev/null; then
+    fail "a correctly keyed decision drew the misplaced-token warning: $(cat "$out")"
+  fi
+  pass "a key token written after the colon is listed with its real key and flagged, never dropped"
+}
+
+# The token in the RIGHT position with an unreadable slug. The line used to fold
+# to nothing at all, so a parked worker's escalation never reached this listing -
+# a silent supervision failure, which is worse than a mis-keyed record. Opening
+# verbs now fall back to "default"; closing verbs stay inert, so a typo can never
+# silently close a decision nobody answered.
+test_unreadable_key_slug_still_opens_but_never_closes() {
+  local dir state out
+  dir=$(make_case unreadable-key)
+  state="$dir/state"
+  out="$dir/drain.out"
+  printf 'needs-decision [key=bad slug!]: the escalation still has to be seen\n' > "$state/task-bad.status"
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on an unreadable key slug"
+  grep -F 'task-bad [key=default] needs-decision: the escalation still has to be seen' "$out" >/dev/null \
+    || fail "an unreadable key slug silently dropped the whole escalation: $(cat "$out")"
+
+  # A resolving line whose slug is equally unreadable must NOT close it.
+  printf 'resolved [key=bad slug!]: typo in the closing key too\n' >> "$state/task-bad.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed after an unreadable resolving key"
+  grep -F 'task-bad [key=default] needs-decision:' "$out" >/dev/null \
+    || fail "an unreadable resolving key silently closed a decision nobody answered: $(cat "$out")"
+
+  # The readable closing key the record actually carries still closes it.
+  printf 'resolved: answered against the fallback key\n' >> "$state/task-bad.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed after the readable resolution"
+  if grep -F 'task-bad' "$out" >/dev/null; then
+    fail "the decision stayed open after a resolution against its real key: $(cat "$out")"
+  fi
+  pass "an unreadable key slug still opens the decision under default and never closes one"
+}
+
 test_buried_decision_still_surfaces
+test_misplaced_key_token_is_flagged_not_dropped
+test_unreadable_key_slug_still_opens_but_never_closes
 test_over_long_decision_note_is_capped_with_a_marker
 test_explicit_resolution_closes_it
 test_later_unrelated_terminal_line_does_not_close_it

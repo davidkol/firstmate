@@ -165,6 +165,14 @@ status_is_paused_or_captain_held() {  # <status-line>
 #   resolved       [key=api-shape]: <how it was decided>
 # A line with no token uses the key "default", preserving the historical
 # one-open-decision-per-task behavior (a bare "resolved:" closes "default").
+# That fold-to-default is deliberate and load-bearing, so a token written on the
+# WRONG side of the colon ("needs-decision: [key=x] ...") is not a token at all:
+# the record opens under "default" and closes only against "default", while the
+# slug the writer intended survives as ordinary note text. bin/fm-wake-drain.sh
+# flags that shape in its listing rather than reinterpreting it, and
+# bin/fm-brief.sh's status protocol states the position with a literal example.
+# For a token in the RIGHT position whose slug is unreadable, see the asymmetric
+# handling in _fm_decision_fold_line below.
 # The three parsers are pure reads of a single line; the verb parser strips any
 # key token before the colon so the leading word is recovered cleanly.
 status_line_verb() {  # <status-line> -> leading verb word
@@ -221,7 +229,20 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
   stripped=${line//[[:space:]]/}
   [ -n "$stripped" ] || { printf '%s' "$open"; return 0; }
   verb=$(status_line_verb "$line")
-  key=$(_fm_decision_key "$line") || { printf '%s' "$open"; return 0; }
+  if ! key=$(_fm_decision_key "$line"); then
+    # The token sits in the right position but its slug is unreadable. Handled
+    # ASYMMETRICALLY on purpose, because the two directions have opposite worst
+    # cases: an OPENING verb still opens, under the same "default" key an
+    # unkeyed line uses, so a worker's escalation can never be lost outright to
+    # a typo in its own key - a dropped needs-decision is a silent supervision
+    # failure, which is strictly worse than a mis-keyed one. A CLOSING verb
+    # stays inert, so a typo can never silently close a decision nobody
+    # answered. Both directions err toward the record staying visible.
+    case "$verb" in
+      needs-decision|blocked) key=default ;;
+      *) printf '%s' "$open"; return 0 ;;
+    esac
+  fi
   case "$verb" in
     needs-decision|blocked)
       note=$(status_line_note "$line")
@@ -512,6 +533,10 @@ _fm_status_open_activities_stream() {
     stripped=${line//[[:space:]]/}
     [ -n "$stripped" ] || continue
     verb=$(status_line_verb "$line")
+    # An unreadable slug skips the line here, deliberately unlike the decision
+    # ledger's open-under-"default" fallback in _fm_decision_fold_line: this fold
+    # is non-authoritative supersession evidence, so a skipped phase costs a hint
+    # rather than losing a worker's request for help.
     key=$(_fm_decision_key "$line") || continue
     case "$verb" in
       working|"$pause")

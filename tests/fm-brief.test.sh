@@ -669,6 +669,57 @@ test_pause_verb_override_renders_all_brief_scaffolds() {
   pass "fm-brief.sh: custom pause verb renders in every scaffold"
 }
 
+# The decision-key token's POSITION. The grammar puts "[key=<slug>]" between the
+# verb and the colon (bin/fm-classify-lib.sh), and the scaffold used to name the
+# token without ever saying where it goes - it showed only the unkeyed literal
+# `resolved:` and then said "same [key=<slug>] if you opened it with one". Three
+# keyed decisions were written across three tasks by three workers who could not
+# have copied each other, and all three guessed colon-then-bracket, which keys
+# nothing and folds to "default". Every scaffold must therefore state the
+# position AND show it in a literal example of both the opening and the closing
+# line, and no scaffold may contain the wrong form anywhere for a worker to copy.
+test_status_protocol_states_where_the_decision_key_goes() {
+  local home brief kind
+  home="$TMP_ROOT/key-position-home"
+  mkdir -p "$home/data"
+  write_registry "$home"
+
+  for kind in ship scout secondmate; do
+    case "$kind" in
+      ship) FM_HOME="$home" "$ROOT/bin/fm-brief.sh" keypos-ship direct-proj >/dev/null 2>&1
+            brief="$home/data/keypos-ship/brief.md" ;;
+      scout) FM_HOME="$home" "$ROOT/bin/fm-brief.sh" keypos-scout direct-proj --scout >/dev/null 2>&1
+            brief="$home/data/keypos-scout/brief.md" ;;
+      secondmate) FM_HOME="$home" FM_SECONDMATE_CHARTER='sample domain' \
+            "$ROOT/bin/fm-brief.sh" keypos-mate --secondmate --no-projects >/dev/null 2>&1
+            brief="$home/data/keypos-mate/brief.md" ;;
+    esac
+    assert_present "$brief" "$kind: key-position brief was not scaffolded"
+    assert_grep 'BETWEEN the verb and the colon' "$brief" \
+      "$kind brief never says where the [key=<slug>] token goes"
+    # A brief that only describes the position still leaves the writer composing
+    # the line from prose. The literal both-line example is the half that makes
+    # the shape copyable, so pin both lines, not just the opening one. The
+    # charter carries its own pair for routed-work phases and points the
+    # position sentence at it rather than repeating a second example.
+    if [ "$kind" = secondmate ]; then
+      assert_grep 'working [key=<work-slug>]: {material phase}' "$brief" \
+        "$kind brief has no literal example of a correctly keyed opening line"
+      assert_grep 'resolved [key=<work-slug>]: {why it is no longer active}' "$brief" \
+        "$kind brief has no literal example of a correctly keyed resolving line"
+    else
+      assert_grep 'needs-decision [key=api-shape]: REST or RPC' "$brief" \
+        "$kind brief has no literal example of a correctly keyed opening line"
+      assert_grep 'resolved [key=api-shape]: went with REST' "$brief" \
+        "$kind brief has no literal example of a correctly keyed resolving line"
+    fi
+    if grep -F ': [key=' "$brief" >/dev/null; then
+      fail "$kind brief contains the wrong colon-then-bracket form a worker would copy: $(grep -n -F ': [key=' "$brief")"
+    fi
+  done
+  pass "fm-brief.sh: every scaffold states and demonstrates the decision key's position"
+}
+
 test_scout_and_secondmate_load_decision_hold_policy() {
   local home scout charter
   home="$TMP_ROOT/decision-policy-home"
@@ -1133,6 +1184,7 @@ test_herdr_lab_contract_applies_to_scouts_but_not_secondmates
 test_secondmate_no_projects_charter
 test_secondmate_marked_request_reporting_contract
 test_pause_verb_override_renders_all_brief_scaffolds
+test_status_protocol_states_where_the_decision_key_goes
 test_scout_and_secondmate_load_decision_hold_policy
 test_provenance_split_separates_rulings_from_inference
 test_ship_checklist_is_in_the_brief
