@@ -24,6 +24,17 @@
 #       "The bound was hit" and "the run never started" are opposite advice -
 #       one says raise the bound, the other says the bound was never reached -
 #       so they must never share a status.
+#       A command KILLED BY A SIGNAL reports the shell's 128+signal on every
+#       mechanism - never 0, and never 124. Callers read a non-zero status as
+#       "my output is incomplete", so a mechanism that swallowed a signal death
+#       would hand them a partial result labelled complete. That is why the perl
+#       branch reads the signal half of the wait status instead of `$? >> 8`,
+#       and why a 137 from an external runner passes through instead of being
+#       folded into 124: GNU and BSD timeout both report their OWN deadline as
+#       124 even when the -k escalation had to send KILL, so a 137 surfacing
+#       from the runner means something ELSE killed the command.
+#       A command that cannot be executed reports 127 (not found) or 126 (found,
+#       not executable) on every mechanism, as GNU timeout does.
 #
 # A non-positive bound is not a bound: `timeout 0` and the perl fallback's
 # `alarm 0` both disable the deadline, so callers must reject 0 before calling.
@@ -119,10 +130,11 @@ fm_run_external_timeout() {
     ''|*[!0-9]*) ;;
     *) [ "$command_rc" -le 255 ] && return "$command_rc" ;;
   esac
-  case "$runner_rc" in
-    124|137) return 124 ;;
-    *) return "$runner_rc" ;;
-  esac
+  # No status file means the command never returned normally, so the runner's
+  # own status is the honest answer: 124 is its deadline, and anything else is
+  # the command's abnormal death or the runner's own failure. Those must stay
+  # distinguishable - a caller told "the bound was hit" raises the bound.
+  return "$runner_rc"
 }
 
 fm_run_timed() {  # <seconds> <command...>
@@ -132,8 +144,26 @@ fm_run_timed() {  # <seconds> <command...>
     timeout) fm_run_external_timeout timeout "$seconds" "$@" ;;
     gtimeout) fm_run_external_timeout gtimeout "$seconds" "$@" ;;
     perl)
-      perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit($? >> 8)' \
-        "$seconds" "$@"
+      perl -e '
+        my $t = shift;
+        my $pid = fork;
+        die "fork failed" unless defined $pid;
+        if (!$pid) {
+          setpgrp(0, 0);
+          exec @ARGV;
+          exit($! == 2 ? 127 : 126);
+        }
+        local $SIG{ALRM} = sub {
+          kill "TERM", -$pid;
+          select undef, undef, undef, 0.2;
+          kill "KILL", -$pid;
+          exit 124;
+        };
+        alarm $t;
+        waitpid $pid, 0;
+        my $wait_status = $?;
+        exit($wait_status & 127 ? 128 + ($wait_status & 127) : $wait_status >> 8);
+      ' "$seconds" "$@"
       ;;
     bash) fm_run_bash_timeout "$seconds" "$@" ;;
     *) return 125 ;;

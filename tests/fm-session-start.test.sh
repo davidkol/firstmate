@@ -23,6 +23,9 @@
 #   - every OTHER abnormal child death - a signal, a bounded run that could never
 #     start - gets the same banner, naming its real status and the remedy that
 #     fits it, and never blames a bound that was never reached
+#   - that banner contract holds on the timeout mechanism THIS host selects, not
+#     only on the forced pure-Bash fallback, because a mechanism that reports a
+#     signal-killed child as success would deliver a partial digest silently
 #   - the parent/child handshake stays inside this script: no subprocess of the
 #     digest inherits the child marker or the breadcrumb path
 #   - --reemit: startup's mutating sweeps are skipped, the wake drain is not,
@@ -1443,6 +1446,12 @@ SH
   chmod +x "$fakebin/$name"
 }
 
+# A `timeout` that escalates TERM to KILL, exactly as GNU/BSD timeout do under
+# `-k`, and - also exactly as they do - reports its OWN deadline as 124 even
+# when the escalation had to send KILL. Only --preserve-status, which this repo
+# never passes, makes real timeout report the command's 128+signal instead. Its
+# non-deadline path propagates a signal death as 128+signal, so a command killed
+# by something other than this deadline stays distinguishable from it.
 make_term_escalating_timeout() {
   local fakebin=$1
   cat > "$fakebin/timeout" <<'SH'
@@ -1457,18 +1466,31 @@ defined $pid or die "fork failed";
 if (!$pid) {
   setpgrp(0, 0);
   exec @ARGV;
+  exit($! == 2 ? 127 : 126);
 }
 local $SIG{ALRM} = sub {
   kill 'TERM', -$pid;
   select undef, undef, undef, $kill_after;
   kill 'KILL', -$pid;
   waitpid $pid, 0;
-  exit 137;
+  exit 124;
 };
 alarm $seconds;
 waitpid $pid, 0;
 alarm 0;
-exit($? >> 8);
+exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
+SH
+  chmod +x "$fakebin/timeout"
+}
+
+# A `timeout` that is itself SIGKILLed - an OOM sweep or an external kill, not a
+# deadline. Real timeout surfaces that as 137, which must never be read as "the
+# bound was hit": the bound was never reached, so raising it cannot help.
+make_externally_killed_timeout() {
+  local fakebin=$1
+  cat > "$fakebin/timeout" <<'SH'
+#!/usr/bin/env bash
+kill -KILL $$
 SH
   chmod +x "$fakebin/timeout"
 }
@@ -1645,6 +1667,101 @@ SH
     bash -c 'exit 137' || status=$?
   expect_code 137 "$status" "natural command exit 137"
   pass "the portable timeout path force-kills a command that ignores TERM"
+}
+
+# GNU and BSD timeout both report their OWN deadline as 124 even when the -k
+# escalation had to send KILL, so a 137 surfacing from the runner means
+# something else killed it - an OOM sweep, an external kill. Folding that into
+# 124 tells the agent to raise a bound that was never reached, which is the
+# exact mis-blame the pure-Bash path already avoids.
+test_external_timeout_137_is_not_a_bound_hit() {
+  local fakebin="$TMP_ROOT/external-killed-timeout" status=0 mechanism
+  mkdir -p "$fakebin"
+  make_externally_killed_timeout "$fakebin"
+
+  mechanism=$(env PATH="$fakebin:$BASE_PATH" bash -c '. "$1"; fm_timeout_mechanism' \
+    _ "$ROOT/bin/fm-timeout-lib.sh")
+  [ "$mechanism" = timeout ] || fail "the external-runner fixture selected '$mechanism' instead"
+
+  # stderr is dropped only to keep the shell's own "Killed: 9" job notice for the
+  # fixture out of the suite's output, where it reads like a failure.
+  env PATH="$fakebin:$BASE_PATH" bash -c '. "$1"; fm_run_timed 30 true' \
+    _ "$ROOT/bin/fm-timeout-lib.sh" 2>/dev/null || status=$?
+  expect_code 137 "$status" "a SIGKILLed runner was reported as the bound being hit"
+
+  pass "a 137 from the external runner stays an abnormal death, never the bound's 124"
+}
+
+# Every runtime-bound case above forces FM_TIMEOUT_MECHANISM_OVERRIDE=bash or a
+# fixture runner, so none of them sees the mechanism a real host selects:
+# fm_timeout_mechanism picks perl whenever neither timeout nor gtimeout is
+# installed, which is stock macOS, and that branch has to read the signal half
+# of the wait status itself. The whole banner contract rests on a non-zero
+# status reaching the caller, so pin it against whatever this host resolves to.
+test_timeout_lib_contract_holds_on_the_selected_mechanism() {
+  local mechanism status=0
+  mechanism=$(bash -c '. "$1"; fm_timeout_mechanism' _ "$ROOT/bin/fm-timeout-lib.sh")
+
+  bash -c '. "$1"; fm_run_timed 30 bash -c "kill -TERM \$\$"' \
+    _ "$ROOT/bin/fm-timeout-lib.sh" || status=$?
+  expect_code 143 "$status" "the '$mechanism' mechanism swallowed a SIGTERM death"
+
+  status=0
+  bash -c '. "$1"; fm_run_timed 30 bash -c "kill -KILL \$\$"' \
+    _ "$ROOT/bin/fm-timeout-lib.sh" || status=$?
+  expect_code 137 "$status" "the '$mechanism' mechanism swallowed a SIGKILL death"
+
+  status=0
+  bash -c '. "$1"; fm_run_timed 30 bash -c "exit 42"' \
+    _ "$ROOT/bin/fm-timeout-lib.sh" || status=$?
+  expect_code 42 "$status" "the '$mechanism' mechanism lost a normal command status"
+
+  status=0
+  bash -c '. "$1"; fm_run_timed 1 sleep 30' \
+    _ "$ROOT/bin/fm-timeout-lib.sh" || status=$?
+  expect_code 124 "$status" "the '$mechanism' mechanism stopped reporting its own deadline as 124"
+
+  status=0
+  bash -c '. "$1"; fm_run_timed 30 /nonexistent/fm-timeout-probe' \
+    _ "$ROOT/bin/fm-timeout-lib.sh" 2>/dev/null || status=$?
+  expect_code 127 "$status" "the '$mechanism' mechanism did not report an unrunnable command as 127"
+
+  pass "the '$mechanism' mechanism this host selects keeps signal deaths, its deadline, and an unrunnable command distinct"
+}
+
+# The same abnormal-exit banner, driven end to end through the mechanism this
+# host actually selects. Without this, a mechanism that reports a signal-killed
+# child as success passes every case above while the hook delivers a partial
+# digest with no banner at all - under a READ-ONCE CONTRACT that already told
+# the agent everything below it was complete.
+test_runtime_bound_reports_a_signal_death_on_the_selected_mechanism() {
+  local rec root home fakebin out status=0 mechanism
+  rec=$(new_world runtime-bound-host-mechanism)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  make_group_killed_tool "$fakebin" git
+
+  mechanism=$(env PATH="$fakebin:$BASE_PATH" bash -c '. "$1"; fm_timeout_mechanism' \
+    _ "$ROOT/bin/fm-timeout-lib.sh")
+
+  # A generous budget: the child must die of the signal, not of the deadline.
+  out=$(FM_SESSION_START_TIMEOUT=120 \
+    run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
+
+  expect_code 0 "$status" "a signal-killed session start must still exit 0 so the session can open"
+  assert_contains "$out" "STARTUP TRUNCATED - SESSION START DIED WITH EXIT STATUS" \
+    "the '$mechanism' mechanism delivered a partial digest with no banner at all"
+  assert_not_contains "$out" "HIT ITS" "a signal death was reported as a runtime-bound hit"
+  assert_contains "$out" 'stopped during the "bootstrap" stage' \
+    "the banner did not name the stage the child died in"
+  assert_not_contains "$out" "NEXT STEP" "a digest that died part-way claimed to have reached its closing reminder"
+  assert_absent "$home/state/.session-start-complete" \
+    "a session start that died part-way recorded itself as complete"
+
+  pass "a signal-killed digest still gets its banner on the '$mechanism' mechanism this host selects"
 }
 
 test_runtime_bound_leaves_a_healthy_digest_untouched() {
@@ -2124,6 +2241,9 @@ test_runtime_bound_reports_a_child_that_died_without_timing_out
 test_bounded_run_that_could_not_start_is_not_a_bound_hit
 test_runtime_bound_reports_a_run_it_could_not_start
 test_portable_timeout_escalates_term_resistant_process
+test_external_timeout_137_is_not_a_bound_hit
+test_timeout_lib_contract_holds_on_the_selected_mechanism
+test_runtime_bound_reports_a_signal_death_on_the_selected_mechanism
 test_runtime_bound_leaves_a_healthy_digest_untouched
 test_runtime_bound_survives_an_unavailable_breadcrumb
 test_runtime_bound_leaves_harness_ancestry_headroom

@@ -47,6 +47,7 @@ Individual steps are not all bounded - bootstrap's fleet sync is, but its `gh au
 `bin/fm-timeout-lib.sh` is the shared owner of that bound, and it falls back to a pure-Bash process-group watchdog when timeout, gtimeout, and perl are unavailable, so no supported host runs the digest unbounded.
 Because the child writes straight to the hook's stdout, everything emitted before the bound was hit is already delivered; the parent then prints a `STARTUP TRUNCATED` banner naming the stage that did not finish and the stages that were therefore never emitted, and still exits 0.
 Every non-zero child status gets that banner, not only the bound's 124: the digest exits 0 on every path it completes, so a signal death, a bounded run that could never start (125, most often an unusable `TMPDIR`), or an abort part-way through all mean the same thing to the reader, and the banner names the actual status and the remedy that fits it rather than advising a bigger bound that cannot help.
+That rests on all four timeout mechanisms agreeing on what they report, which `bin/fm-timeout-lib.sh` owns: a signal-killed command surfaces as the shell's 128+signal on every one of them, so 124 stays reserved for a deadline the digest really reached.
 The registered hook timeouts sit above that budget so the harness never preempts the banner.
 
 ## Shared wrapper and safety
