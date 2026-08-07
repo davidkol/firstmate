@@ -68,6 +68,9 @@ make_fake_root() {
   # fm-busy-lib.sh: teardown sources it to retire the task's semantic busy-state
   # record and the incarnation token it is bound to.
   ln -s "$ROOT/bin/fm-busy-lib.sh" "$fake/bin/fm-busy-lib.sh"
+  # fm-nm-run-lib.sh: teardown sources it for the shared run-attribution rule
+  # its pre-teardown parked-run abort binds on.
+  ln -s "$ROOT/bin/fm-nm-run-lib.sh" "$fake/bin/fm-nm-run-lib.sh"
   # fm-guard.sh: stub (teardown calls it with `|| true`).
   cat > "$fake/bin/fm-guard.sh" <<'SH'
 #!/usr/bin/env bash
@@ -171,6 +174,9 @@ test_teardown_skips_gracefully_without_tasktmp() {
   # fm-busy-lib.sh: teardown sources it to retire the task's semantic busy-state
   # record and the incarnation token it is bound to.
   ln -s "$ROOT/bin/fm-busy-lib.sh" "$fake/bin/fm-busy-lib.sh"
+  # fm-nm-run-lib.sh: teardown sources it for the shared run-attribution rule
+  # its pre-teardown parked-run abort binds on.
+  ln -s "$ROOT/bin/fm-nm-run-lib.sh" "$fake/bin/fm-nm-run-lib.sh"
   cat > "$fake/bin/fm-guard.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0

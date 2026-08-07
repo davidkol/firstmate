@@ -11,7 +11,39 @@ metadata:
 # stow
 
 Sweep this session for durable knowledge that only exists in conversation right now, and write it to the disk locations firstmate already prints in the next session-start context digest.
-The goal is a session that is safe to reset or destroy because everything durable has already been captured.
+The goal is a session that is safe to reset or destroy because everything durable has already been captured, and that leaves the next session a compact current operating map rather than an accumulating journal.
+
+## Required startup-memory pass
+
+Every `/stow` invocation performs this complete pass, even when the session contains no new finding.
+
+1. Run `bin/fm-startup-memory-budget.sh report` before considering a write.
+   Record its effective budget and each file's estimated-token total.
+   The helper's stable estimate is the documented conservative local approximation, not provider-exact accounting.
+   If it rejects the setting or a memory file, do not infer a default or silently continue.
+   Report that concrete exception and do not call the session reset-safe.
+2. Read every current memory file completely: `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`.
+   Treat an absent local file as absent, not as an invitation to manufacture content.
+   In a primary home, all three are curation inputs under their existing ownership rules.
+   In a secondmate home, `data/captain-shared.md` is a read-only primary-owned input: count it, never edit it, and curate only the editable local files.
+3. Build one whole-file retention plan before editing.
+   Retain, in order: current captain preferences, authority and safety boundaries, and recurring working style; stable home-local operating facts that repeatedly affect future work and are expensive to rediscover; then concise pointers to an existing authoritative report, project document, configuration, or backlog item.
+   Retain lower-priority material only while budget remains.
+4. Consolidate every editable memory file as needed, not only the file apparently related to a new finding.
+   Prefer one concise current rule or authoritative pointer over duplicate prose.
+   Remove, merge, or route completed incident and release chronology, stale versions and paths, transient task state, resolved alternatives, old metrics, superseded claims, duplicates, and report-sized procedures.
+   Do not remove a unique current fact unless it is preserved directly elsewhere through a stronger existing owner.
+5. Run `bin/fm-startup-memory-budget.sh report` again after the complete pass.
+   Finish at or below the effective budget unless a concrete inability remains.
+   A secondmate must explicitly report `primary-owned-shared-file-alone-exceeds-budget` when the inherited shared file alone exceeds its allowance, because local curation cannot resolve it.
+   Any other unresolved excess must identify the fact that cannot safely be removed or routed and why.
+
+A net increase is allowed only for a genuinely new current fact with no stronger owner.
+Before allowing it, consolidate enough lower-priority material to remain within budget.
+Never describe the session as reset-safe while the memory total is over budget or an exception is unresolved.
+
+Being over budget is a curation signal, never a reason to block or skip the sweep.
+The budget is reported on demand here; it is not a session-start gate, and nothing in the startup path fails because a memory file is large.
 
 ## What it does
 
@@ -54,8 +86,15 @@ The goal is a session that is safe to reset or destroy because everything durabl
    Do not invent other graduation paths.
 
 5. **Report to the captain.**
-   Summarize, in plain outcome language (section 9): what was stowed and where, what was filed to the backlog, and whether the session is now safe to reset or destroy - i.e. whether every durable finding from this sweep now lives on disk rather than only in this conversation.
+   Summarize in plain outcome language (section 9), covering all of these facts:
+   - effective startup-memory budget and total estimated tokens before and after;
+   - one or more actions for each of `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`: `unchanged`, `added`, `rewritten`, `pruned`, or `routed`;
+   - what was stowed and where, and each durable finding filed outside memory with its authoritative owner;
+   - every unresolved exception, including a primary-owned shared-file constraint in a secondmate home;
+   - whether the session is safe to reset, only when every durable finding from this sweep lives on disk rather than only in this conversation and the post-pass result is within budget with no exception.
+
    If something could not be captured yet (for example, project-intrinsic knowledge waiting on a crewmate to land it), say so explicitly rather than reporting the session fully safe.
+   Do not hide an over-budget result behind a reset-safe claim.
 
 ## Promoting a learning into the tracked repo
 

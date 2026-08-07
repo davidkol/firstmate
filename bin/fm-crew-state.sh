@@ -78,6 +78,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/fm-nm-run-lib.sh
+. "$SCRIPT_DIR/fm-nm-run-lib.sh"
 
 ID=${1:-}
 [ -n "$ID" ] || { echo "usage: fm-crew-state.sh <id>" >&2; exit 2; }
@@ -414,40 +416,22 @@ nm_runs_status_for_branch() {  # <branch>
 CREW_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 
 # 0 if the active axi-status run's head field matches this worktree's code
-# identity. Branch match is a precondition (caller). Rules:
-#   - missing/empty head field: cannot bind; reject the run
-#   - equal commits (short or full SHA): match
-#   - worktree HEAD is an ancestor of run head: match (pipeline fix commits on
-#     the same history advanced the run tip)
-#   - run head is a strict ancestor of worktree HEAD: no match (local work
-#     advanced outside the run)
-#   - diverged / run head not in this worktree: no match (rewritten branch tip)
+# identity. Branch match is a precondition (caller). The matching rule itself
+# is owned by bin/fm-nm-run-lib.sh's fm_nm_head_matches_worktree, shared with
+# bin/fm-teardown.sh's pre-teardown run abort so both bind a run to a worktree
+# by exactly the same contract; this wrapper only supplies the head field from
+# the captured $RUN_OUT.
 nm_run_head_matches_worktree() {
-  local run_head local_full run_full
+  local run_head
   run_head=$(strip_quotes "$(nm_field head)")
-  [ -n "$run_head" ] || return 1
-  local_full=$(git -C "$WT" rev-parse HEAD 2>/dev/null) || return 1
-  run_full=$(git -C "$WT" rev-parse --verify "${run_head}^{commit}" 2>/dev/null) || return 1
-  [ "$run_full" = "$local_full" ] && return 0
-  if git -C "$WT" merge-base --is-ancestor "$local_full" "$run_full" 2>/dev/null; then
-    return 0
-  fi
-  return 1
+  fm_nm_head_matches_worktree "$WT" "$run_head"
 }
 
 # Coarse runs-list rows are "<status> <branch> <short-sha> ...". 0 if the short
-# sha for this branch row matches the worktree head under the same rules as
-# nm_run_head_matches_worktree (equal, or local is ancestor of run tip).
+# sha for this branch row matches the worktree head under the same shared rule,
+# taking the sha as an argument rather than reading it from $RUN_OUT.
 nm_coarse_head_matches_worktree() {  # <short-sha>
-  local run_head=$1 local_full run_full
-  [ -n "$run_head" ] || return 1
-  local_full=$(git -C "$WT" rev-parse HEAD 2>/dev/null) || return 1
-  run_full=$(git -C "$WT" rev-parse --verify "${run_head}^{commit}" 2>/dev/null) || return 1
-  [ "$run_full" = "$local_full" ] && return 0
-  if git -C "$WT" merge-base --is-ancestor "$local_full" "$run_full" 2>/dev/null; then
-    return 0
-  fi
-  return 1
+  fm_nm_head_matches_worktree "$WT" "$1"
 }
 
 HAVE_RUN=0
