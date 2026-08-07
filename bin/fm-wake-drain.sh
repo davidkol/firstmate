@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$SCRIPT_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/fm-line-cap-lib.sh
+. "$SCRIPT_DIR/fm-line-cap-lib.sh"
 
 DRAIN_TMP=
 DRAIN_LOCK_HELD=false
@@ -42,8 +44,8 @@ assert_watcher_liveness() {
 # Bounded and silent: prints nothing when no decision is open, which is the
 # common case.
 print_open_decisions_section() {
-  local open task key verb note line item_bytes=220 global_bytes=4000
-  local output='' used=0 shown=0 omitted=0 bytes suffix keep
+  local open task key verb note line global_bytes=4000
+  local output='' used=0 shown=0 omitted=0 bytes
 
   open=$(scan_open_decisions_incremental "$STATE") || return 0
   [ -n "$open" ] || return 0
@@ -53,11 +55,11 @@ print_open_decisions_section() {
     line="$task"
     [ "$key" = default ] || line="$line [key=$key]"
     line="$line $verb: $note"
-    if [ $(( ${#line} + 1 )) -gt "$item_bytes" ]; then
-      suffix=' [truncated]'
-      keep=$((item_bytes - ${#suffix} - 1))
-      line="${line:0:$keep}$suffix"
-    fi
+    # Per-line cut is owned by fm-line-cap-lib.sh so this section and the
+    # closing line fm-send.sh appends share one marker and one limit; this
+    # function still owns the global budget and its "N more omitted" line.
+    fm_cap_line_var "$line"
+    line=$FM_LINE_CAP_LINE
     bytes=$(( ${#line} + 1 ))
     if [ $((used + bytes)) -gt "$global_bytes" ]; then
       omitted=$((omitted + 1))
@@ -77,6 +79,11 @@ EOF
   if [ "$omitted" -gt 0 ]; then
     printf 'OPEN DECISIONS: %d more omitted (byte cap)\n' "$omitted"
   fi
+  # Answerer-closes hint, printed at exactly the moment an answer gets written:
+  # the send that answers a listed decision also closes it, so closure never
+  # depends on the busy worker writing a matching resolved line (contract:
+  # bin/fm-send.sh header).
+  printf "OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'\n"
 }
 
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
