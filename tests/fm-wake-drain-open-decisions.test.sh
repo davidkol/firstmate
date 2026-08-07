@@ -127,6 +127,26 @@ test_buried_decision_surfaces_on_the_empty_queue_fast_path() {
   pass "a buried open decision surfaces even when the wake queue itself is empty"
 }
 
+test_unkeyed_decision_renders_its_literal_default_key() {
+  local dir state out
+  dir=$(make_case unkeyed-default-key)
+  state="$dir/state"
+  out="$dir/drain.out"
+  # The dominant case: the worker briefs instruct a bare `needs-decision: ...`
+  # with no [key=...] token, which opens the implicit "default" key. The
+  # listing must print that literal, because it is exactly what an operator
+  # has to pass to --resolve-key to close the record.
+  printf 'needs-decision: pick A or B\n' > "$state/task9.status"
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on an unkeyed decision"
+
+  grep -F 'task9 [key=default] needs-decision: pick A or B' "$out" >/dev/null \
+    || fail "an unkeyed decision did not render its literal default key: $(cat "$out")"
+  grep -F -- "--resolve-key <key>" "$out" >/dev/null \
+    || fail "the unkeyed decision listing lost the answerer-closes hint"
+  pass "an unkeyed decision prints [key=default], the exact literal --resolve-key needs"
+}
+
 test_status_symlink_is_not_followed() {
   local dir state out
   dir=$(make_case status-symlink)
@@ -153,4 +173,5 @@ test_later_unrelated_terminal_line_does_not_close_it
 test_no_open_decisions_prints_nothing
 test_open_decision_surfaces_even_with_an_unrelated_queued_wake
 test_buried_decision_surfaces_on_the_empty_queue_fast_path
+test_unkeyed_decision_renders_its_literal_default_key
 test_status_symlink_is_not_followed

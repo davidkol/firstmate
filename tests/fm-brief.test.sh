@@ -662,6 +662,9 @@ test_pause_verb_override_renders_all_brief_scaffolds() {
       "$kind brief did not require durable resolution when a blocker clears"
     assert_grep 'even when the answer is what started that work' "$brief" \
       "$kind brief did not warn that an answer-started done/working never closes a decision"
+    # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+    assert_grep 'A second `resolved` line for an already-closed key is harmless' "$brief" \
+      "$kind brief dropped the worker's own resolved fallback for an answer that did not close the key"
   done
   pass "fm-brief.sh: custom pause verb renders in every scaffold"
 }

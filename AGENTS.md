@@ -270,7 +270,8 @@ After spawning, confirm the worker is processing the brief, handle any trust dia
 A persistent secondmate is recorded in the secondmate registry and runtime state, never as a backlog work item.
 
 Steer a worker with short single-line messages through fail-closed `fm-send`; put long instructions in a file.
-When a steer answers an open keyed decision or blocker, pass `fm-send`'s `--resolve-key` so the answer itself closes that decision record at answer time, identically for local and remote workers (contract: `bin/fm-send.sh` header).
+When a steer answers an open decision or blocker listed in the drain's `OPEN DECISIONS` section, pass `fm-send`'s `--resolve-key <key>` - the exact key printed there, including the literal `default` for an unkeyed record - so the answer itself closes that decision at answer time.
+That close is a local append to this home's own ledger and covers crewmate, scout, and local secondmate targets alike; an explicit backend target has no ledger here and is refused (contract: `bin/fm-send.sh` header).
 A secondmate's routed reply returns through status or a document pointer, not by firstmate peeking into its chat.
 For the parent-owned correlation, recovery, and escalation contract on marked secondmate requests, see `bin/fm-pending-reply-lib.sh`.
 Supervise all live work under section 8.

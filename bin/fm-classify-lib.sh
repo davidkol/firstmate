@@ -271,7 +271,7 @@ scan_open_decisions() {  # <state>
   local state=$1 f task open line
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     open=$(status_open_decisions "$f") || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
@@ -334,21 +334,34 @@ EOF
 # drop an open decision - because a losing writer's offset can only ever be
 # equal to or behind an already-recorded byte position, and the next call
 # re-derives from whatever offset actually landed on disk.
+#
+# This runs fleet-wide on EVERY drain, once per registered task, so its
+# no-new-appends fast path is kept fork-free wherever a shell builtin can do the
+# job: path splitting is parameter expansion rather than dirname/basename, and
+# the stat flavor is resolved once below instead of a `uname` per file. Only the
+# reads that genuinely need an external command (the cursor `cat`, the identity
+# `stat`, the size `wc`) still fork.
 _fm_open_decisions_cursor_path() {  # <status-file>
   local f=$1 dir base
-  dir=$(dirname "$f")
-  base=$(basename "$f")
+  case "$f" in
+    */*) dir=${f%/*}; base=${f##*/} ;;
+    *) dir=.; base=$f ;;
+  esac
   printf '%s/.%s.open-decisions-cursor' "$dir" "${base%.status}"
 }
 
+# Stat flavor for the device:inode identity below, resolved once at source time
+# the way _FM_CLASSIFY_LIB_DIR is: OSTYPE is a bash builtin variable, so the
+# common case costs no process at all, and the `uname` fallback runs at most
+# once per sourcing rather than once per status file per drain.
+case "${OSTYPE:-$(uname -s 2>/dev/null)}" in
+  [Dd]arwin*) _FM_CLASSIFY_STAT_IDENT_FLAG='-f' ;;
+  *) _FM_CLASSIFY_STAT_IDENT_FLAG='-c' ;;
+esac
+
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> "dev:inode", empty on I/O failure
-  local f=$1
-  if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
-    LC_ALL=C stat -f '%d:%i' "$f" 2>/dev/null
-  else
-    LC_ALL=C stat -c '%d:%i' "$f" 2>/dev/null
-  fi
+  LC_ALL=C stat "$_FM_CLASSIFY_STAT_IDENT_FLAG" '%d:%i' "$1" 2>/dev/null
 }
 
 status_open_decisions_incremental() {  # <status-file>
@@ -450,7 +463,7 @@ scan_open_decisions_incremental() {  # <state>
   local state=$1 f task open line
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     open=$(status_open_decisions_incremental "$f") || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do

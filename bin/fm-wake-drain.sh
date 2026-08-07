@@ -52,9 +52,12 @@ print_open_decisions_section() {
 
   while IFS=$(printf '\t') read -r task key verb note; do
     [ -n "$task" ] || continue
-    line="$task"
-    [ "$key" = default ] || line="$line [key=$key]"
-    line="$line $verb: $note"
+    # The key is ALWAYS rendered, including the implicit "default" key an
+    # unkeyed `needs-decision:`/`blocked:` line opens: it is the exact literal
+    # the --resolve-key hint below demands, so it has to be readable right here
+    # rather than inferred. Suppressing it left the dominant unkeyed case with
+    # no way to close the decision from this listing.
+    line="$task [key=$key] $verb: $note"
     # Per-line cut is owned by fm-line-cap-lib.sh so this section and the
     # closing line fm-send.sh appends share one marker and one limit; this
     # function still owns the global budget and its "N more omitted" line.
@@ -83,7 +86,7 @@ EOF
   # the send that answers a listed decision also closes it, so closure never
   # depends on the busy worker writing a matching resolved line (contract:
   # bin/fm-send.sh header).
-  printf "OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'\n"
+  printf "OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>' - <key> is the exact literal in that entry's [key=...], 'default' included.\n"
 }
 
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
