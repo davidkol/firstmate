@@ -1189,11 +1189,22 @@ task_status_is_terminal_run() {  # <axi-status-output> <run-id>
   return 1
 }
 
+# The abort path captures merged stdout+stderr (see conclude_task_no_mistakes_run),
+# and the CLI writes chatter of its own to stderr - the installed v1.41.2 prints
+# a two-line upgrade banner there - so the capture as a whole is never equal to
+# the one line that carries the signal. Match line-wise instead: any single
+# line, trimmed, that equals the expected text. Still an exact per-line equality
+# against a run-id-bound string rather than a substring search, so no other
+# message can be mistaken for this signal and the run id must match.
+# docs/verification/validation-pipeline.md records the observed channel split,
+# exit status, and banner this defends against.
 task_status_is_run_not_found() {  # <status-error> <run-id>
-  local actual expected
-  actual=$(fm_nm_trim "$1")
+  local expected line
   expected=$(printf 'error: "run \\"%s\\" not found"' "$2")
-  [ "$actual" = "$expected" ]
+  while IFS= read -r line; do
+    [ "$(fm_nm_trim "$line")" = "$expected" ] && return 0
+  done <<< "$1"
+  return 1
 }
 
 # Abort THIS task's own parked no-mistakes run before the worker that would

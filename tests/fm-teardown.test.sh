@@ -131,7 +131,17 @@ case "${1:-}" in
            && grep -Fxq "abort --run $run_id" "$FM_FAKE_NM_ABORT_LOG" 2>/dev/null \
            && [ "${FM_FAKE_NM_ABORT_NOOP:-0}" != 1 ]; then
           if [ "${FM_FAKE_NM_NOT_FOUND_AFTER_ABORT:-0}" = 1 ]; then
-            printf 'error: "run \\"%s\\" not found"\n' "$run_id" >&2
+            # FM_FAKE_NM_CHATTY_BANNER reproduces the installed CLI's real
+            # output shape for a missing run: an upgrade banner on stderr and
+            # the clean error line on stdout, which teardown captures merged
+            # (see docs/verification/validation-pipeline.md).
+            if [ "${FM_FAKE_NM_CHATTY_BANNER:-0}" = 1 ]; then
+              printf 'A new version of no-mistakes is available: v1.41.2 -> v1.45.4\n' >&2
+              printf 'Run "no-mistakes update" to update\n' >&2
+              printf 'error: "run \\"%s\\" not found"\n' "$run_id"
+            else
+              printf 'error: "run \\"%s\\" not found"\n' "$run_id" >&2
+            fi
             exit 1
           elif [ "${FM_FAKE_NM_EMPTY_AFTER_ABORT:-0}" = 1 ]; then
             exit 0
@@ -1677,6 +1687,34 @@ test_not_found_status_after_abort_confirms_completion() {
   pass "the CLI's exact run-not-found signal confirms completion"
 }
 
+# The confirmation capture is merged stdout+stderr, so anything else the CLI
+# writes to stderr lands in it alongside the signal line. The installed v1.41.2
+# prints a two-line upgrade banner there, which once defeated a whole-capture
+# equality and made teardown REFUSE on a normal abort-success path. Match is
+# line-wise now; this pins that a chatty binary cannot reintroduce the refusal.
+test_not_found_confirmation_survives_banner_noise_on_stderr() {
+  local case_dir rc head
+  case_dir=$(make_case parked-run-not-found-banner)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  head=$(git -C "$case_dir/wt" rev-parse HEAD)
+
+  rc=0
+  FM_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+  FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
+  FM_FAKE_NM_NOT_FOUND_AFTER_ABORT=1 \
+  FM_FAKE_NM_CHATTY_BANNER=1 \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" \
+    "parked-run-not-found-banner: banner noise on stderr must not defeat the not-found signal"
+  assert_not_contains "$(cat "$case_dir/stderr")" "REFUSED" \
+    "parked-run-not-found-banner: teardown spuriously refused a run the abort had already removed"
+  assert_grep "abort --run 01RUN" "$case_dir/nm-abort.log" \
+    "parked-run-not-found-banner: the banner case never reached the abort path it is meant to pin"
+  pass "banner noise on stderr does not defeat the run-not-found confirmation"
+}
+
 test_parked_own_run_refuses_when_abort_is_unconfirmed() {
   local case_dir rc head pid
   case_dir=$(make_case parked-run-abort-unconfirmed)
@@ -2270,6 +2308,7 @@ test_force_overrides_unconfirmed_run_abort_and_names_the_run
 test_mismatched_run_after_abort_refuses_unconfirmed
 test_empty_status_after_abort_refuses_unconfirmed
 test_not_found_status_after_abort_confirms_completion
+test_not_found_confirmation_survives_banner_noise_on_stderr
 test_another_branchs_parked_run_is_never_touched
 test_own_autonomous_run_is_left_alone
 test_leaked_worktree_process_is_reaped

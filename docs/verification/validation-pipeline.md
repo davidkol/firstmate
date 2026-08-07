@@ -2,7 +2,7 @@
 
 Audience: maintainer verification.
 
-This record supports three current guarantees: that a no-mistakes ship task reports its PR at the pipeline's CI-ready return point, including on a repository whose PR registers no checks, that the `validated-main` delivery mode validates through the same pipeline without ever opening a PR, and that the pipeline reads repository `commands` and `agent` from the trusted default-branch config.
+This record supports four current guarantees: that a no-mistakes ship task reports its PR at the pipeline's CI-ready return point, including on a repository whose PR registers no checks, that the `validated-main` delivery mode validates through the same pipeline without ever opening a PR, that the pipeline reads repository `commands` and `agent` from the trusted default-branch config, and that `bin/fm-teardown.sh` can conclude a task's own parked run before removing the worker that would have answered its gate.
 `AGENTS.md` section 7 owns the operating contract and `bin/fm-crew-state.sh` owns the state mapping.
 Task-specific chronology, temporary paths, run identifiers, and delivery transcripts remain in private reports or PR evidence.
 
@@ -258,3 +258,73 @@ The 26-minute figure is the captain's own reference case from 2026-07-29 and is 
 
 Cost scales with the change under review, not with repository size, so a large change will cost more than these figures.
 The numbers above are two data points, not a bound.
+
+## Aborting a specific run by id, and reading back that it stopped
+
+Verified on 2026-08-07 against `no-mistakes version v1.41.2 (867d64d) 2026-07-24T06:16:23Z`.
+
+This is the evidence `bin/fm-teardown.sh`'s pre-teardown run abort rests on ("Fix 1" in its header).
+Teardown targets one verified run id, then re-reads status to confirm it stopped, and every string it matches on is a binary surface rather than a firstmate invention.
+
+Both subcommands take `--run`, so a run can be reached from outside its own worktree - which is exactly teardown's situation, since it is about to remove that worktree:
+
+```text
+$ no-mistakes axi status --help
+      --run string   inspect a specific run ID (default: active or most recent)
+
+$ no-mistakes axi abort --help
+      --run string   cancel this run id directly, without resolving the current branch or worktree
+```
+
+`abort --help` also describes the targeting as deliberate: "Pass --run <id> to cancel a specific run by its id from anywhere - including outside its worktree - so an orphaned CI monitor (e.g. after a worktree was torn down) can be reaped deterministically."
+That is the shipped remedy for precisely the leak teardown prevents.
+
+`--run` is the ONLY flag `axi abort` accepts besides `--help`.
+There is no condition flag - nothing that says "cancel only if still parked" - so an abort cannot be made atomic against the run's live state.
+That is why teardown aborts and then re-reads `axi status --run <id>` to confirm, rather than trusting the abort's own exit status, and why its header records the residual resume race as accepted best-effort rather than closed.
+
+The terminal outcome vocabulary teardown accepts as "stopped" is the binary's own.
+The installed binary carries this help string:
+
+```text
+instead shows `outcome: <checks-passed|passed|failed|cancelled>` with no
+```
+
+Those four values are what `task_status_is_terminal_run` matches, so a run that reads back with any of them is finished and needs no refusal.
+
+### A missing run is a confirmation, and its exact shape matters
+
+A run that the abort removed entirely is also a success, so teardown treats "not found" as confirmation.
+Observed for a run id that does not exist, with the two channels captured separately to show which carries what:
+
+```console
+$ no-mistakes axi status --run fm-doc-probe-missing-run 2>/dev/null; echo "exit=$?"
+error: "run \"fm-doc-probe-missing-run\" not found"
+exit=1
+```
+
+The exit status is `1`, and the channel split is the part that bites.
+The error line above is the whole of **stdout**, and it is the only place that line appears.
+Stderr separately carries the CLI's two-line upgrade banner, which this installed version prints on every invocation because a newer release exists:
+
+```text
+A new version of no-mistakes is available: v1.41.2 -> v1.45.4
+Run "no-mistakes update" to update
+```
+
+Teardown captures the confirmation with `2>&1`, deliberately: real errors on that channel are diagnostic and must not be swallowed.
+So the capture it actually inspects is three lines, banner first, signal last:
+
+```text
+A new version of no-mistakes is available: v1.41.2 -> v1.45.4
+Run "no-mistakes update" to update
+error: "run \"fm-doc-probe-missing-run\" not found"
+```
+
+This is why `task_status_is_run_not_found` matches **line-wise**.
+An equality test against the whole capture matched only while the binary stayed quiet; with the banner present it failed, and teardown fell through to a spurious `REFUSED` on one of the two normal abort-success paths - the one where the abort had in fact succeeded and the run was gone.
+The match stays an exact per-line equality against a run-id-bound string rather than a substring search, so no other message can be read as this signal.
+`tests/fm-teardown.test.sh` pins the banner case so a chatty binary cannot reintroduce the refusal.
+
+The banner is a property of running a version with an update available, not of the not-found path, so any CLI chatter on either channel would do the same damage; the line-wise match is what makes the confirmation robust to it in general.
+`task_status_is_terminal_run` was never exposed, because it reads TOON fields line-wise already.
