@@ -666,6 +666,12 @@ families_for_changed_path() {
     bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
       printf '%s\n' watcher-wake-lock
       ;;
+    bin/fm-line-cap-lib.sh)
+      # The per-line cut is consumed by the wake digest's OPEN DECISIONS
+      # section and by fm-send.sh's decision-closure append.
+      printf '%s\n' watcher-wake-lock
+      printf '%s\n' backend-dispatch
+      ;;
     bin/fm-afk*)
       printf '%s\n' afk
       printf '%s\n' real-herdr-gated
