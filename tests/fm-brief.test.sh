@@ -719,6 +719,7 @@ test_status_protocol_states_where_the_decision_key_goes() {
       # unreadable slug outright (bin/fm-classify-lib.sh). So the consequence
       # clause has to name the decision verbs; a blanket "the event opens under
       # default" would be false for the work phases stated just above it.
+      # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
       assert_grep 'a `needs-decision` or `blocked` event then opens under the key `default` instead' "$brief" \
         "$kind brief does not scope the default-key fallback to decision events"
     else
