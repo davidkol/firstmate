@@ -1549,6 +1549,56 @@ EOF
   pass "a session start inside its budget prints no truncation banner"
 }
 
+# When mktemp cannot supply a breadcrumb the bound still has to hold, and the
+# /dev/null stand-in it falls back to must never reach the cleanup rm - deleting
+# it would break the whole host, and only a root-run firstmate would find out.
+test_runtime_bound_survives_an_unavailable_breadcrumb() {
+  local rec root home fakebin out status=0 rm_log
+  rec=$(new_world runtime-bound-no-breadcrumb)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+
+  # Fail ONLY the stage breadcrumb; every other mktemp caller, including the
+  # shared timeout lib's own status file, must keep working.
+  cat > "$fakebin/mktemp" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *fm-session-start-stage*) printf 'mktemp: refused by fixture\n' >&2; exit 1 ;;
+esac
+exec /usr/bin/mktemp "$@"
+SH
+  chmod +x "$fakebin/mktemp"
+
+  # Record every rm the digest performs and pass it through. A plain `[ -c
+  # /dev/null ]` check would not discriminate here: an unprivileged `rm -f
+  # /dev/null` merely fails, so only the ATTEMPT is observable, and only root
+  # would ever discover the attempt the hard way.
+  rm_log="$home/rm-calls.log"
+  cat > "$fakebin/rm" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$rm_log"
+exec /bin/rm "\$@"
+SH
+  chmod +x "$fakebin/rm"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
+
+  expect_code 0 "$status" "a digest with no breadcrumb must still exit 0"
+  assert_contains "$out" "NEXT STEP" "losing the breadcrumb also lost the digest"
+  assert_not_contains "$out" "STARTUP TRUNCATED - SESSION START HIT ITS" \
+    "a healthy digest reported itself truncated after the breadcrumb failed"
+  [ -s "$rm_log" ] || fail "the rm fixture recorded nothing, so it proved nothing"
+  if grep -qw -- '/dev/null' "$rm_log"; then
+    fail "session start tried to remove /dev/null: $(grep -w -- '/dev/null' "$rm_log")"
+  fi
+  [ -c /dev/null ] || fail "the breadcrumb fallback destroyed /dev/null"
+
+  pass "a session start whose breadcrumb cannot be created still completes and never tries to remove /dev/null"
+}
+
 test_runtime_bound_leaves_harness_ancestry_headroom() {
   local rec root home fakebin nest out
   rec=$(new_world runtime-bound-ancestry)
@@ -1934,6 +1984,7 @@ test_pi_diagnostic_rejects_previous_session_loaded_marker
 test_runtime_bound_truncates_loudly_and_exits_zero
 test_portable_timeout_escalates_term_resistant_process
 test_runtime_bound_leaves_a_healthy_digest_untouched
+test_runtime_bound_survives_an_unavailable_breadcrumb
 test_runtime_bound_leaves_harness_ancestry_headroom
 test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain
 test_reemit_keeps_repair_ownership_with_the_lock_holder

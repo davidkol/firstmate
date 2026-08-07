@@ -244,7 +244,10 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     printf '●  cannot finish inside the bound is a fleet problem, not a reporting detail.\n'
     printf '%s\n' "$BAR"
   fi
-  rm -f "$SESSION_START_STAGE_FILE" 2>/dev/null || true
+  # Never hand /dev/null to rm: that is the no-breadcrumb fallback above, not a
+  # temp file this script created, and removing it would break the whole host.
+  [ "$SESSION_START_STAGE_FILE" = /dev/null ] \
+    || rm -f "$SESSION_START_STAGE_FILE" 2>/dev/null || true
   exit 0
 fi
 
