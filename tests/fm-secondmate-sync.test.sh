@@ -846,6 +846,19 @@ test_repo_gitignores_seed_marker() {
   pass "T15 the firstmate repo gitignores the secondmate seed marker"
 }
 
+# --- T16: the shipped firstmate repo gitignores config/ as a directory ----------
+# An enumeration of the config files goes stale the moment a new local config item
+# is added: bin/fm-bootstrap.sh materialized config/startup-memory-budget, the
+# primary checkout read dirty, and every merge into it was refused. Asserted
+# against a name no enumeration could ever list, so only the directory form passes.
+test_repo_gitignores_config_dir() {
+  git -C "$ROOT" check-ignore -q -- 'config/a-config-item-added-tomorrow' \
+    || fail "the firstmate repo .gitignore must ignore config/ as a directory, not file by file"
+  [ -z "$(git -C "$ROOT" ls-files config/)" ] \
+    || fail "a file under config/ is tracked; the directory ignore needs a negation and a comment saying why"
+  pass "T16 the firstmate repo gitignores config/ as a whole directory"
+}
+
 test_ff_updated
 test_ff_current
 test_ff_dirty
@@ -867,5 +880,6 @@ test_seed_marker_clean_when_gitignored
 test_seed_marker_converges_existing_home
 test_seed_marker_does_not_mask_real_dirt
 test_repo_gitignores_seed_marker
+test_repo_gitignores_config_dir
 
 echo "# all fm-secondmate-sync tests passed"

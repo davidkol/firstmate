@@ -8,13 +8,7 @@ data/
 __pycache__/
 *.pyc
 .env
-config/crew-harness
-config/crew-dispatch.json
-config/secondmate-harness
-config/backlog-backend
-config/backend
-config/calm
-config/x-mode.env
-config/cmux-socket-password
-config/wedge-alarm
-config/herdr-presentation-spaces
+# The whole directory, per AGENTS.md section 2: config/ is captain-private local
+# operating choices, none of it tracked. Enumerating the files instead let a new
+# one (config/startup-memory-budget) land unignored and dirty every home.
+config/
