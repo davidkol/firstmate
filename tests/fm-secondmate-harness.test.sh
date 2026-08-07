@@ -701,8 +701,23 @@ test_spawn_explicit_harness_uses_explicit_profile_axes() {
   pass "C8 spawn: an explicit --harness still honors explicit model/effort flags"
 }
 
+# The launched secondmate clears FM_ROOT_OVERRIDE, so fm-guard.sh resolves
+# FM_ROOT to this repository and its worktree-tangle alarm reports on whatever
+# branch the checkout running the suite happens to be on. That alarm is
+# independent of the supervision-model question and is deliberately never
+# suppressed, so subtract exactly it rather than loosening the assertion: a
+# guard run over an empty state dir returns right after the tangle section, so
+# its output is that alarm and nothing else.
+guard_tangle_noise() {
+  local empty
+  empty=$(mktemp -d "$TMP_ROOT/guard-tangle.XXXXXX")
+  env -u FM_ROOT_OVERRIDE FM_STATE_OVERRIDE="$empty" FM_CONFIG_OVERRIDE="$empty" \
+    "$ROOT/bin/fm-guard.sh" 2>&1
+}
+
 test_spawned_secondmate_uses_its_harness_supervision_model() {
-  local harness expected w sm launchlog launch fakebin out
+  local harness expected w sm launchlog launch fakebin out tangle_noise
+  tangle_noise=$(guard_tangle_noise)
   for harness in codex claude; do
     w="$TMP_ROOT/spawn-supervision-model-$harness"
     sm="$w/sm"
@@ -728,7 +743,7 @@ SH
           "Codex secondmate inherited Claude auto-arm despite its persistent watcher model"
         ;;
       claude)
-        [ -z "$out" ] \
+        [ "$out" = "$tangle_noise" ] \
           || fail "Claude secondmate with a fresh beacon should use auto-arm supervision, got: $out"
         ;;
     esac
