@@ -33,7 +33,10 @@ SESSION_START_SECOND_MATE_TMP="/tmp/fm-$SESSION_START_SECOND_MATE_ID"
 SESSION_START_HERDR_SECOND_MATE_ID="fmtest-herdr-${TMP_ROOT##*.}"
 SESSION_START_HERDR_SECOND_MATE_TMP="/tmp/fm-$SESSION_START_HERDR_SECOND_MATE_ID"
 FM_TEST_CLEANUP_DIRS+=("$TMP_ROOT" "$SESSION_START_SECOND_MATE_TMP" "$SESSION_START_HERDR_SECOND_MATE_TMP")
-trap fm_test_cleanup EXIT
+# Re-registering the cleanup here overrides the harness trap, so name the
+# harness's own handler: this suite parks live lock holders in the background,
+# and a plain fm_test_cleanup would leave them holding the run's output pipe.
+trap fm_wake_test_cleanup EXIT
 fm_git_identity fmtest fmtest@example.invalid
 
 # --- world builders ----------------------------------------------------------

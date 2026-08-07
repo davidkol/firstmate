@@ -438,14 +438,32 @@ test_watch_restart_rejects_reused_pid() {
 }
 
 test_watch_restart_attaches_to_healthy_peer() {
-  local dir state fakebin out peer identity armpid status i
+  local dir state fakebin out peer_ready peer identity armpid status i
   dir=$(make_case restart-healthy-peer)
   state="$dir/state"
   fakebin="$dir/fakebin"
   out="$dir/restart.out"
+  peer_ready="$dir/peer.ready"
   mark_pr_check_migration_complete "$state"
-  node -e 'process.on("SIGTERM", () => {}); setTimeout(() => {}, 300000)' &
+  # The peer stands in for a healthy watcher that does NOT die when --restart
+  # signals it, so its SIGTERM handler must be installed before the arm runs.
+  # Node registers it milliseconds into startup; on a loaded host the arm's TERM
+  # arrives first, the default disposition kills the peer, and the arm honestly
+  # reports "started" a fresh watcher instead of attaching. That is a fixture
+  # that had not finished setting itself up - not the behavior under test - so
+  # wait for the handler to be live rather than for a fixed interval.
+  node -e 'const fs = require("node:fs"); process.on("SIGTERM", () => {}); fs.writeFileSync(process.argv[1], "ready\n"); setTimeout(() => {}, 300000)' "$peer_ready" &
   peer=$!
+  i=0
+  while [ "$i" -lt 50 ] && [ ! -s "$peer_ready" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if [ ! -s "$peer_ready" ]; then
+    kill -KILL "$peer" 2>/dev/null || true
+    wait "$peer" 2>/dev/null || true
+    fail "TERM-resistant peer did not become ready"
+  fi
   identity=$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$LIB" "$peer") || fail "could not identify peer pid"
   mkdir "$state/.watch.lock"
   printf '%s\n' "$peer" > "$state/.watch.lock/pid"
@@ -956,6 +974,45 @@ test_linux_pid_identity_ignores_wall_clock_and_detects_pid_reuse() {
   pass "Linux process identity detects pid reuse"
 }
 
+test_failing_suite_reaps_children_and_ends_its_output_pipe() {
+  # A red test must still END THE RUN. Background children inherit the test's
+  # stderr, which under bin/fm-test-run.sh's serial path is the write end of the
+  # pipe `tee` reads, so a single survivor keeps the run parked long after the
+  # test itself exited and printed its verdict. That is how one failed assertion
+  # in this very file wedged a whole validation run, in a step with no stall
+  # detection: the assertion was reported, and nothing downstream ever ran.
+  # Drive that exact shape - a suite that fails while a child is still live,
+  # read back through the same kind of pipe.
+  local dir script out marker runner status child
+  dir=$(make_case teardown-reap)
+  script="$dir/failing-suite.sh"
+  out="$dir/suite.out"
+  marker="$dir/child.pid"
+  cat > "$script" <<SH
+#!/usr/bin/env bash
+set -u
+. "$ROOT/tests/wake-helpers.sh"
+sleep 300 &
+printf '%s\n' "\$!" > "$marker"
+fail "deliberate failure with a live background child"
+SH
+  chmod +x "$script"
+
+  ( bash "$script" 2>&1 | cat > "$out" ) &
+  runner=$!
+  wait_for_exit "$runner" 100
+  status=$?
+  [ "$status" -ne 124 ] \
+    || fail "a failing suite with a live background child never closed its own output pipe"
+  child=$(cat "$marker" 2>/dev/null || true)
+  [ -n "$child" ] || fail "fixture suite did not record its background child"
+  ! is_live_non_zombie "$child" \
+    || fail "suite teardown left its background child running (pid $child)"
+  grep -qF 'not ok - deliberate failure' "$out" \
+    || fail "fixture suite did not report its own failure"
+  pass "a failing suite reaps its children and ends its output pipe"
+}
+
 test_singleton_start
 test_pid_identity_is_locale_invariant
 test_linux_pid_identity_ignores_wall_clock_and_detects_pid_reuse
@@ -983,3 +1040,4 @@ test_arm_waits_for_peer_beacon_after_child_stands_down
 test_arm_fails_loud_when_no_fresh_watcher_confirmable
 test_cycle_exit_ledger_links_successor_and_stays_bounded
 test_stopped_watcher_is_live_but_stale_then_exit_is_classified
+test_failing_suite_reaps_children_and_ends_its_output_pipe

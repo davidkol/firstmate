@@ -282,6 +282,59 @@ is_live_non_zombie() {
   return 0
 }
 
+# --- background-process reaping ---------------------------------------------
+#
+# The suites sourcing this harness spawn real watchers, arms and daemons. A test
+# that exits while one is still running does not merely leak a process: that
+# child inherited the test's stderr, which under bin/fm-test-run.sh's serial
+# path is the write end of the pipe `tee` reads. `tee` then never sees EOF, so
+# the RUN parks indefinitely - long after the test itself exited and printed its
+# verdict - and every later script waits behind it. That is how one failed
+# assertion in tests/fm-watcher-lock.test.sh wedged a whole validation run: a
+# red test must still end the run.
+#
+# TERM first, and wait for it: bin/fm-watch-arm.sh tears its own watcher child
+# down from its TERM trap, so KILLing the arm outright would strand that
+# grandchild, still running and still holding the same pipe. KILL is the last
+# resort for whatever has not gone by FM_TEST_REAP_GRACE.
+FM_TEST_REAP_GRACE=${FM_TEST_REAP_GRACE:-5}
+
+fm_wake_reap_jobs() {
+  local pid pids deadline alive
+  # `jobs` must run in THIS shell. A process substitution would read an empty
+  # job table from a subshell; command substitution keeps it (Bash 3.2 and 5.x).
+  pids=$(jobs -r -p 2>/dev/null || true)
+  [ -n "$pids" ] || return 0
+  for pid in $pids; do
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  deadline=$((SECONDS + FM_TEST_REAP_GRACE))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    alive=
+    for pid in $pids; do
+      is_live_non_zombie "$pid" && { alive=1; break; }
+    done
+    [ -n "$alive" ] || break
+    sleep 0.1
+  done
+  for pid in $pids; do
+    is_live_non_zombie "$pid" && kill -KILL "$pid" 2>/dev/null
+  done
+  # Reap exit statuses so no zombie outlives this shell.
+  for pid in $pids; do
+    wait "$pid" 2>/dev/null || true
+  done
+}
+
+# Stop surviving background processes BEFORE the registered temp roots are
+# removed, then hand off to the library's own dir cleanup.
+fm_wake_test_cleanup() {
+  fm_wake_reap_jobs
+  fm_test_cleanup
+}
+
+trap fm_wake_test_cleanup EXIT
+
 hash_text() {
   if command -v md5 >/dev/null 2>&1; then
     printf '%s' "$1" | md5 -q
