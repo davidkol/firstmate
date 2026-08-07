@@ -259,6 +259,7 @@ SH
 
 wait_for_exit() {
   local pid=$1 limit=${2:-50} i=0
+  fm_wake_track "$pid"
   while [ "$i" -lt "$limit" ]; do
     if ! is_live_non_zombie "$pid"; then
       wait "$pid"
@@ -277,6 +278,7 @@ wait_for_exit() {
 
 is_live_non_zombie() {
   local pid=$1 stat
+  fm_wake_track "$pid"
   kill -0 "$pid" 2>/dev/null || return 1
   stat=$(ps -p "$pid" -o stat= 2>/dev/null || true)
   case "$stat" in
@@ -301,81 +303,156 @@ is_live_non_zombie() {
 # FM_TEST_REAP_GRACE.
 FM_TEST_REAP_GRACE=${FM_TEST_REAP_GRACE:-5}
 
-# fm_wake_process_tree <pid>...: echo the given pids plus every descendant, one
-# per line, parents before children.
+# Bash's job table is bookkeeping, not an inventory of what a suite spawned: a
+# job leaves it the moment it is `wait`ed, and it never named that job's own
+# children at all. Either way the process is still alive and still holding the
+# run's output pipe. The PROCESS GROUP is the durable key instead - descendants
+# inherit it, and it survives both the leader's death and re-parenting to init.
+# Monitor mode is what makes it usable: with it every background job becomes its
+# own group leader (pgid == the job's own pid), so a group names exactly one
+# suite job and everything that job started. Enable it before any suite spawns.
+set -m
+
+FM_TEST_SELF_PGID=$(ps -p "$$" -o pgid= 2>/dev/null | tr -d '[:space:]')
+FM_TEST_REAP_PGIDS=" "
+FM_TEST_REAP_SEEN=" "
+
+# fm_wake_track <pid>...: fold each pid's process group into the reap inventory.
 #
-# Resolution is BY PID, against one snapshot of the live process table - never a
-# pattern match. `pkill -f bin/fm-watch.sh` (or any other -f pattern) matches
-# every firstmate home's watcher on this machine, including a sibling home's
-# real supervision, so it is not an option here.
-fm_wake_process_tree() {
-  local table frontier next seen pid child
-  table=$(ps -A -o pid= -o ppid= 2>/dev/null || true)
-  seen=
-  frontier=$*
+# A group is recorded only when the pid is a LIVE DIRECT CHILD of this shell, so
+# the inventory can never name a group this suite does not own - the guard that
+# matters, because a stray reap would reach a sibling firstmate home's real
+# watcher. Recorded early and kept, since a group id outlives the child that
+# leads it; each pid is inspected once.
+fm_wake_track() {
+  local pid line ppid pgid
+  for pid in "$@"; do
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    case "$FM_TEST_REAP_SEEN" in *" $pid "*) continue ;; esac
+    FM_TEST_REAP_SEEN="$FM_TEST_REAP_SEEN$pid "
+    line=$(ps -p "$pid" -o ppid= -o pgid= 2>/dev/null | awk 'NR == 1 { print $1" "$2 }')
+    [ -n "$line" ] || continue
+    ppid=${line% *}
+    pgid=${line#* }
+    [ "$ppid" = "$$" ] || continue
+    case "$pgid" in ''|*[!0-9]*) continue ;; esac
+    [ "$pgid" -gt 1 ] || continue
+    # Monitor mode inactive: the job shares this shell's group, which also holds
+    # the test runner and the `tee` reading its output. Never reap that - the pid
+    # walk below still covers the job and its descendants.
+    [ "$pgid" != "$FM_TEST_SELF_PGID" ] || continue
+    case "$FM_TEST_REAP_PGIDS" in *" $pgid "*) continue ;; esac
+    FM_TEST_REAP_PGIDS="$FM_TEST_REAP_PGIDS$pgid "
+  done
+}
+
+# The job table drops a job as soon as it is waited, so record its group first.
+wait() {
+  fm_wake_track "$@"
+  builtin wait "$@"
+}
+
+# fm_wake_own_children: this shell's live direct children, by pid.
+fm_wake_own_children() {
+  ps -A -o pid= -o ppid= 2>/dev/null | awk -v p="$$" '$2 == p { print $1 }'
+}
+
+# fm_wake_reap_members <pgids> <root-pids>: echo every LIVE pid that belongs to
+# one of <pgids>, or that is one of <root-pids> or a descendant of them.
+#
+# Membership is resolved BY PID against the process table - never a pattern
+# match, and never a `kill -TERM -<pgid>` group broadcast. `pkill -f
+# bin/fm-watch.sh` (or any other -f pattern) matches every firstmate home's
+# watcher on this machine, including a sibling home's real supervision.
+fm_wake_reap_members() {
+  local pgids=$1 roots=$2 table frontier next seen pid child g
+  table=$(ps -A -o pid= -o pgid= -o ppid= 2>/dev/null || true)
+  frontier=$roots
+  for g in $pgids; do
+    case "$g" in ''|*[!0-9]*) continue ;; esac
+    [ "$g" -gt 1 ] || continue
+    [ "$g" != "$FM_TEST_SELF_PGID" ] || continue
+    frontier="$frontier $(printf '%s\n' "$table" | awk -v x="$g" '$2 == x { printf "%s ", $1 }')"
+  done
+  seen=" "
   while [ -n "$frontier" ]; do
     next=
     for pid in $frontier; do
       case "$pid" in ''|*[!0-9]*) continue ;; esac
       [ "$pid" -gt 1 ] || continue
       [ "$pid" != "$$" ] || continue
-      case " $seen " in *" $pid "*) continue ;; esac
-      seen="$seen $pid"
-      for child in $(printf '%s\n' "$table" | awk -v p="$pid" '$2 == p { print $1 }'); do
+      case "$seen" in *" $pid "*) continue ;; esac
+      seen="$seen$pid "
+      for child in $(printf '%s\n' "$table" | awk -v p="$pid" '$3 == p { print $1 }'); do
         next="$next $child"
       done
     done
     frontier=$next
   done
+  seen=${seen# }
+  seen=${seen% }
   [ -n "$seen" ] || return 0
   # shellcheck disable=SC2086 # deliberate word split: one pid per line.
   printf '%s\n' $seen
 }
 
-# fm_wake_reap_tree <pid>...: stop the named processes AND their descendants.
+# fm_wake_reap_scope <pgids> <root-pids>: take everything in that scope down.
 #
-# CONT before TERM, because a SIGSTOPped process never runs its handler:
-# bin/fm-watch-arm.sh's TERM trap does `kill -TERM "$child"; wait "$child"`, so a
-# stopped watcher grandchild leaves the arm blocked in `wait` until the grace
-# expires - the arm is then KILLed and the still-stopped watcher is orphaned onto
-# the run's output pipe, the exact wedge this harness exists to prevent. Signal
-# the whole tree by pid so no handler has to be trusted to pass the signal down.
-fm_wake_reap_tree() {
-  local tree pid deadline alive
-  tree=$(fm_wake_process_tree "$@")
-  [ -n "$tree" ] || return 0
-  for pid in $tree; do
-    kill -CONT "$pid" 2>/dev/null || true
-    kill -TERM "$pid" 2>/dev/null || true
-  done
+# Membership is re-derived on every pass, never reused from one snapshot:
+# bin/fm-watch-arm.sh forks its watcher and assigns `child=$!` as two separate
+# statements, so a fork that lands after the first look must still be caught.
+# CONT before TERM, because a SIGSTOPped process never runs its handler: the
+# arm's TERM trap does `kill -TERM "$child"; wait "$child"`, so a stopped watcher
+# leaves the arm blocked in `wait` until the grace expires, and the arm is then
+# KILLed with the stopped watcher still orphaned onto the run's output pipe.
+# Each member is TERMed once; KILL is for whatever is still alive at the grace.
+fm_wake_reap_scope() {
+  local pgids=$1 roots=$2 deadline members pid signalled
+  signalled=" "
   deadline=$((SECONDS + FM_TEST_REAP_GRACE))
-  while [ "$SECONDS" -lt "$deadline" ]; do
-    alive=
-    for pid in $tree; do
-      is_live_non_zombie "$pid" && { alive=1; break; }
+  while :; do
+    members=$(fm_wake_reap_members "$pgids" "$roots")
+    [ -n "$members" ] || return 0
+    for pid in $members; do
+      case "$signalled" in *" $pid "*) continue ;; esac
+      signalled="$signalled$pid "
+      kill -CONT "$pid" 2>/dev/null || true
+      kill -TERM "$pid" 2>/dev/null || true
     done
-    [ -n "$alive" ] || break
+    [ "$SECONDS" -lt "$deadline" ] || break
     sleep 0.1
   done
-  for pid in $tree; do
-    is_live_non_zombie "$pid" && kill -KILL "$pid" 2>/dev/null
+  for pid in $(fm_wake_reap_members "$pgids" "$roots"); do
+    kill -KILL "$pid" 2>/dev/null || true
   done
 }
 
+# fm_wake_reap_tree <pid>...: reap the named processes and everything they
+# started, scoped to those pids only - other still-wanted jobs of this suite must
+# survive, so this deliberately ignores the suite-wide inventory.
+fm_wake_reap_tree() {
+  local roots="$*" pgids pid pgid
+  pgids=
+  for pid in $roots; do
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    pgid=$(ps -p "$pid" -o pgid= 2>/dev/null | tr -d '[:space:]')
+    case "$pgid" in ''|*[!0-9]*) continue ;; esac
+    [ "$pgid" -gt 1 ] || continue
+    [ "$pgid" != "$FM_TEST_SELF_PGID" ] || continue
+    pgids="$pgids $pgid"
+  done
+  fm_wake_reap_scope "$pgids" "$roots"
+}
+
 fm_wake_reap_jobs() {
-  local pid pids
-  # `jobs` must run in THIS shell. A process substitution would read an empty
-  # job table from a subshell; command substitution keeps it (Bash 3.2 and 5.x).
-  # Ask for stopped jobs too - under job control `-r` alone would skip one. Plain
-  # `jobs -p` is not the answer: it also names already-reaped pids, which the
-  # kernel may have handed to an unrelated process.
-  pids=$( { jobs -r -p; jobs -s -p; } 2>/dev/null || true )
-  [ -n "$pids" ] || return 0
+  local pid kids
+  kids=$(fm_wake_own_children)
   # shellcheck disable=SC2086 # deliberate word split: pids are one per line.
-  fm_wake_reap_tree $pids
+  fm_wake_track $kids
+  fm_wake_reap_scope "$FM_TEST_REAP_PGIDS" "$kids"
   # Reap exit statuses so no zombie outlives this shell. Only this shell's own
-  # jobs can be waited for; their descendants are not ours to wait on.
-  for pid in $pids; do
+  # children can be waited for; their descendants are not ours to wait on.
+  for pid in $kids; do
     wait "$pid" 2>/dev/null || true
   done
 }

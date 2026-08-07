@@ -983,19 +983,95 @@ test_failing_suite_reaps_children_and_ends_its_output_pipe() {
   # detection: the assertion was reported, and nothing downstream ever ran.
   # Drive that exact shape - a suite that fails while a child is still live,
   # read back through the same kind of pipe.
-  local dir script out rc marker runner status child suite_status
+  #
+  # A survivor drops out of bash's job table by four different doors, so cover
+  # all four in one fixture: a SIGSTOPped descendant (never runs its TERM
+  # handler), a descendant whose parent job was already `wait`ed (the job is gone
+  # from the table), a descendant whose parent was killed and never waited (the
+  # descendant is re-parented to init), and a descendant that ignores TERM
+  # outright. Each door leaves a live process holding the fixture's output pipe,
+  # and none of them is reachable from `jobs`.
+  local dir script spawner out rc marker runner status child suite_status
+  local door parent gc survivors
   dir=$(make_case teardown-reap)
   script="$dir/failing-suite.sh"
+  spawner="$dir/spawner.sh"
   out="$dir/suite.out"
   rc="$dir/suite.rc"
-  marker="$dir/child.pid"
+  marker="$dir/plain.pid"
+  # A SIGSTOPped process cannot run a handler, so the descendant that gets
+  # stopped must OWN one - like the real watcher, and unlike a bare `sleep`,
+  # whose default TERM disposition kills it stopped or not. Its marker file is
+  # what proves the reaper continued it rather than just outliving it with KILL.
+  cat > "$dir/handler.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+trap 'printf terminated > "$1"; exit 143' TERM
+while :; do sleep 0.2; done
+SH
+  cat > "$dir/deaf.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+trap "" TERM
+while :; do sleep 0.2; done
+SH
+  cat > "$spawner" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${2:-hold}" in
+  handle) bash "${0%/*}/handler.sh" "$3" & ;;
+  ignore) bash "${0%/*}/deaf.sh" & ;;
+  *) sleep 300 & ;;
+esac
+printf '%s\n' "$!" > "$1"
+wait
+SH
+  chmod +x "$spawner" "$dir/handler.sh" "$dir/deaf.sh"
   cat > "$script" <<SH
 #!/usr/bin/env bash
 set -u
 . "$ROOT/tests/wake-helpers.sh"
+
+start_door() {
+  bash "$spawner" "$dir/\$1.gc" "\$2" "$dir/\$1.terminated" &
+  printf '%s\n' "\$!" > "$dir/\$1.parent"
+}
+
+ready_door() {
+  local i=0
+  while [ "\$i" -lt 100 ] && [ ! -s "$dir/\$1.gc" ]; do
+    sleep 0.1
+    i=\$((i + 1))
+  done
+  [ -s "$dir/\$1.gc" ] || fail "door \$1 never recorded its descendant"
+  is_live_non_zombie "\$(cat "$dir/\$1.parent")" || fail "door \$1 lost its parent job early"
+}
+
 sleep 300 &
 printf '%s\n' "\$!" > "$marker"
-fail "deliberate failure with a live background child"
+
+start_door stopped handle
+start_door waited hold
+start_door orphan hold
+start_door stubborn ignore
+ready_door stopped
+ready_door waited
+ready_door orphan
+ready_door stubborn
+
+kill -STOP "\$(cat "$dir/stopped.gc")" || fail "could not stop door stopped's descendant"
+
+kill -TERM "\$(cat "$dir/waited.parent")" 2>/dev/null || true
+wait_for_exit "\$(cat "$dir/waited.parent")" 100
+
+kill -KILL "\$(cat "$dir/orphan.parent")" 2>/dev/null || true
+i=0
+while [ "\$i" -lt 100 ] && is_live_non_zombie "\$(cat "$dir/orphan.parent")"; do
+  sleep 0.1
+  i=\$((i + 1))
+done
+
+fail "deliberate failure with four kinds of unreachable survivor"
 SH
   chmod +x "$script"
 
@@ -1007,14 +1083,35 @@ SH
   # onto the run.
   ( bash "$script" 2>&1 | cat > "$out"; printf '%s\n' "${PIPESTATUS[0]}" > "$rc" ) 2>/dev/null &
   runner=$!
-  wait_for_exit "$runner" 100
+  wait_for_exit "$runner" 200
   status=$?
-  [ "$status" -ne 124 ] \
-    || fail "a failing suite with a live background child never closed its own output pipe"
+
+  # Collect every survivor before asserting, and take them down first: this guard
+  # must not become the leak it tests for.
+  survivors=
   child=$(cat "$marker" 2>/dev/null || true)
+  is_live_non_zombie "$child" && survivors="$survivors $child"
+  for door in stopped waited orphan stubborn; do
+    parent=$(cat "$dir/$door.parent" 2>/dev/null || true)
+    gc=$(cat "$dir/$door.gc" 2>/dev/null || true)
+    is_live_non_zombie "$parent" && survivors="$survivors $door-parent:$parent"
+    is_live_non_zombie "$gc" && survivors="$survivors $door:$gc"
+  done
+  for gc in $survivors; do
+    kill -CONT "${gc##*:}" 2>/dev/null || true
+    kill -KILL "${gc##*:}" 2>/dev/null || true
+  done
+
+  [ "$status" -ne 124 ] \
+    || fail "a failing suite with live background children never closed its own output pipe"
   [ -n "$child" ] || fail "fixture suite did not record its background child"
-  ! is_live_non_zombie "$child" \
-    || fail "suite teardown left its background child running (pid $child)"
+  for door in stopped waited orphan stubborn; do
+    [ -s "$dir/$door.parent" ] && [ -s "$dir/$door.gc" ] \
+      || fail "fixture suite did not record door $door"
+  done
+  [ -z "$survivors" ] || fail "suite teardown left processes running:$survivors"
+  [ -s "$dir/stopped.terminated" ] \
+    || fail "the SIGSTOPped descendant was never continued, so it could not handle its own TERM"
   grep -qF 'not ok - deliberate failure' "$out" \
     || fail "fixture suite did not report its own failure"
   # Reaping must not swallow the verdict. Read the FIXTURE's own status, not the
@@ -1024,7 +1121,7 @@ SH
   [ -n "$suite_status" ] || fail "fixture suite recorded no exit status"
   [ "$suite_status" -ne 0 ] \
     || fail "reaping teardown swallowed the failing suite's nonzero exit status"
-  pass "a failing suite reaps its children, exits nonzero, and ends its output pipe"
+  pass "a failing suite reaps stopped, waited, orphaned and TERM-deaf survivors, exits nonzero, and ends its output pipe"
 }
 
 test_singleton_start
