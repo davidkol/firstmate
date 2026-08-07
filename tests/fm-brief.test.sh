@@ -714,6 +714,13 @@ test_status_protocol_states_where_the_decision_key_goes() {
         "$kind brief has no literal example of a correctly keyed opening line"
       assert_grep 'resolved [key=<work-slug>]: {why it is no longer active}' "$brief" \
         "$kind brief has no literal example of a correctly keyed resolving line"
+      # The charter is the one scaffold that also keys routed-work phases, and
+      # only the decision fold falls back to "default" - the phase fold skips an
+      # unreadable slug outright (bin/fm-classify-lib.sh). So the consequence
+      # clause has to name the decision verbs; a blanket "the event opens under
+      # default" would be false for the work phases stated just above it.
+      assert_grep 'a `needs-decision` or `blocked` event then opens under the key `default` instead' "$brief" \
+        "$kind brief does not scope the default-key fallback to decision events"
     else
       assert_grep 'needs-decision [key=api-shape]: REST or RPC' "$brief" \
         "$kind brief has no literal example of a correctly keyed opening line"
