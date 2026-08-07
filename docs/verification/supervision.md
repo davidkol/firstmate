@@ -156,7 +156,7 @@ FM_PI_LIVE_E2E=1 tests/fm-pi-primary-live-e2e.test.sh
 FM_GROK_STOP_LIVE_E2E=1 FM_GROK_NATIVE_BIN="$native_grok" FM_GROK_LEGACY_BIN="$pre_native_grok" tests/fm-grok-stop-live-e2e.test.sh
 ```
 
-The Claude auto-arm false-failure, guard-predicate, and monotonic bounded fail-open correction was verified on 2026-08-02 with the installed ShellCheck 0.11.0 and isolated behavior suites.
+The Claude auto-arm false-failure, guard-predicate, and monotonic bounded fail-open correction was first verified upstream on 2026-08-02 and reverified in this repository on 2026-08-07 with the installed ShellCheck 0.11.0 and isolated behavior suites.
 
 ```sh
 bin/fm-lint.sh
@@ -168,11 +168,11 @@ Observed output:
 
 ```text
 fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
-fm-doc-audience-check: ok surfaces=61 local_links=174
-FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=102585
+fm-doc-audience-check: ok surfaces=57 local_links=177
+FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=116878
 ```
 
-The model-aware pull-guard predicate correction (`bin/fm-guard.sh` no longer reports a false watcher-down mid-turn under the Claude Stop auto-arm model, where the watcher runs only between turns) was verified on 2026-08-04 with the installed ShellCheck 0.11.0 and the same isolated behavior suites.
+The model-aware pull-guard predicate correction (`bin/fm-guard.sh` no longer reports a false watcher-down mid-turn under the Claude Stop auto-arm model, where the watcher runs only between turns) was first verified upstream on 2026-08-04 and reverified in this repository on 2026-08-07 as a separate run of the same isolated behavior suites with the installed ShellCheck 0.11.0.
 
 ```sh
 bin/fm-lint.sh
@@ -184,11 +184,11 @@ Observed output:
 
 ```text
 fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
-fm-doc-audience-check: ok surfaces=64 local_links=188
-FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=80078
+fm-doc-audience-check: ok surfaces=57 local_links=177
+FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=117611
 ```
 
-The broader relevant regression pass was rerun on 2026-08-02 without live-home or daemon mutation.
+The broader relevant regression pass was first run upstream on 2026-08-02 and rerun in this repository on 2026-08-07, in both cases without live-home or daemon mutation.
 
 ```sh
 bin/fm-test-run.sh tests/fm-watch-triage.test.sh tests/fm-watcher-lock.test.sh tests/fm-afk-inject-e2e.test.sh tests/fm-afk-return.test.sh tests/fm-x-mode.test.sh tests/fm-backend.test.sh tests/fm-backend-tmux-smoke.test.sh tests/fm-secondmate-safety.test.sh
@@ -197,10 +197,10 @@ bin/fm-test-run.sh tests/fm-watch-triage.test.sh tests/fm-watcher-lock.test.sh t
 Observed output:
 
 ```text
-FM_TEST_SUMMARY total=8 failed=0 skipped_gate=0 duration_ms=617507
+FM_TEST_SUMMARY total=8 failed=0 skipped_gate=0 duration_ms=499176
 ```
 
-The actionable-close ordering correction was reverified on 2026-08-02 against an identity-matched live successor.
+The actionable-close ordering correction was first reverified upstream on 2026-08-02 against an identity-matched live successor, and the same check was rerun in this repository on 2026-08-07.
 
 ```sh
 tests/fm-claude-stop-autoarm.test.sh >/dev/null && echo "fm-claude-stop-autoarm: ok"
