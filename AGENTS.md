@@ -105,6 +105,7 @@ state/               volatile runtime signals; gitignored
   x-outbox/          generated X-mode dry-run reply and dismiss previews; inspect it when FMX_DRY_RUN is set (section 14)
   x-poll.error x-poll.claim-error  generated X-mode relay and offer-claim diagnostic dedupe markers
   .wake-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
+  .<id>.open-decisions-cursor  per-task byte cursor and folded open-decision set bounding the OPEN DECISIONS scan's cost to new status-log appends; written only by fm-classify-lib.sh's status_open_decisions_incremental, removed by teardown, safe to delete (forces one full re-fold)
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks
   .claude-autoarm.lock .claude-autoarm-epoch .turnend-claude-blocks   Claude Stop auto-arm single-flight, epoch, and guard-budget records; never touch
