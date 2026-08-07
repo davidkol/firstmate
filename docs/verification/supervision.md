@@ -78,6 +78,13 @@ Two consequences for the session-start digest:
 
 Same-day comparison of the composition change alone, run against a copy of the main home's `data/` and `state/`: 128,856 bytes before, 123,926 after, entirely from `FLEET STATE` falling from 32,260 to 26,356 as done rows, the queued bound, and the per-line status cap took effect.
 
+What this cluster settles, stated plainly rather than left to be inferred from those counts: it is ONE PART of the session-start cost problem, not the whole of it.
+It does not by itself bring the digest under the inline limit - the main home's digest is still an order of magnitude above it - and bounding curated startup memory is separate later work.
+The byte delta also undersells the change, because two of its three behaviors are correctness rather than size.
+First, a tail-truncated digest no longer hides live fleet state: fleet identity now precedes curated memory in the payload the harness truncates from the tail.
+Second, the agent is now told to read the persisted file instead of acting on the head preview - a manual step firstmate performed by hand as recently as the 123,926-byte main-home digest recorded above.
+The size reduction is the third behavior and the smallest of the three.
+
 Current deterministic and live entry points:
 
 ```sh

@@ -142,9 +142,20 @@
 # child writes the digest straight to this script's stdout, so everything it
 # emitted before the bound was hit is already delivered; the parent then prints
 # a loud STARTUP TRUNCATED banner naming the stage that did not finish and the
-# sections that were therefore never emitted, and still exits 0. The child
-# records its progress in FM_SESSION_START_STAGE_FILE, which is also the flag
-# that tells a child it is the child - the parent never recurses.
+# sections that were therefore never emitted, and still exits 0.
+# EVERY non-zero child status gets that banner, not just the bound's 124: the
+# child's own success path always ends in `exit 0`, so a signal death, a bounded
+# run that could not start (125), and an abort part-way through the digest all
+# mean the one thing the reader needs to know - what follows the READ-ONCE
+# CONTRACT is incomplete - and the banner names the actual status and remedy
+# rather than leaving the agent to start blind against a contract that claims
+# completeness.
+# FM_SESSION_START_CHILD is the flag that tells a child it is the child, so the
+# parent never recurses, and FM_SESSION_START_STAGE_FILE carries the breadcrumb
+# path the child records its progress in. The child clears BOTH from its
+# environment before it runs a single stage, so nothing the digest spawns
+# inherits them and reaches this script unbounded or writes breadcrumbs into a
+# temp path the parent will delete.
 # Hosts without timeout, gtimeout, or perl use the shared pure-Bash watchdog, so
 # the digest never runs without the same hard bound and process-group cleanup.
 #
@@ -200,15 +211,18 @@ done
 # that one as never emitted. Keep it in the exact order the digest prints.
 SESSION_START_STAGES='lock bootstrap wake-queue supervision-instructions read-once fleet-state context next-step'
 
+# Set from the environment once, by the child only, and never exported onward.
+STAGE_BREADCRUMB=
+
 stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
-  [ -n "${FM_SESSION_START_STAGE_FILE:-}" ] || return 0
-  printf '%s\n' "$1" > "$FM_SESSION_START_STAGE_FILE" 2>/dev/null || true
+  [ -n "$STAGE_BREADCRUMB" ] || return 0
+  printf '%s\n' "$1" > "$STAGE_BREADCRUMB" 2>/dev/null || true
 }
 
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 
-if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
+if [ -z "${FM_SESSION_START_CHILD:-}" ]; then
   SESSION_START_BUDGET=${FM_SESSION_START_TIMEOUT:-120}
   # A non-positive or non-numeric budget is not a budget (`timeout 0` disables
   # the deadline outright), so an unusable value falls back to the default
@@ -221,10 +235,11 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     SESSION_START_STAGE_FILE=/dev/null
   fi
   fm_run_timed "$SESSION_START_BUDGET" \
-    env FM_SESSION_START_STAGE_FILE="$SESSION_START_STAGE_FILE" \
+    env FM_SESSION_START_CHILD=1 \
+    FM_SESSION_START_STAGE_FILE="$SESSION_START_STAGE_FILE" \
     "$SCRIPT_DIR/fm-session-start.sh" "$@"
   SESSION_START_RC=$?
-  if [ "$SESSION_START_RC" -eq 124 ]; then
+  if [ "$SESSION_START_RC" -ne 0 ]; then
     SESSION_START_LAST_STAGE=$(cat "$SESSION_START_STAGE_FILE" 2>/dev/null) || SESSION_START_LAST_STAGE=
     [ -n "$SESSION_START_LAST_STAGE" ] || SESSION_START_LAST_STAGE=unknown
     SESSION_START_PENDING=$(
@@ -234,14 +249,34 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     [ -n "${SESSION_START_PENDING# }" ] || SESSION_START_PENDING='(unknown - the digest may be incomplete anywhere)'
     BAR='●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     printf '\n%s\n' "$BAR"
-    printf '●  STARTUP TRUNCATED - SESSION START HIT ITS %ss RUNTIME BOUND\n' "$SESSION_START_BUDGET"
+    case "$SESSION_START_RC" in
+      124) printf '●  STARTUP TRUNCATED - SESSION START HIT ITS %ss RUNTIME BOUND\n' "$SESSION_START_BUDGET" ;;
+      125) printf '●  STARTUP TRUNCATED - SESSION START COULD NOT START ITS BOUNDED RUN\n' ;;
+      *) printf '●  STARTUP TRUNCATED - SESSION START DIED WITH EXIT STATUS %s\n' "$SESSION_START_RC" ;;
+    esac
     printf '●  It stopped during the "%s" stage, so everything above is COMPLETE\n' "$SESSION_START_LAST_STAGE"
     printf '●  only up to that point.\n'
     printf '●  RECONCILE these stages before acting on anything they would have shown:\n'
     printf '●    %s\n' "${SESSION_START_PENDING% }"
-    printf '●  Rerun bin/fm-session-start.sh now to finish taking the helm. If it truncates\n'
-    printf '●  again, raise FM_SESSION_START_TIMEOUT and report the slow stage - a stage that\n'
-    printf '●  cannot finish inside the bound is a fleet problem, not a reporting detail.\n'
+    case "$SESSION_START_RC" in
+      124)
+        printf '●  Rerun bin/fm-session-start.sh now to finish taking the helm. If it truncates\n'
+        printf '●  again, raise FM_SESSION_START_TIMEOUT and report the slow stage - a stage that\n'
+        printf '●  cannot finish inside the bound is a fleet problem, not a reporting detail.\n'
+        ;;
+      125)
+        printf '●  The bound was never reached, so raising FM_SESSION_START_TIMEOUT cannot help:\n'
+        printf '●  the runner could not create the temp file it bounds the digest with. Check\n'
+        printf '●  that TMPDIR (%s) is writable and has space, then rerun\n' "${TMPDIR:-/tmp}"
+        printf '●  bin/fm-session-start.sh to finish taking the helm.\n'
+        ;;
+      *)
+        printf '●  Every path the digest completes ends in exit 0, so this status means it died\n'
+        printf '●  part-way rather than finishing. Rerun bin/fm-session-start.sh now to finish\n'
+        printf '●  taking the helm and reconcile the stages above, and report the failure - a\n'
+        printf '●  session start that cannot complete is a fleet problem, not a reporting detail.\n'
+        ;;
+    esac
     printf '%s\n' "$BAR"
   fi
   # Never hand /dev/null to rm: that is the no-breadcrumb fallback above, not a
@@ -250,6 +285,12 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     || rm -f "$SESSION_START_STAGE_FILE" 2>/dev/null || true
   exit 0
 fi
+
+# This is the child. The parent/child handshake ends here: take the breadcrumb
+# path into a plain shell variable and drop both markers from the environment,
+# before any stage runs, so no subprocess of the digest inherits them.
+STAGE_BREADCRUMB=${FM_SESSION_START_STAGE_FILE:-}
+unset FM_SESSION_START_CHILD FM_SESSION_START_STAGE_FILE
 
 PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 

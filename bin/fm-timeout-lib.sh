@@ -13,7 +13,17 @@
 #   fm_run_timed <seconds> <command> [args...]
 #       Runs the command with a hard bound. Exit status is the command's own,
 #       except 124, which means the bound was hit (GNU timeout's convention,
-#       reproduced by the perl and bash fallbacks).
+#       reproduced by the perl and bash fallbacks), and 125, which means the
+#       bounded run could never be STARTED - the runner's own scaffolding
+#       failed, so the command did not run and a bigger bound cannot help.
+#       125 is GNU timeout's own "timeout itself failed" status, so the external
+#       path already reported it for its own failures; the fallbacks now agree.
+#       Today the only such failure is an unusable TMPDIR: both runners need a
+#       temp file to carry the command's real status (and, in the pure-Bash
+#       runner, the deadline signal), so they cannot bound anything without one.
+#       "The bound was hit" and "the run never started" are opposite advice -
+#       one says raise the bound, the other says the bound was never reached -
+#       so they must never share a status.
 #
 # A non-positive bound is not a bound: `timeout 0` and the perl fallback's
 # `alarm 0` both disable the deadline, so callers must reject 0 before calling.
@@ -44,7 +54,7 @@ fm_timeout_mechanism() {
 fm_run_bash_timeout() {
   local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0
   shift
-  command_status=$(mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
+  command_status=$(mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 125
   deadline_status="${command_status}.deadline"
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m
@@ -89,7 +99,7 @@ fm_run_bash_timeout() {
 fm_run_external_timeout() {
   local runner=$1 seconds=$2 status_file runner_rc command_rc
   shift 2
-  status_file=$(mktemp "${TMPDIR:-/tmp}/fm-timeout-status.XXXXXX" 2>/dev/null) || return 124
+  status_file=$(mktemp "${TMPDIR:-/tmp}/fm-timeout-status.XXXXXX" 2>/dev/null) || return 125
   # shellcheck disable=SC2016  # Expansion is deliberately deferred to the child shell.
   if "$runner" -k 1 "$seconds" bash -c '
     status_file=$1
@@ -126,6 +136,6 @@ fm_run_timed() {  # <seconds> <command...>
         "$seconds" "$@"
       ;;
     bash) fm_run_bash_timeout "$seconds" "$@" ;;
-    *) return 124 ;;
+    *) return 125 ;;
   esac
 }

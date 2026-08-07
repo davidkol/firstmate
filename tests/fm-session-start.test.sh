@@ -20,6 +20,11 @@
 #     exact disclosed remainder
 #   - the runtime bound: a hung digest is force-killed with its grandchild, says
 #     what it never emitted, and still exits 0 so the session can open
+#   - every OTHER abnormal child death - a signal, a bounded run that could never
+#     start - gets the same banner, naming its real status and the remedy that
+#     fits it, and never blames a bound that was never reached
+#   - the parent/child handshake stays inside this script: no subprocess of the
+#     digest inherits the child marker or the breadcrumb path
 #   - --reemit: startup's mutating sweeps are skipped, the wake drain is not,
 #     and lock ownership is re-verified rather than assumed
 #   - orphan status logs whose task meta has already disappeared
@@ -1422,6 +1427,22 @@ SH
   chmod +x "$fakebin/$name"
 }
 
+# make_group_killed_tool <fakebin> <name>: a real subprocess of the digest that
+# kills the bounded child's whole process group, the way an external kill or an
+# OOM sweep would. The bound gives the child its own process group, so this
+# reaches every stage still running and never touches the parent that has to
+# report it. The child therefore dies of a SIGNAL, not of the deadline, which is
+# exactly the abnormal exit the bound's own 124 must not be confused with.
+make_group_killed_tool() {
+  local fakebin=$1 name=$2
+  cat > "$fakebin/$name" <<'SH'
+#!/usr/bin/env bash
+kill -TERM 0
+sleep 30
+SH
+  chmod +x "$fakebin/$name"
+}
+
 make_term_escalating_timeout() {
   local fakebin=$1
   cat > "$fakebin/timeout" <<'SH'
@@ -1496,6 +1517,104 @@ EOF
   pass "the pure-Bash watchdog bounds session start, kills its hung grandchild, and emits the truncation contract"
 }
 
+# The bound's 124 is not the only way a digest ends early. The child exits 0 on
+# every path it completes, so any other non-zero status means the digest below
+# the READ-ONCE CONTRACT is incomplete - and the contract has already told the
+# agent everything below it is whole. A silent partial digest is precisely the
+# blind start the banner exists to prevent, so the banner must fire here too,
+# name the real status, and never blame a bound that was never reached.
+test_runtime_bound_reports_a_child_that_died_without_timing_out() {
+  local rec root home fakebin out status=0
+  rec=$(new_world runtime-bound-signal)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  make_group_killed_tool "$fakebin" git
+
+  # A generous budget: the child must die of the signal, not of the deadline.
+  out=$(FM_TIMEOUT_MECHANISM_OVERRIDE=bash FM_SESSION_START_TIMEOUT=120 \
+    run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
+
+  expect_code 0 "$status" "a session start killed mid-digest must still exit 0 so the session can open"
+  assert_contains "$out" "SESSION START - $home" "the incomplete digest lost the output it had already produced"
+  assert_contains "$out" "STARTUP TRUNCATED - SESSION START DIED WITH EXIT STATUS 143" \
+    "a signal-killed session start did not name the status it actually died with"
+  assert_not_contains "$out" "HIT ITS" "a signal death was reported as a runtime-bound hit"
+  assert_not_contains "$out" "raise FM_SESSION_START_TIMEOUT" \
+    "a signal death was blamed on a bound that was never reached"
+  assert_contains "$out" 'stopped during the "bootstrap" stage' \
+    "the banner did not name the stage the child died in"
+  assert_contains "$out" "RECONCILE these stages" "the banner did not tell the agent what to reconcile"
+  assert_contains "$out" "wake-queue supervision-instructions read-once fleet-state context next-step" \
+    "the banner did not list every stage that never ran"
+  assert_contains "$out" "Rerun bin/fm-session-start.sh" "the banner did not tell the agent to rerun the digest"
+  assert_not_contains "$out" "NEXT STEP" "a digest that died part-way claimed to have reached its closing reminder"
+  assert_absent "$home/state/.session-start-complete" \
+    "a session start that died part-way recorded itself as complete"
+
+  pass "a session start that dies without timing out still names its status, its stage, and what was never emitted"
+}
+
+# "The bound was hit" and "the bounded run never started" are opposite advice.
+# An unusable TMPDIR leaves the runner unable to create the temp file it carries
+# the command's real status in, so the digest never runs at all - and telling the
+# agent to raise a bound that was never reached is the one remedy that cannot
+# work.
+test_bounded_run_that_could_not_start_is_not_a_bound_hit() {
+  local fakebin="$TMP_ROOT/timeout-no-tmpdir" status=0
+  mkdir -p "$fakebin"
+  cat > "$fakebin/mktemp" <<'SH'
+#!/usr/bin/env bash
+printf 'mktemp: refused by fixture\n' >&2
+exit 1
+SH
+  chmod +x "$fakebin/mktemp"
+
+  env PATH="$fakebin:$BASE_PATH" bash -c \
+    '. "$1"; fm_run_bash_timeout 5 true' _ "$ROOT/bin/fm-timeout-lib.sh" || status=$?
+  expect_code 125 "$status" "the pure-Bash watchdog called an unusable TMPDIR a bound hit"
+
+  status=0
+  env PATH="$fakebin:$BASE_PATH" bash -c \
+    '. "$1"; fm_run_external_timeout timeout 5 true' _ "$ROOT/bin/fm-timeout-lib.sh" || status=$?
+  expect_code 125 "$status" "the external timeout path called an unusable TMPDIR a bound hit"
+
+  pass "a bounded run that could never start reports 125, never the bound's 124"
+}
+
+test_runtime_bound_reports_a_run_it_could_not_start() {
+  local rec root home fakebin out status=0
+  rec=$(new_world runtime-bound-unstartable)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+
+  cat > "$fakebin/mktemp" <<'SH'
+#!/usr/bin/env bash
+printf 'mktemp: refused by fixture\n' >&2
+exit 1
+SH
+  chmod +x "$fakebin/mktemp"
+
+  out=$(FM_TIMEOUT_MECHANISM_OVERRIDE=bash \
+    run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
+
+  expect_code 0 "$status" "a session start whose bounded run could not start must still exit 0"
+  assert_contains "$out" "STARTUP TRUNCATED - SESSION START COULD NOT START ITS BOUNDED RUN" \
+    "a bounded run that never started was not reported as such"
+  assert_not_contains "$out" "HIT ITS" "a bounded run that never started was reported as a bound hit"
+  assert_contains "$out" "raising FM_SESSION_START_TIMEOUT cannot help" \
+    "the banner advised a bigger bound for a failure a bigger bound cannot fix"
+  assert_contains "$out" "RECONCILE these stages" "the banner did not tell the agent what to reconcile"
+  assert_not_contains "$out" "NEXT STEP" "a digest that never ran claimed to have reached its closing reminder"
+
+  pass "a session start whose bounded run could not start says so instead of blaming its timeout"
+}
+
 test_portable_timeout_escalates_term_resistant_process() {
   local fakebin="$TMP_ROOT/portable-kill-after" driver status=0
   mkdir -p "$fakebin"
@@ -1529,7 +1648,7 @@ SH
 }
 
 test_runtime_bound_leaves_a_healthy_digest_untouched() {
-  local rec root home fakebin out
+  local rec root home fakebin out env_log real_git
   rec=$(new_world runtime-bound-healthy)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -1537,7 +1656,26 @@ EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
 
+  # The parent/child handshake must not outlive the child. Anything the digest
+  # spawns would otherwise inherit the marker that tells this script it is
+  # already the bounded child - running it unbounded - plus a breadcrumb path
+  # the parent deletes. `git` is the honest probe: bootstrap really shells out
+  # to it, so this records the environment a real digest subprocess is handed.
+  real_git=$(command -v git)
+  env_log="$home/child-env.log"
+  cat > "$fakebin/git" <<SH
+#!/usr/bin/env bash
+printf '%s|%s\n' "\${FM_SESSION_START_CHILD:-}" "\${FM_SESSION_START_STAGE_FILE:-}" >> "$env_log"
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fakebin/git"
+
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  [ -s "$env_log" ] || fail "the env-recording git fixture never ran, so it proved nothing"
+  if grep -qv '^|$' "$env_log"; then
+    fail "the digest handed its parent/child markers to a subprocess: $(grep -v '^|$' "$env_log" | head -1)"
+  fi
 
   # The banner line itself, not the phrase: the read-once contract names the
   # banner as the condition that voids it, and that mention is not a banner.
@@ -1982,6 +2120,9 @@ test_pi_diagnostic_accepts_prelock_loaded_marker
 test_pi_diagnostic_rejects_missing_turnend_guard_marker
 test_pi_diagnostic_rejects_previous_session_loaded_marker
 test_runtime_bound_truncates_loudly_and_exits_zero
+test_runtime_bound_reports_a_child_that_died_without_timing_out
+test_bounded_run_that_could_not_start_is_not_a_bound_hit
+test_runtime_bound_reports_a_run_it_could_not_start
 test_portable_timeout_escalates_term_resistant_process
 test_runtime_bound_leaves_a_healthy_digest_untouched
 test_runtime_bound_survives_an_unavailable_breadcrumb
