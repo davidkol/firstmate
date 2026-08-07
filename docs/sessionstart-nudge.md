@@ -56,7 +56,12 @@ They share `bin/fm-primary-scope-lib.sh` with `bin/fm-turnend-guard.sh`, so ever
 The Guard Predicates section of [`turnend-guard.md`](turnend-guard.md#guard-predicates) owns marker validation, plain-checkout detection, and required Firstmate-shaped paths.
 
 The nudge payload starts with U+2063 and the stable `FIRSTMATE_OP: ` label, carries the current `session-start` protocol kind, and retains exactly ``Run `bin/fm-session-start.sh` now, exactly once, before executing any other instructions.`` as its body.
-The Ahoy skill owns the rule that this marked operational input is never a captain-authored session boundary, including its narrow legacy compatibility cases, and its own step 0 helm check is the fallback that protects a nudge-tier harness whose first command is a skill.
+The Ahoy skill owns the rule that this marked operational input is never a captain-authored session boundary, including its narrow legacy compatibility cases.
+
+Upstream also gives Ahoy a helm check that runs the digest when a nudge-tier session opens straight into that skill.
+Firstmate does not carry it, because Ahoy's normal recap branch is contractually session-history-only here and is forbidden from running shell commands or reading files, a boundary `tests/fm-captain-translation-contract.test.sh` pins.
+Nothing is lost while the primary is run-tier, since the hook takes the helm before the first turn whatever that turn is.
+Adopting that check on a nudge-tier primary would mean relaxing Ahoy's contract, which is a decision for the captain rather than a side effect.
 
 Before printing, the nudge wrapper reads `state/.lock` and walks at most eight parents from its own pid in its own separate, hard-coded loop, independent of `bin/fm-lock.sh`'s ancestry walk (`fm_harness_ancestry_pid()` in `bin/fm-session-lock-lib.sh`, which now walks up to sixteen parents and can extend past a claude-named match to a still-more-ancestral one) and of Pi's `lockOwnership()`.
 If the lock names a live pid in that ancestry, session start already ran in this harness session and the wrapper stays silent.
@@ -69,7 +74,7 @@ A lock another session holds, broken GitHub auth, and a truncated digest therefo
 | --- | --- | --- | --- |
 | Claude | Run | `.claude/settings.json` registers one unmatched `SessionStart` hook, invoked through `CLAUDE_PROJECT_DIR` with a 180s timeout; the wrapper reads `source` from the hook payload. | Native stdout context injection is supported. |
 | Codex exec | Run | `.codex/hooks.json` anchors to the hook process working directory, verifies a Firstmate-shaped hook-bearing root, and pipes the hook payload into the wrapper with a 180s timeout. | Native stdout context injection is supported under `codex exec`. |
-| Codex interactive TUI | Nudge | The tracked `AGENTS.md` session-start instruction and Ahoy step-zero fallback remain visible when the project hook does not fire. | Firstmate ships no global hook and does not depend on one. |
+| Codex interactive TUI | Nudge | The tracked `AGENTS.md` session-start instruction remains visible when the project hook does not fire. | Firstmate ships no global hook and does not depend on one. |
 | Pi / pi-signed | Nudge | `.pi/extensions/fm-primary-turnend-guard.ts` handles `session_start` reasons `startup`, `new`, and `resume`, then injects the wrapper output with `pi.sendMessage`. | The custom message reaches model context without racing an initial positional prompt. |
 | OpenCode | Nudge | `.opencode/plugins/fm-primary-sessionstart-nudge.js` listens for `session.created`, runs once per session id, and calls `client.session.promptAsync` only when the wrapper prints a nudge. | Interactive TUI delivery is supported; headless `opencode run` is intentionally fail-open because the process can exit before the queued turn. That early exit is also why OpenCode cannot use the run tier. |
 | Grok | Nudge | `.grok/hooks/fm-primary-sessionstart-nudge.json` registers a project `SessionStart` hook and invokes the wrapper through inline-defaulted `${GROK_WORKSPACE_ROOT:-}`. | The project hook runs when the checkout is trusted, but Grok currently discards hook stdout from model context, so this path is intentionally fail-open and cannot use the run tier. |
