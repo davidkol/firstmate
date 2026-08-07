@@ -337,9 +337,10 @@ fm_wake_process_table() {
 # the inventory can never name a group this suite does not own - the guard that
 # matters, because a stray reap would reach a sibling firstmate home's real
 # watcher. A group id outlives the child that leads it, so a recorded group stays
-# until fm_wake_prune_pgids finds it empty. Each pid is inspected once - but only
-# once it HAS been inspected: an unreadable process table leaves a pid unseen so
-# the next observation retries it, rather than forfeiting its group for good.
+# for the rest of the suite - see the note below on that being append-only. Each
+# pid is inspected once - but only once it HAS been inspected: an unreadable
+# process table leaves a pid unseen so the next observation retries it, rather
+# than forfeiting its group for good.
 fm_wake_track() {
   local pid fresh table line pgid ppid
   # Monitor mode may be inactive, or this shell's own group unreadable: either
@@ -370,31 +371,16 @@ fm_wake_track() {
   done
 }
 
-# fm_wake_prune_pgids: drop recorded groups that no longer have any member.
+# ACCEPTED RISK, recorded deliberately: the pgid inventory above is append-only.
+# Nothing removes a group once recorded, so a recorded pgid could in principle be
+# recycled by the kernel onto an unrelated group leader and be signalled at
+# teardown. The precondition is that the OS wraps the ENTIRE pid space within a
+# single suite run - on the order of 100k process creations, against the low
+# thousands the heaviest suite here makes - which is why this is accepted rather
+# than mitigated. A prune was tried and removed: at teardown an already-empty
+# group expands to zero members by itself, and a recycled one is non-empty and so
+# would be kept, so pruning changed nothing in either case.
 #
-# An empty process group cannot legitimately regain one, so a group left in the
-# inventory is only waiting for the kernel to recycle its number onto a
-# stranger's group - a sibling firstmate home's real watcher, say. Run this at
-# the moment the inventory is USED, not merely when something new is recorded.
-#
-# A `ps` that fails or comes back empty is NO INFORMATION, never evidence that
-# nothing is live: read the other way it would silently empty the inventory and
-# re-open the waited and orphan doors this group key exists to close. Leave the
-# inventory exactly as it was.
-fm_wake_prune_pgids() {
-  local table live_pgids kept g
-  case "$FM_TEST_REAP_PGIDS" in *[0-9]*) ;; *) return 0 ;; esac
-  table=$(fm_wake_process_table)
-  [ -n "$table" ] || return 0
-  live_pgids=" $(printf '%s\n' "$table" | awk '{ printf "%s ", $2 }')"
-  [ "$live_pgids" != " " ] || return 0
-  kept=" "
-  for g in $FM_TEST_REAP_PGIDS; do
-    case "$live_pgids" in *" $g "*) kept="$kept$g " ;; esac
-  done
-  FM_TEST_REAP_PGIDS=$kept
-}
-
 # The job table drops a job as soon as it is waited, so record its group first.
 wait() {
   fm_wake_track "$@"
@@ -508,7 +494,6 @@ fm_wake_reap_jobs() {
   kids=$(fm_wake_own_children)
   # shellcheck disable=SC2086 # deliberate word split: pids are one per line.
   fm_wake_track $kids
-  fm_wake_prune_pgids
   fm_wake_reap_scope "$FM_TEST_REAP_PGIDS" "$kids"
   # Reap exit statuses so no zombie outlives this shell. Only this shell's own
   # children can be waited for; their descendants are not ours to wait on.
