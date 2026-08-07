@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # tests/fm-watcher-lock.test.sh - watcher singleton + lock-primitive races +
-# PID identity stability + watch-arm liveness + guard warnings. These are
+# PID identity stability + watch-arm liveness + guard warnings + the harness
+# teardown guard (a suite that fails with background children still live must
+# reap them, exit nonzero, and end its own output pipe). These are
 # safety-critical process invariants (a race bug may not reproduce through an
 # e2e), so they stay as focused real-process units.
 set -u

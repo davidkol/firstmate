@@ -3,6 +3,12 @@
 # watcher/lock, and supervise-daemon suites. The fake tmux surfaces here encode
 # watcher/daemon/composer behavior, so they live here rather than in the generic
 # tests/lib.sh. Generic reporters/assertions come from lib.sh, pulled in below.
+#
+# Sourcing this file also takes over teardown for the sourcing suite: it enables
+# monitor mode and installs an EXIT trap (fm_wake_test_cleanup) that reaps every
+# background process the suite started before running lib.sh's dir cleanup. A
+# suite that installs its own EXIT trap must call fm_wake_test_cleanup from it.
+# See "background-process reaping" below for why a survivor is not a mere leak.
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

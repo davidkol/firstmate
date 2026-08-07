@@ -56,6 +56,11 @@ pass() {
 # on EXIT. The first call installs the cleanup trap. A test file that needs
 # extra teardown (e.g. killing a daemon) should define its own EXIT trap and
 # call fm_test_cleanup from inside it so registered dirs are still removed.
+# One exception, and it is load-bearing: a suite that sources
+# tests/wake-helpers.sh must call fm_wake_test_cleanup instead, which reaps the
+# suite's surviving background processes before delegating here. Naming plain
+# fm_test_cleanup there drops that reaping - see that file's
+# "background-process reaping" section for what a survivor wedges.
 
 FM_TEST_CLEANUP_DIRS=()
 
