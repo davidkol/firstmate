@@ -670,9 +670,11 @@ families_for_changed_path() {
       ;;
     bin/fm-line-cap-lib.sh)
       # The per-line cut is consumed by the wake digest's OPEN DECISIONS
-      # section and by fm-send.sh's decision-closure append.
+      # section, fm-send.sh's decision-closure append, and the session-start
+      # digest's per-task status tails.
       printf '%s\n' watcher-wake-lock
       printf '%s\n' backend-dispatch
+      printf '%s\n' session-bootstrap
       ;;
     bin/fm-afk*)
       printf '%s\n' afk
@@ -697,6 +699,18 @@ families_for_changed_path() {
     bin/fm-sessionstart-nudge.sh|bin/fm-tangle*|bin/fm-update.sh|\
     bin/fm-gate-refuse*|bin/fm-lock*)
       printf '%s\n' session-bootstrap
+      ;;
+    bin/fm-sessionstart-run.sh|.claude/settings.json|.codex/hooks.json)
+      # The run tier's two harness-supplied facts (source vocabulary and
+      # context-reset stdout injection) only show up against a real harness.
+      printf '%s\n' session-bootstrap
+      printf '%s\n' live-harness-optin
+      ;;
+    bin/fm-timeout-lib.sh)
+      # The shared hard bound: session start's runtime bound and the
+      # fleet/bearings snapshots all depend on it.
+      printf '%s\n' session-bootstrap
+      printf '%s\n' snapshot-bearings
       ;;
     bin/fm-pr-*|bin/fm-merge-*.sh|bin/fm-teardown.sh|bin/fm-review-diff.sh|\
     bin/fm-x-*|bin/fm-check*)

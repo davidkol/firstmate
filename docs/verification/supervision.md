@@ -9,6 +9,8 @@ Task-specific chronology, temporary paths, run identifiers, and delivery transcr
 ## Native session-start delivery
 
 The cross-harness transport pass ran on 2026-07-17 with Codex 0.144.4, Grok 0.2.103, OpenCode 1.17.18, Pi 0.80.10, and the tracked Claude hook wiring.
+It predates the run tier, so it covers the nudge payload's transport only; the Claude run-tier evidence is the separate dated subsection below.
+Codex's run-tier hook has not been re-measured on this fleet since the tier change; its transport shape is unchanged and only the invoked wrapper and its payload piping differ.
 
 Codex command shape:
 
@@ -48,10 +50,35 @@ The earlier `sendUserMessage` counterfactual raced the positional prompt; the cu
 The installed pi-signed 0.82.0 wrapper repeated the Pi primary extension and session-start path on 2026-07-27.
 [`runtime-backends.md`](runtime-backends.md#tmux) owns the shared-ancestry evidence and authoritative selection-marker boundary.
 
+### Claude run-tier hook delivery and its inline size limit
+
+Measured 2026-08-07 on Claude Code 2.1.224, against a throwaway project whose only `SessionStart` hook printed a generated payload of a controlled size.
+This is the harness-supplied fact the run tier depends on, and no portable test can see it.
+Ground truth is the session transcript record rather than the model's own report: `attachment.stdout` is what the hook printed, and `attachment.content` is what reached model context.
+
+| Hook stdout | Reached context | Shape |
+| --- | --- | --- |
+| 8,433 B | 8,432 B | delivered whole |
+| 10,113 B | 2,298 B | `<persisted-output>` notice plus head preview |
+| 30,107 B | 2,299 B | `<persisted-output>` notice plus head preview |
+| 132,036 B | 2,299 B | `<persisted-output>` notice plus head preview |
+
+The inline limit therefore sits between 8,433 and 10,113 bytes.
+Above it, context receives `<persisted-output>` wrapping `Output too large (NN KB). Full output saved to: <path>`, roughly two kilobytes of the payload's HEAD, and an ellipsis; the full text is written to that file and nothing else reaches the model.
+Truncation is head-preserving, confirmed by a 132 KB payload whose first line survived and whose last line did not.
+
+Two consequences for the session-start digest:
+
+- The persisted file is the digest whenever the digest is large, so AGENTS.md section 3's instruction to read that file before acting is what keeps a session from starting blind. This is not a corner case: the main home's digest measured 123,926 bytes on 2026-08-07.
+- `bin/fm-session-start.sh`'s fleet-state-before-context ordering only pays off once the digest fits inline, because a two-kilobyte head preview never reaches any bulk section. It is correct and cheap insurance, not the fix. Measured on that same 2026-08-07 main-home digest, `CONTEXT` was 89,867 bytes of the 123,926 and `data/learnings.md` alone was 77,504; bounding curated startup memory is what would bring the digest under the inline limit.
+
+Same-day comparison of the composition change alone, run against a copy of the main home's `data/` and `state/`: 128,856 bytes before, 123,926 after, entirely from `FLEET STATE` falling from 32,260 to 26,356 as done rows, the queued bound, and the per-line status cap took effect.
+
 Current deterministic and live entry points:
 
 ```sh
 tests/fm-sessionstart-nudge.test.sh
+tests/fm-session-start.test.sh
 tests/fm-captain-translation-contract.test.sh
 FM_PI_LIVE_E2E=1 tests/fm-pi-primary-live-e2e.test.sh
 FM_OPENCODE_LIVE_E2E=1 tests/fm-opencode-primary-live-e2e.test.sh

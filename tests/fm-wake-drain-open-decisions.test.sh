@@ -167,7 +167,45 @@ test_status_symlink_is_not_followed() {
   pass "the fleet-wide decision scan does not follow status symlinks"
 }
 
+# The per-item cut comes from bin/fm-line-cap-lib.sh, shared with the
+# session-start digest's status tails so one truncation marker means the same
+# thing wherever an agent meets it. This pins the drain's own end of that
+# contract: the lede survives, the marker appears, and the item still fits the
+# shared per-line cap.
+test_over_long_decision_note_is_capped_with_a_marker() {
+  local dir state out line longest
+  dir=$(make_case long-note)
+  state="$dir/state"
+  out="$dir/drain.out"
+  {
+    printf 'needs-decision [key=api-shape]: pick REST or RPC'
+    awk 'BEGIN { while (i++ < 200) printf " and-then-some" }'
+    printf '\n'
+  } > "$state/task-long.status"
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on an over-long decision note"
+
+  line=$(grep -F 'task-long' "$out")
+  case "$line" in
+    'task-long [key=api-shape] needs-decision: pick REST or RPC'*' [truncated]') : ;;
+    *) fail "an over-long decision note was not capped with its lede intact: $line" ;;
+  esac
+  longest=${#line}
+  [ "$longest" -le 220 ] || fail "a capped decision item ran $longest characters past the shared per-line cap"
+
+  printf 'needs-decision [key=short]: brief enough to keep whole\n' > "$state/task-short.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on a short decision note"
+  grep -F 'task-short [key=short] needs-decision: brief enough to keep whole' "$out" >/dev/null \
+    || fail "a decision note already under the cap was altered"
+  if grep -F 'brief enough to keep whole [truncated]' "$out" >/dev/null; then
+    fail "a decision note already under the cap was marked truncated"
+  fi
+
+  pass "an over-long open decision is cut to the shared per-line cap with its truncation marker"
+}
+
 test_buried_decision_still_surfaces
+test_over_long_decision_note_is_capped_with_a_marker
 test_explicit_resolution_closes_it
 test_later_unrelated_terminal_line_does_not_close_it
 test_no_open_decisions_prints_nothing
