@@ -63,6 +63,10 @@ Ground truth is the session transcript record rather than the model's own report
 | 30,107 B | 2,299 B | `<persisted-output>` notice plus head preview |
 | 132,036 B | 2,299 B | `<persisted-output>` notice plus head preview |
 
+The end-to-end path was confirmed the same day against a real session opened in a Firstmate-shaped throwaway home carrying only the tracked `SessionStart` hook.
+The hook ran `bin/fm-sessionstart-run.sh`, which routed to the full digest; `bin/fm-lock.sh` resolved the harness through the hook process's own ancestry and recorded `lock acquired: harness pid 27963`; bootstrap's locked sweeps ran; and `state/.session-start-complete` was published with that same pid, so a later `clear` or `compact` re-emits rather than repeating startup.
+That home's digest was 7,776 bytes and reached model context whole at 7,774 bytes, with `LOCK`, `BOOTSTRAP`, `WAKE QUEUE`, `READ-ONCE CONTRACT`, `FLEET STATE`, `CONTEXT`, and `NEXT STEP` all present in the new order.
+
 The inline limit therefore sits between 8,433 and 10,113 bytes.
 Above it, context receives `<persisted-output>` wrapping `Output too large (NN KB). Full output saved to: <path>`, roughly two kilobytes of the payload's HEAD, and an ellipsis; the full text is written to that file and nothing else reaches the model.
 Truncation is head-preserving, confirmed by a 132 KB payload whose first line survived and whose last line did not.
