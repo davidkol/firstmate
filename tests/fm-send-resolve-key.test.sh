@@ -226,6 +226,34 @@ test_misplaced_key_refusal_names_the_default_fallback() {
     fail "an ordinary mistype drew the misplaced-token hint: $(cat "$err")"
   fi
 
+  # The hint names a key that CLOSES a decision, so it may never be inferred
+  # from stale log text. Here the misplaced-token decision was answered long
+  # ago and "default" has since been reopened by an unrelated question: naming
+  # 'default' would send this answer to that unrelated decision and close it.
+  {
+    printf 'needs-decision: [key=review-gate] approve or not\n'
+    printf 'resolved: approved\n'
+    printf 'needs-decision: a completely different question\n'
+  } > "$home/state/t9.status"
+  : > "$log"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t9 --resolve-key review-gate "the answer" >/dev/null 2>"$err" || true
+  if grep -F 'Retry with --resolve-key default' "$err" >/dev/null; then
+    fail "the hint named 'default' while it held an unrelated open decision: $(cat "$err")"
+  fi
+  [ ! -s "$log" ] || fail "a refused answer still typed text: $(cat "$log")"
+
+  # Same rule when nothing is open under 'default' at all: a closed decision's
+  # text must not draw a hint that would only earn a second refusal.
+  printf 'needs-decision: [key=review-gate] approve or not\nresolved: approved\n' > "$home/state/t9.status"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" t9 --resolve-key review-gate "the answer" >/dev/null 2>"$err" || true
+  if grep -F 'Retry with --resolve-key default' "$err" >/dev/null; then
+    fail "the hint named 'default' when no decision was open under it: $(cat "$err")"
+  fi
+
   # And the named fallback really is the key that closes it.
   printf 'needs-decision: [key=review-gate] approve or not\n' > "$home/state/t9.status"
   env PATH="$fb:$PATH" \

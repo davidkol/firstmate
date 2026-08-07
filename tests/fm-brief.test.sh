@@ -697,6 +697,13 @@ test_status_protocol_states_where_the_decision_key_goes() {
     assert_present "$brief" "$kind: key-position brief was not scaffolded"
     assert_grep 'BETWEEN the verb and the colon' "$brief" \
       "$kind brief never says where the [key=<slug>] token goes"
+    # Position is only half the grammar: the slug charset _fm_decision_key
+    # enforces (bin/fm-classify-lib.sh) is the other way to write a key that
+    # carries nothing, and it folds to "default" just as silently. It belongs in
+    # the SAME sentence that states the position, so a writer cannot read one
+    # half of the rule without the other.
+    assert_grep 'letters, digits, dot, underscore or hyphen only' "$brief" \
+      "$kind brief never states the slug charset alongside the token's position"
     # A brief that only describes the position still leaves the writer composing
     # the line from prose. The literal both-line example is the half that makes
     # the shape copyable, so pin both lines, not just the opening one. The

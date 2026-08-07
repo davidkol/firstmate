@@ -319,13 +319,30 @@ if [ -n "$RESOLVE_KEYS" ]; then
         # token AFTER the colon, where it keys nothing (contract:
         # bin/fm-classify-lib.sh's key grammar), so the slug reads like a key in
         # the worker's own text while the record really folded to "default".
+        # Read off the SAME authoritative open set the refusal above used, never
+        # a text scan of the whole log: the retry this names would CLOSE the
+        # decision now open under "default", so it may only be printed when that
+        # key is open right now AND the misplaced token sits in that open
+        # record's own note. A log-wide scan matches closed decisions and lines
+        # that opened nothing, and would then aim the answer at whatever
+        # unrelated record holds "default" today. Silent unless it is exact.
         # Advisory only - a hint printed on a path that already refused.
-        if [ -f "$RESOLVE_STATUS_FILE" ] && [ ! -L "$RESOLVE_STATUS_FILE" ] &&
-          awk -v k="[key=$k]" 'index($0, ":") > 0 {
-            if (index(substr($0, index($0, ":") + 1), k)) { found = 1; exit }
-          } END { exit found ? 0 : 1 }' "$RESOLVE_STATUS_FILE" 2>/dev/null; then
-          echo "hint: '$k' appears in that log only AFTER a colon, where it does not key the record - that decision opened under the key 'default'. Retry with --resolve-key default." >&2
-        fi
+        resolve_default_note=
+        while IFS= read -r resolve_row; do
+          case "$resolve_row" in
+            default$'\t'*)
+              resolve_default_note=${resolve_row#*$'\t'}
+              resolve_default_note=${resolve_default_note#*$'\t'}
+              ;;
+          esac
+        done <<EOF
+$resolve_open_set
+EOF
+        case "$resolve_default_note" in
+          *"[key=$k]"*)
+            echo "hint: '$k' appears only inside the open 'default' decision's own text, after the colon, where it does not key the record - that decision opened under the key 'default'. Retry with --resolve-key default." >&2
+            ;;
+        esac
         exit 1
         ;;
     esac
