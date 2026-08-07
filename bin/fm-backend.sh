@@ -41,10 +41,11 @@
 # task events (status-changed, went-stale, exited) that map onto firstmate's
 # existing signal/stale/check/heartbeat wake vocabulary. The tmux adapter has
 # no native event push, so fm-watch.sh's poll loop over the pull primitives
-# below (capture, list-live, busy-state via regex) IS the default event-source
-# implementation that synthesizes those events; P1 only names that seam, it
-# does not change the loop's behavior. The pull primitives also stay available
-# on their own for on-demand reads (fm-peek.sh, fm-crew-state.sh).
+# below (capture, list-live, and native busy-state where a backend has one) IS
+# the default event-source implementation that synthesizes those events; P1
+# only names that seam, it does not change the loop's behavior. The pull
+# primitives also stay available on their own for on-demand reads (fm-peek.sh,
+# fm-crew-state.sh).
 
 FM_BACKEND_SCRIPT=${BASH_SOURCE[0]:-$0}
 FM_BACKEND_LIB_DIR="$(cd "$(dirname "$FM_BACKEND_SCRIPT")" && pwd)"
@@ -779,10 +780,13 @@ fm_backend_worktree_path() {  # <backend> <worktree-id>
 # fm_backend_busy_state: semantic busy/idle/unknown for backends that expose
 # native agent-state (herdr-addendum "busy state" row - the first backend
 # where this gets real semantics beyond pane-regex). Backends with no such
-# primitive (tmux) report unknown. Callers own the fallback policy: fm-watch.sh
-# uses unknown as the cue for harness-scoped pane-tail detection, while
-# fm-crew-state.sh also corroborates native idle verdicts with the recorded
-# harness's signature before treating a no-run crew as not busy.
+# primitive (tmux) report unknown. Callers own the fallback policy, and this is
+# NOT the owner of recorded worker state: bin/fm-busy-lib.sh's semantic contract
+# is, and it accepts a native `busy` only for a task with no record of its own,
+# never a native `idle` as proof a worker stopped (agent.get reports generation
+# state, so it reads idle while a worker blocks on its own foreground tool
+# call). The delivery-side reader in bin/fm-pending-reply-lib.sh keeps its own
+# policy for the separate "can input be delivered" question.
 fm_backend_busy_state() {  # <backend> <target>
   local backend=$1
   shift

@@ -92,8 +92,8 @@ The daemon never injects into an in-use pane. Two checks run before every
 injection, dispatched through `bin/fm-backend.sh` for the supervisor's own
 backend (tmux or herdr; see "Auto-discovered supervisor pane" below):
 
-- **Primary-pane busy guard** - `pane_is_busy` trusts Herdr native `busy` when available, otherwise matches rendered output against only the detected primary harness's signature.
-  This narrow delivery guard never classifies a recorded worker task and never uses a global union of vendor patterns.
+- **Primary-pane busy guard** - `pane_is_busy` trusts Herdr native `busy` when available, otherwise matches rendered output against the detected primary harness's signature, and keeps the vendor union only when the primary harness cannot be detected (the daemon launches under the tmux server, inheriting neither the harness's ancestry nor its environment); `docs/tmux-backend.md` owns that selection contract.
+  This narrow delivery guard never classifies a recorded worker task; the union's failure mode is a deferred injection, while an empty signature would type into a working agent's composer.
 - **Composer-state guard** - `inject_msg` reads the full `empty`/`pending`/`unknown` verdict from `fm_backend_composer_state` and injects only when it is affirmatively `empty`.
   `pending` means real unsubmitted text, while `unknown` includes an unreadable pane and a bare shell prompt left after the agent exits, so both defer.
   The shared `bin/fm-composer-lib.sh` owns the content decision after each backend captures and structurally identifies its own composer row.
