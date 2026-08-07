@@ -238,17 +238,6 @@ nm_gate_step_row() {
   findings=$(trim "${rest%%,*}")
   printf '%s|%s|%s' "$step" "$status" "$findings"
 }
-nm_gate_status() {
-  local s row
-  s=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*(status|state):[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*$' | head -1)
-  if [ -n "$s" ]; then
-    s=$(strip_quotes "$(trim "${s#*:}")")
-    printf '%s' "$s"
-    return
-  fi
-  row=$(nm_gate_step_row)
-  [ -n "$row" ] && { row=${row#*|}; printf '%s' "${row%%|*}"; }
-}
 nm_has_gate() {
   printf '%s\n' "$RUN_OUT" | grep -Eq '^[[:space:]]*gate:[[:space:]]*'
 }
@@ -497,8 +486,6 @@ if [ "$HAVE_RUN" = 1 ]; then
     status=$(strip_quotes "$(nm_field status)")
     RUN_STATUS=$status
     outcome=$(strip_quotes "$(nm_field outcome)")
-    awaiting=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*awaiting_agent:' | head -1 || true)
-    gate_status=$(nm_gate_status)
     has_gate=0
     nm_has_gate && has_gate=1
 
@@ -510,7 +497,7 @@ if [ "$HAVE_RUN" = 1 ]; then
         cancelled)     RUN_STATE=failed; RUN_DETAIL="run cancelled" ;;
         *)             RUN_STATE=unknown; RUN_DETAIL="outcome: $outcome" ;;
       esac
-    elif [ -n "$awaiting" ] || [ "$status" = awaiting_approval ] || [ "$status" = fix_review ] || [ -n "$gate_status" ] || [ "$has_gate" = 1 ]; then
+    elif fm_nm_status_is_parked "$RUN_OUT"; then
       if [ "$has_gate" = 1 ]; then
         gate=$(nm_gate_line_name)
       else

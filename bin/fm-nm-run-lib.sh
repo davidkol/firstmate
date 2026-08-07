@@ -71,3 +71,30 @@ fm_nm_head_matches_worktree() {  # <worktree> <run_head>
   [ "$run_full" = "$local_full" ] && return 0
   git -C "$wt" merge-base --is-ancestor "$local_full" "$run_full" 2>/dev/null
 }
+
+# 0 when captured `axi status` output $1 reports a run PARKED at a gate - waiting
+# on a human or agent answer rather than driving an autonomous step of its own.
+# ONE owner for what "parked" means, shared by bin/fm-crew-state.sh's state
+# reporting and bin/fm-teardown.sh's pre-teardown run abort: a false negative in
+# either hides a run nobody is left to answer. `axi status` reports a gate in
+# several shapes and not every payload carries all of them, so any one of them is
+# sufficient - an awaiting_agent field, a top-level awaiting_approval/fix_review
+# status, a gate: block, a status:/state: key holding a gate status, or a steps[]
+# row whose status column is awaiting_approval/fix_review. A caller that also
+# tracks a terminal outcome checks that first: an outcome always wins.
+fm_nm_status_is_parked() {  # <toon-output>
+  local out=$1 status
+  printf '%s\n' "$out" | grep -Eq '^[[:space:]]*awaiting_agent:' && return 0
+  status=$(fm_nm_strip_quotes "$(fm_nm_field "$out" status)")
+  case "$status" in
+    awaiting_approval|fix_review) return 0 ;;
+  esac
+  printf '%s\n' "$out" | grep -Eq '^[[:space:]]*gate:[[:space:]]*' && return 0
+  printf '%s\n' "$out" \
+    | grep -Eq '^[[:space:]]*(status|state):[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*$' \
+    && return 0
+  printf '%s\n' "$out" \
+    | grep -Eq '^[[:space:]]*[^,]+,[[:space:]]*"?(awaiting_approval|fix_review)"?[[:space:]]*,' \
+    && return 0
+  return 1
+}

@@ -1525,6 +1525,25 @@ gate: review
 EOF
 }
 
+# A run whose gate is visible ONLY through a steps[] row: no awaiting_agent
+# field, no top-level awaiting_approval/fix_review status, no `gate:` line.
+# bin/fm-crew-state.sh has always read this shape as parked, so teardown must
+# too - the two share one predicate (bin/fm-nm-run-lib.sh's
+# fm_nm_status_is_parked) precisely so this payload cannot be classified
+# differently by the reporting path and the abort path.
+steps_row_only_parked_axi_status_toon() {  # <branch> <head> [run-id]
+  cat <<EOF
+run:
+  id: "${3:-01RUN}"
+  branch: $1
+  head: "$2"
+  pr: ""
+steps[2]{step,status,findings,summary}:
+  test,completed,0,"tests green"
+  review,awaiting_approval,2,"ask-user findings"
+EOF
+}
+
 running_axi_status_toon() {  # <branch> <head> [run-id]
   cat <<EOF
 run:
@@ -1569,6 +1588,38 @@ test_parked_own_run_is_aborted_before_teardown() {
   assert_grep "parked at a gate; aborting" "$case_dir/stderr" \
     "parked-run-abort: teardown did not report aborting the parked run before removing the worker"
   pass "a task's own parked no-mistakes run is aborted, not orphaned, before the worker is removed"
+}
+
+test_steps_row_only_parked_run_is_aborted() {
+  local case_dir rc head
+  case_dir=$(make_case parked-run-steps-row-only)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  head=$(git -C "$case_dir/wt" rev-parse HEAD)
+
+  rc=0
+  FM_FAKE_AXI_STATUS="$(steps_row_only_parked_axi_status_toon fm/task-x1 "$head")" \
+  FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "parked-run-steps-row-only: teardown should still succeed"
+  assert_present "$case_dir/nm-abort.log" \
+    "parked-run-steps-row-only: a gate reported only by a steps[] row left the run orphaned"
+  assert_grep "abort --run 01RUN" "$case_dir/nm-abort.log" \
+    "parked-run-steps-row-only: the steps-row gate did not abort the verified run id"
+  pass "a gate visible only through a steps[] row is parked for teardown exactly as it is for crew state"
+}
+
+# The two predicates cannot drift because they are one function; assert that
+# both callers still route through it rather than re-deriving what parked means.
+test_parked_predicate_has_exactly_one_owner() {
+  grep -q 'fm_nm_status_is_parked' "$ROOT/bin/fm-nm-run-lib.sh" \
+    || fail "parked-predicate-owner: bin/fm-nm-run-lib.sh no longer owns fm_nm_status_is_parked"
+  grep -q 'fm_nm_status_is_parked' "$ROOT/bin/fm-crew-state.sh" \
+    || fail "parked-predicate-owner: bin/fm-crew-state.sh re-derives the parked predicate"
+  grep -q 'fm_nm_status_is_parked' "$TEARDOWN" \
+    || fail "parked-predicate-owner: bin/fm-teardown.sh re-derives the parked predicate"
+  pass "crew state and teardown share one owner for what a parked run is"
 }
 
 test_mismatched_run_after_abort_refuses_unconfirmed() {
@@ -1822,6 +1873,91 @@ EOF
   assert_present "$case_dir/state/task-x1.meta" "lsof-error-refusal: teardown removed task metadata"
   assert_absent "$case_dir/treehouse.log" "lsof-error-refusal: teardown returned the worktree"
   pass "an erroring lsof scan refuses teardown and preserves the task"
+}
+
+test_force_overrides_lsof_error_and_names_what_survives() {
+  local case_dir rc
+  case_dir=$(make_case lsof-error-force)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  cat > "$case_dir/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+printf 'return\n' >> "$case_dir/treehouse.log"
+EOF
+  chmod +x "$case_dir/fakebin/lsof" "$case_dir/fakebin/treehouse"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "lsof-error-force: --force is the documented last-resort discard path"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "lsof-error-force: REFUSED printed despite --force"
+  assert_grep "warning: cannot determine leaked processes under $case_dir/wt for task-x1 (lsof failed)" \
+    "$case_dir/stderr" "lsof-error-force: the overridden scan failure was not reported"
+  assert_grep "leaving behind: any process with a working directory under $case_dir/wt" \
+    "$case_dir/stderr" "lsof-error-force: --force did not name what it left running"
+  assert_present "$case_dir/treehouse.log" "lsof-error-force: --force did not reach the worktree return"
+  pass "--force overrides an unusable lsof scan and says exactly what it leaves running"
+}
+
+test_force_overrides_unconfirmed_run_abort_and_names_the_run() {
+  local case_dir rc head
+  case_dir=$(make_case parked-run-force)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+printf 'return\n' >> "$case_dir/treehouse.log"
+EOF
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  rc=0
+  FM_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+  FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
+  FM_FAKE_NM_ABORT_NOOP=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "parked-run-force: --force is the documented last-resort discard path"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "parked-run-force: REFUSED printed despite --force"
+  assert_grep "warning: no-mistakes run for task-x1 is still parked after axi abort" \
+    "$case_dir/stderr" "parked-run-force: the overridden run refusal was not reported"
+  assert_grep "leaving behind: no-mistakes run 01RUN for task-x1" \
+    "$case_dir/stderr" "parked-run-force: --force did not name the run it left un-concluded"
+  assert_present "$case_dir/treehouse.log" "parked-run-force: --force did not reach the worktree return"
+  pass "--force overrides an unconfirmed run abort and names the run it leaves parked"
+}
+
+test_teardowns_own_invoking_shell_is_never_reaped() {
+  local case_dir rc holder_pid
+  case_dir=$(make_case self-ancestry-exclusion)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+
+  # Teardown invoked FROM a shell whose working directory is the task worktree -
+  # agent and operator shells persist a cwd across calls. That shell matches the
+  # cwd scan exactly like a leaked process would, and signalling it would kill
+  # teardown's own caller mid-run. Teardown itself is started from the case dir
+  # so only the ANCESTOR sits under the worktree.
+  rc=0
+  ( cd "$case_dir/wt" && exec bash -c '
+      printf "%s\n" "$$" > "$1/holder.pid"
+      ( cd "$1" && FM_ROOT_OVERRIDE="$2" FM_STATE_OVERRIDE="$1/state" \
+        FM_CONFIG_OVERRIDE="$1/config" PATH="$1/fakebin:$PATH" "$3" task-x1 )
+      exit $?
+    ' _ "$case_dir" "$ROOT" "$TEARDOWN" ) > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "self-ancestry-exclusion: teardown (and its invoking shell) should survive"
+  assert_present "$case_dir/holder.pid" "self-ancestry-exclusion: the invoking shell never recorded its pid"
+  holder_pid=$(cat "$case_dir/holder.pid")
+  ! grep -q "reaping leaked worktree process" "$case_dir/stderr" \
+    || fail "self-ancestry-exclusion: teardown reaped a process while only its own ancestry was under the worktree"
+  ! grep -q "$holder_pid" "$case_dir/stderr" \
+    || fail "self-ancestry-exclusion: teardown named its own invoking shell as leaked"
+  pass "teardown never signals its own ancestry, only genuinely leaked task processes"
 }
 
 test_reused_pid_identity_is_not_force_killed() {
@@ -2127,7 +2263,10 @@ test_persistent_index_lock_exhausts_retries_and_refuses_loudly
 test_empty_retry_wait_uses_default_without_aborting
 test_fractional_legacy_retry_wait_refuses_without_arithmetic_error
 test_parked_own_run_is_aborted_before_teardown
+test_steps_row_only_parked_run_is_aborted
+test_parked_predicate_has_exactly_one_owner
 test_parked_own_run_refuses_when_abort_is_unconfirmed
+test_force_overrides_unconfirmed_run_abort_and_names_the_run
 test_mismatched_run_after_abort_refuses_unconfirmed
 test_empty_status_after_abort_refuses_unconfirmed
 test_not_found_status_after_abort_confirms_completion
@@ -2137,6 +2276,8 @@ test_leaked_worktree_process_is_reaped
 test_leaked_tasktmp_process_is_reaped
 test_lsof_absent_reaps_tmux_process_group
 test_lsof_error_refuses_before_removal
+test_force_overrides_lsof_error_and_names_what_survives
+test_teardowns_own_invoking_shell_is_never_reaped
 test_reused_pid_identity_is_not_force_killed
 test_exec_changed_process_is_still_reaped
 test_process_spawned_during_grace_is_reaped_on_later_pass

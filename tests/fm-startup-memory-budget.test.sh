@@ -290,6 +290,16 @@ test_primary_budget_converges_with_exact_reread_and_safe_failures() {
   [ "$(<"$sm/config/startup-memory-budget")" = 321 ] \
     || fail "safe retry did not restore the converged primary budget"
 
+  # A destination that is merely CORRUPT - a plain regular file with malformed
+  # content - is exactly what the primary's validated value must overwrite, like
+  # every other inherited item. Only unsafe file types stay refusals.
+  printf 'abc\n' > "$sm/config/startup-memory-budget"
+  out=$(run_config_push "$root" "$home" "$fakebin" "$log")
+  assert_contains "$out" 'startup-memory-budget: pushed' \
+    "a corrupt inherited budget did not re-converge from the primary"
+  [ "$(<"$sm/config/startup-memory-budget")" = 321 ] \
+    || fail "a corrupt inherited budget was left uncorrected"
+
   rm -f "$home/config/startup-memory-budget"
   out=$(run_config_push "$root" "$home" "$fakebin" "$log")
   assert_contains "$out" 'startup-memory-budget: pushed - mirrored primary absence' \

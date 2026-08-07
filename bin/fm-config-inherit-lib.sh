@@ -393,6 +393,32 @@ propagate_secondmate_inheritance() {
   return "$rc"
 }
 
+# Why an existing startup-memory-budget destination cannot simply be overwritten,
+# or empty when it can. Only the FILE TYPE decides: a symlinked, hardlinked, or
+# non-regular destination is an unsafe write target and stays a refusal, while
+# malformed content is exactly the state the primary's validated value must
+# overwrite - otherwise a corrupted secondmate copy could never re-converge and
+# would warn at every bootstrap, unlike every other inherited item.
+unsafe_inherited_budget_dest_reason() {  # <path>
+  local dest=$1 links
+  if [ -L "$dest" ]; then
+    printf 'file is symlinked'
+    return 0
+  fi
+  if [ ! -f "$dest" ]; then
+    printf 'file is not a regular file'
+    return 0
+  fi
+  if ! links=$(fm_startup_memory_budget_link_count "$dest"); then
+    printf 'could not inspect file link count'
+    return 0
+  fi
+  if [ "$links" != 1 ]; then
+    printf 'file is hardlinked'
+  fi
+  return 0
+}
+
 propagate_inheritable_config() {
   local src_config=$1 dest_config=$2 item src dest reason rc
   [ -n "$src_config" ] || return 1
@@ -436,8 +462,9 @@ propagate_inheritable_config() {
         fi
       fi
       if [ -e "$dest" ] || [ -L "$dest" ]; then
-        if ! fm_startup_memory_budget_file_valid "$dest"; then
-          reason="unsafe or invalid destination: $FM_STARTUP_MEMORY_BUDGET_ERROR"
+        reason=$(unsafe_inherited_budget_dest_reason "$dest")
+        if [ -n "$reason" ]; then
+          reason="unsafe or invalid destination: $reason"
           warn_inheritable_config_error "$item" "$dest" "$reason"
           record_inheritable_config_result "$item" error "$reason"
           rc=1
