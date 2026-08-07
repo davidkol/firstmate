@@ -983,10 +983,11 @@ test_failing_suite_reaps_children_and_ends_its_output_pipe() {
   # detection: the assertion was reported, and nothing downstream ever ran.
   # Drive that exact shape - a suite that fails while a child is still live,
   # read back through the same kind of pipe.
-  local dir script out marker runner status child
+  local dir script out rc marker runner status child suite_status
   dir=$(make_case teardown-reap)
   script="$dir/failing-suite.sh"
   out="$dir/suite.out"
+  rc="$dir/suite.rc"
   marker="$dir/child.pid"
   cat > "$script" <<SH
 #!/usr/bin/env bash
@@ -998,7 +999,13 @@ fail "deliberate failure with a live background child"
 SH
   chmod +x "$script"
 
-  ( bash "$script" 2>&1 | cat > "$out" ) &
+  # The guard must not re-create the wedge it guards against: send the runner's
+  # own stderr to /dev/null so no member of this fixture pipeline - `cat` least
+  # of all - inherits THIS suite's stderr, i.e. the run's output pipe. The
+  # fixture's own stderr goes to the pipe `cat` drains, and wait_for_exit reaps
+  # the whole subshell tree if it times out, so nothing here can be orphaned
+  # onto the run.
+  ( bash "$script" 2>&1 | cat > "$out"; printf '%s\n' "${PIPESTATUS[0]}" > "$rc" ) 2>/dev/null &
   runner=$!
   wait_for_exit "$runner" 100
   status=$?
@@ -1010,7 +1017,14 @@ SH
     || fail "suite teardown left its background child running (pid $child)"
   grep -qF 'not ok - deliberate failure' "$out" \
     || fail "fixture suite did not report its own failure"
-  pass "a failing suite reaps its children and ends its output pipe"
+  # Reaping must not swallow the verdict. Read the FIXTURE's own status, not the
+  # runner pipeline's (that is `cat`'s, and always 0): a red suite whose teardown
+  # returned 0 would be read downstream as a passing one.
+  suite_status=$(cat "$rc" 2>/dev/null || true)
+  [ -n "$suite_status" ] || fail "fixture suite recorded no exit status"
+  [ "$suite_status" -ne 0 ] \
+    || fail "reaping teardown swallowed the failing suite's nonzero exit status"
+  pass "a failing suite reaps its children, exits nonzero, and ends its output pipe"
 }
 
 test_singleton_start

@@ -267,7 +267,10 @@ wait_for_exit() {
     sleep 0.1
     i=$((i + 1))
   done
-  kill "$pid" 2>/dev/null || true
+  # Timed out. Take the whole tree down, not just $pid: its children inherited
+  # this suite's stderr, so orphaning them holds the run's output pipe open long
+  # after the suite has exited (see the reaping notes below).
+  fm_wake_reap_tree "$pid"
   wait "$pid" 2>/dev/null || true
   return 124
 }
@@ -294,33 +297,84 @@ is_live_non_zombie() {
 # red test must still end the run.
 #
 # TERM first, and wait for it: bin/fm-watch-arm.sh tears its own watcher child
-# down from its TERM trap, so KILLing the arm outright would strand that
-# grandchild, still running and still holding the same pipe. KILL is the last
-# resort for whatever has not gone by FM_TEST_REAP_GRACE.
+# down from its TERM trap. KILL is the last resort for whatever has not gone by
+# FM_TEST_REAP_GRACE.
 FM_TEST_REAP_GRACE=${FM_TEST_REAP_GRACE:-5}
 
-fm_wake_reap_jobs() {
-  local pid pids deadline alive
-  # `jobs` must run in THIS shell. A process substitution would read an empty
-  # job table from a subshell; command substitution keeps it (Bash 3.2 and 5.x).
-  pids=$(jobs -r -p 2>/dev/null || true)
-  [ -n "$pids" ] || return 0
-  for pid in $pids; do
+# fm_wake_process_tree <pid>...: echo the given pids plus every descendant, one
+# per line, parents before children.
+#
+# Resolution is BY PID, against one snapshot of the live process table - never a
+# pattern match. `pkill -f bin/fm-watch.sh` (or any other -f pattern) matches
+# every firstmate home's watcher on this machine, including a sibling home's
+# real supervision, so it is not an option here.
+fm_wake_process_tree() {
+  local table frontier next seen pid child
+  table=$(ps -A -o pid= -o ppid= 2>/dev/null || true)
+  seen=
+  frontier=$*
+  while [ -n "$frontier" ]; do
+    next=
+    for pid in $frontier; do
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      [ "$pid" -gt 1 ] || continue
+      [ "$pid" != "$$" ] || continue
+      case " $seen " in *" $pid "*) continue ;; esac
+      seen="$seen $pid"
+      for child in $(printf '%s\n' "$table" | awk -v p="$pid" '$2 == p { print $1 }'); do
+        next="$next $child"
+      done
+    done
+    frontier=$next
+  done
+  [ -n "$seen" ] || return 0
+  # shellcheck disable=SC2086 # deliberate word split: one pid per line.
+  printf '%s\n' $seen
+}
+
+# fm_wake_reap_tree <pid>...: stop the named processes AND their descendants.
+#
+# CONT before TERM, because a SIGSTOPped process never runs its handler:
+# bin/fm-watch-arm.sh's TERM trap does `kill -TERM "$child"; wait "$child"`, so a
+# stopped watcher grandchild leaves the arm blocked in `wait` until the grace
+# expires - the arm is then KILLed and the still-stopped watcher is orphaned onto
+# the run's output pipe, the exact wedge this harness exists to prevent. Signal
+# the whole tree by pid so no handler has to be trusted to pass the signal down.
+fm_wake_reap_tree() {
+  local tree pid deadline alive
+  tree=$(fm_wake_process_tree "$@")
+  [ -n "$tree" ] || return 0
+  for pid in $tree; do
+    kill -CONT "$pid" 2>/dev/null || true
     kill -TERM "$pid" 2>/dev/null || true
   done
   deadline=$((SECONDS + FM_TEST_REAP_GRACE))
   while [ "$SECONDS" -lt "$deadline" ]; do
     alive=
-    for pid in $pids; do
+    for pid in $tree; do
       is_live_non_zombie "$pid" && { alive=1; break; }
     done
     [ -n "$alive" ] || break
     sleep 0.1
   done
-  for pid in $pids; do
+  for pid in $tree; do
     is_live_non_zombie "$pid" && kill -KILL "$pid" 2>/dev/null
   done
-  # Reap exit statuses so no zombie outlives this shell.
+}
+
+fm_wake_reap_jobs() {
+  local pid pids
+  # `jobs` must run in THIS shell. A process substitution would read an empty
+  # job table from a subshell; command substitution keeps it (Bash 3.2 and 5.x).
+  # Ask for stopped jobs too - under job control `-r` alone would skip one. Plain
+  # `jobs -p` is not the answer: it also names already-reaped pids, which the
+  # kernel may have handed to an unrelated process.
+  pids=$( { jobs -r -p; jobs -s -p; } 2>/dev/null || true )
+  [ -n "$pids" ] || return 0
+  # shellcheck disable=SC2086 # deliberate word split: pids are one per line.
+  fm_wake_reap_tree $pids
+  # Reap exit statuses so no zombie outlives this shell. Only this shell's own
+  # jobs can be waited for; their descendants are not ours to wait on.
   for pid in $pids; do
     wait "$pid" 2>/dev/null || true
   done

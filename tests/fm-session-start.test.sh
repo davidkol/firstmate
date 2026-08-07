@@ -33,9 +33,11 @@ SESSION_START_SECOND_MATE_TMP="/tmp/fm-$SESSION_START_SECOND_MATE_ID"
 SESSION_START_HERDR_SECOND_MATE_ID="fmtest-herdr-${TMP_ROOT##*.}"
 SESSION_START_HERDR_SECOND_MATE_TMP="/tmp/fm-$SESSION_START_HERDR_SECOND_MATE_ID"
 FM_TEST_CLEANUP_DIRS+=("$TMP_ROOT" "$SESSION_START_SECOND_MATE_TMP" "$SESSION_START_HERDR_SECOND_MATE_TMP")
-# Re-registering the cleanup here overrides the harness trap, so name the
-# harness's own handler: this suite parks live lock holders in the background,
-# and a plain fm_test_cleanup would leave them holding the run's output pipe.
+# wake-helpers.sh already registers this handler when it is sourced; naming it
+# again here is defensive, and pins the binding beside the dirs it removes. It
+# must stay fm_wake_test_cleanup, never a plain fm_test_cleanup: this suite parks
+# live lock holders in the background, and only the reaping variant stops them
+# holding the run's output pipe open.
 trap fm_wake_test_cleanup EXIT
 fm_git_identity fmtest fmtest@example.invalid
 
