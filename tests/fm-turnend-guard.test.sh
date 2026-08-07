@@ -1391,7 +1391,8 @@ test_hook_claude_mode_recovery_contention_is_not_ordinary_allow() {
   printf '%s\n' "$holder" > "$dir/state/.turnend-claude-blocks.lock/pid"
   out=$(run_hook_claude "$dir" false); status=$?
   expect_code 2 "$status" "a healthy guard must continue when the episode reset lock is busy"
-  [ -z "$out" ] || fail "guard recovery contention produced output: $out"
+  assert_contains "$out" 'failure episode could not be reset' \
+    "a blocking guard must never re-invoke the model with an empty message"
   assert_present "$dir/state/.turnend-claude-blocks" "guard contention partially cleared the block budget"
   assert_present "$dir/state/.claude-autoarm-failure-notified" "guard contention partially cleared the failure notice"
   assert_present "$dir/state/.claude-autoarm-failure-alarmed" "guard contention partially cleared the attended alarm"

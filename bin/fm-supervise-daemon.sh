@@ -565,24 +565,31 @@ mark_escalated_seen() {  # <kind> <arg> <state>
 # existing caller/test that passes only <target> is unaffected.
 #
 # This rendered reader applies only to the supervisor pane during away-mode
-# injection. It never classifies a recorded worker task. The detected primary
+# injection. It never classifies a recorded worker task. A DETECTED primary
 # harness selects exactly one signature, so output from another harness cannot
-# make the primary read busy.
+# make the primary read busy. An UNDETECTED primary keeps the vendor-union
+# signature instead: this guard exists to stop an injection landing mid-turn,
+# and the union's failure mode is a false busy (defer, safe) where an empty
+# signature's is a false not-busy (type into a working agent's composer).
+# Detection genuinely fails in production - /afk launches this daemon under the
+# tmux server, so it inherits neither the harness's ancestry nor its env.
 #
-# Resolved lazily and memoized: harness detection walks process ancestry, which
-# is too heavy to pay on every source of this library (the unit tests and the
-# launcher source it purely for its pure functions).
+# Resolved lazily and memoized in the CALLER's scope (a command substitution
+# would discard the memo and re-walk process ancestry on every busy check):
+# harness detection is too heavy to pay on every source of this library (the
+# unit tests and the launcher source it purely for its pure functions).
 fm_daemon_primary_harness() {
   if [ -z "${FM_DAEMON_PRIMARY_HARNESS:-}" ]; then
     FM_DAEMON_PRIMARY_HARNESS=$("$FM_DAEMON_DIR/fm-harness.sh" 2>/dev/null || printf 'unknown')
     [ -n "$FM_DAEMON_PRIMARY_HARNESS" ] || FM_DAEMON_PRIMARY_HARNESS=unknown
   fi
-  printf '%s' "$FM_DAEMON_PRIMARY_HARNESS"
 }
 
 pane_is_busy() {  # <target> [backend]
   local target=$1 backend=${2:-tmux} native tail40 harness
-  harness=$(fm_daemon_primary_harness)
+  fm_daemon_primary_harness
+  harness=$FM_DAEMON_PRIMARY_HARNESS
+  [ "$harness" != unknown ] || harness=
   native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)
   case "$native" in
     busy) return 0 ;;
@@ -1209,7 +1216,7 @@ handle_wake() {  # <reason> <state>
   case "$reason" in
     signal:*) kind=signal; arg="${reason#signal: }"
               decision=$(classify_signal "$arg" "$state") ;;
-    stale:*)  kind=stale; arg="${reason#stale: }"; stale_detail="${arg#"$arg"}"
+    stale:*)  kind=stale; arg="${reason#stale: }"; stale_detail=
               case "$arg" in *" ("*) stale_detail="${arg#*" ("}"; arg="${arg%% \(*}" ;; esac
               decision=$(classify_stale "$arg" "$state")
               case "$stale_detail" in

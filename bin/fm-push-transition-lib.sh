@@ -18,7 +18,6 @@ FM_PUSH_TRANSITION_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 TRIAGE_LOG="$STATE/.watch-triage.log"
 TRIAGE_LOG_MAX_BYTES=${FM_WATCH_TRIAGE_LOG_MAX_BYTES:-262144}
-FM_WAKE_POST_OUTPUT_ACTION=
 FM_WATCH_DELIVERY_PID=
 FM_WATCH_DELIVERY_IDENTITY=
 WATCH_DELIVERY_LOG="$STATE/.watch-deliveries.log"
@@ -87,17 +86,11 @@ wake() {
     *) echo 0 > "$STATE/.heartbeat-streak" ;;
   esac
   trap '' HUP INT TERM
-  [ -z "$FM_WAKE_POST_OUTPUT_ACTION" ] || trap '' PIPE
   if echo "$1"; then
-    output_status=0
     watch_delivery_publish "$1" || true
   else
-    output_status=1
+    exit 1
   fi
-  if [ -n "$FM_WAKE_POST_OUTPUT_ACTION" ]; then
-    "$FM_WAKE_POST_OUTPUT_ACTION" "$output_status" || true
-  fi
-  [ "$output_status" -eq 0 ] || exit "$output_status"
   exit 0
 }
 

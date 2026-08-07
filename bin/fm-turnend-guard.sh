@@ -149,6 +149,13 @@ fi
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
   [ "$CLAUDE_MODE" -eq 1 ] || exit 0
   fm_failure_episode_reset "$STATE" && exit 0
+  # Supervision is healthy, but the recorded failure episode could not be
+  # cleared. Blocking is the safe branch: it keeps every episode marker intact
+  # for the retry instead of allowing the stop with stale failure state that
+  # would mis-account the next episode. Say so, because a silent exit 2 re-invokes
+  # the model with no message and no instruction.
+  printf '●  Supervision is healthy, but the Claude failure episode could not be reset: %s is held by another Stop-event writer or its state directory is unwritable.\n●  This stop is blocked so the episode markers survive for the retry. Simply end the turn again.\n●  If every retry reports this, check that directory by hand: a live holder clears on its own, an unwritable or full state directory does not.\n' \
+    "$BUDGET_LOCK" >&2
   exit 2
 fi
 

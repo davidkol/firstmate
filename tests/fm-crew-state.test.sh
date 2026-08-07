@@ -1073,6 +1073,25 @@ test_no_run_idle_pane_uses_log() {
   pass "no run + idle pane uses the status-log verb"
 }
 
+# (g') no run + a harness with NO semantic writer wired at all (codex, standalone
+# kimi). Its unverified verdict is not a missing or stale record - nothing was ever
+# going to report - so the crew's own status log is still the state of record, and a
+# healthy worker keeps being absorbed instead of waking firstmate every heartbeat.
+test_no_run_unverified_harness_uses_log() {
+  reset_fakes
+  local d; d=$(new_case unverified-harness)
+  make_repo_on_branch "$d/wt" fm/feat-u
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-u.meta" "window=fm:fm-feat-u" "worktree=$d/wt" "kind=ship" "harness=codex"
+  printf 'blocked: upstream fix has not landed\n' > "$d/state/feat-u.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  local out; out=$(run_crew_state "$d" feat-u)
+  assert_contains "$out" "state: blocked" "an unverified harness must still read its own status log"
+  assert_contains "$out" "source: status-log" "an unverified-harness verdict must not short-circuit to unknown/pane"
+  pass "no run + an unverified harness falls through to the status log"
+}
+
 test_no_run_idle_pane_uses_keyed_log() {
   reset_fakes
   local d; d=$(new_case keyed-idle)
@@ -1477,6 +1496,7 @@ test_no_run_herdr_unknown_uses_backend_capture
 test_no_run_herdr_idle_agent_status_outranked_by_record
 test_no_run_herdr_idle_agent_status_and_idle_record_stays_idle
 test_no_run_idle_pane_uses_log
+test_no_run_unverified_harness_uses_log
 test_no_run_idle_pane_uses_keyed_log
 test_no_run_idle_pane_paused
 test_no_run_idle_pane_custom_paused_verb

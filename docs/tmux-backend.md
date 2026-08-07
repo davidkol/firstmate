@@ -63,7 +63,8 @@ Busy state is not read from rendered text on this backend.
 A task's busy, idle, unknown, or dead verdict comes from the semantic busy-state contract owned by `bin/fm-busy-lib.sh`; [architecture](architecture.md#busy-state-is-semantic-per-adapter) owns its boundaries.
 The one remaining rendered-tail reader is Grok's isolated fallback inside that contract, which can only classify a Grok task.
 The submit acknowledgement and away-mode supervisor-pane busy guard below still consult rendered output, but only to decide whether input can be delivered, never to decide recorded task state.
-The supervisor guard selects only the detected primary harness's signature rather than a global union of vendor patterns.
+When the primary harness is detected, the supervisor guard selects only that harness's signature rather than a global union of vendor patterns.
+When detection fails - `/afk` launches the away daemon under the tmux server, which inherits neither the harness's ancestry nor its environment - the guard keeps the vendor union, because its only failure mode is deferring an injection while an empty signature would type into a working agent's composer.
 
 `bin/fm-tmux-lib.sh` owns exact type-and-submit mechanics.
 It types a message once and retries Enter only until the composer clears.

@@ -9,8 +9,8 @@
 # re-validates), the log's last line stays stale. This helper never infers the
 # current state from a tail of the log: it reads the authoritative source (a
 # no-mistakes run-step attributed to this crew's branch and current code
-# identity, else the pane busy-signature) and reconciles the possibly-stale log
-# against it.
+# identity, else the semantic busy-state contract in bin/fm-busy-lib.sh) and
+# reconciles the possibly-stale log against it.
 #
 # The determinism lives entirely here - only run-step / pane / log reads plus
 # fixed mapping logic, no heuristics and no LLM. Output is one stable, parseable,
@@ -49,9 +49,14 @@
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
 #      agree, and are reported as parked.
 #   4. No run for this crew (pre-validation, or kind=scout): fall back to the
-#      recorded backend's pane busy state, then the status log's last line only
-#      when its verb maps to a recognized run-state. Decision-only events such as
-#      `resolved` never become current state or detail.
+#      crew's semantic busy state (fm_busy_classify). Only an exact busy verdict
+#      reports working · pane. An exact idle verdict falls through to the status
+#      log's last line, read only when its verb maps to a recognized run-state,
+#      and so does an unverified-harness verdict, whose harness has no semantic
+#      writer wired at all. Every other verdict - missing, malformed, stale, or
+#      untrusted state for a harness that IS wired - reports unknown · pane and
+#      never reaches the log. Decision-only events such as `resolved` never
+#      become current state or detail.
 #   5. Missing meta or torn-down worktree: report unknown · none. If no run is
 #      attributed to this crew, a dead endpoint also reports unknown · none rather
 #      than trusting a stale status log.
@@ -658,14 +663,18 @@ pane_readable "$BACKEND_TARGET" || emit unknown none "backend target gone: $BACK
 
 # Secondmates idle on their own watcher (idle pane = healthy), so the busy
 # state is not meaningful for them; read their state from the status log only.
-# Only an exact busy verdict reports working here, and only an exact idle
-# verdict permits the status-log fallback below. Missing, malformed, stale, or
-# unverified semantic state remains unknown.
+# Only an exact busy verdict reports working here. An exact idle verdict permits
+# the status-log fallback below, and so does an unverified-harness verdict
+# (codex, standalone kimi): those harnesses have no semantic writer wired at all,
+# so nothing was ever going to report, and their own status events stay the only
+# state they can offer. Missing, malformed, stale, or untrusted state for a
+# harness that IS wired remains unknown.
 if [ "$KIND" != secondmate ]; then
   BUSY_VERDICT=$(crew_busy_verdict "$BACKEND_TARGET")
-  case "${BUSY_VERDICT%% *}" in
-    busy) emit working pane "harness busy (${BUSY_VERDICT#* })" ;;
-    idle) ;;
+  case "$BUSY_VERDICT" in
+    'busy '*) emit working pane "harness busy (${BUSY_VERDICT#* })" ;;
+    'idle '*) ;;
+    'unknown '*-unverified) ;;
     *) emit unknown pane "harness state unavailable ($BUSY_VERDICT)" ;;
   esac
 fi

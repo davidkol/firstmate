@@ -36,10 +36,11 @@ The script header owns the exact run-head ancestry rules and that light-path exc
 During no-mistakes' `ci` monitor phase, it also reads the ci step log tail because `axi status` reports both "still waiting on checks" and "checks green, waiting on merge" as `ci,running`.
 The most recent recognized ci log marker wins, so checks-green monitoring reports done while a later re-arm, failed-check, or issue marker returns the crew to working.
 [`verification/validation-pipeline.md`](verification/validation-pipeline.md#no-registered-checks-is-a-ci-ready-result) owns active empirical evidence.
-Apart from that light-path exception, only when no matching run exists does it consult semantic busy state; exact busy reports working, exact idle permits fallback to a status-log event whose verb maps to a recognized run-state, and unknown or a dead pane stays unknown instead of trusting a stale log.
+Apart from that light-path exception, only when no matching run exists does it consult semantic busy state; exact busy reports working, exact idle permits fallback to a status-log event whose verb maps to a recognized run-state, and a dead pane stays unknown instead of trusting a stale log.
+An unknown verdict also stays unknown, except for a harness with no semantic writer wired at all, whose own status events remain the only state it can offer and so reach that same fallback.
 Decision-only events such as `resolved` never become current state or leak their prose into the current-state detail.
 In that status-log fallback, a declared external wait reports the distinct `paused` state with its reason.
-The semantic branch reports working only on an exact busy verdict and names the source that produced it; an unknown verdict never becomes working, never permits the status-log fallback, and never becomes a silent idle.
+The semantic branch reports working only on an exact busy verdict and names the source that produced it; an unknown verdict never becomes working and never becomes a silent idle.
 For whole-fleet read-only review, `bin/fm-fleet-snapshot.sh --json` emits schema `fm-fleet-snapshot.v1` from the backlog, task metadata, current crew state, endpoint probes, PR/report pointers, scout reports, bounded current summaries from registered secondmate homes, and secondmate return-channel guidance.
 `bin/fm-fleet-view.sh` renders that snapshot as Markdown for humans, while `bin/fm-bearings-snapshot.sh` provides the bounded bearings projection, so both views consume one structured contract instead of reparsing raw fleet files.
 The script header owns the exact JSON schema.
@@ -106,7 +107,7 @@ Endpoint death is the only process-level override and yields dead; child process
 
 Each record is bound to an incarnation token minted when the task's wiring is armed, so an event from a superseded incarnation is rejected rather than applied, and a record left behind by one classifies unknown.
 Three rendered-text readers deliberately remain outside this contract because they answer delivery questions: the submit acknowledgement and away-mode supervisor-pane busy guard in `bin/fm-tmux-lib.sh`, and the secondmate delivery-confirmation observation in `bin/fm-pending-reply-lib.sh`.
-All are harness-scoped rather than a global pattern union, and none is a recorded worker state source.
+All are harness-scoped rather than a global pattern union whenever the harness is known, and none is a recorded worker state source; the away-mode guard alone falls back to the union when the primary harness cannot be detected, so a deferred injection replaces a mid-turn one.
 
 ## Runtime session backends
 

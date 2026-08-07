@@ -106,6 +106,8 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-busy-lib.sh
+. "$SCRIPT_DIR/fm-busy-lib.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
@@ -210,11 +212,22 @@ remove_kimi_turnend_auth() {
   rm -f "$hooks_dir/$token"
 }
 
+# A sidecar that exists but cannot be parsed back to its armed gen (empty,
+# truncated, unreadable, or not a regular file) names no incarnation, so there is
+# nothing for the writer to match a gen against and it refuses. Volatile state
+# corruption must not gate a lifecycle operation, so treat that sidecar exactly
+# like an absent one - already retired - and drop both files.
 retire_busy_state() {
-  local state_dir=$1 id=$2 gen=${3:-}
+  local state_dir=$1 id=$2 gen=${3:-} sidecar
+  sidecar=$(fm_busy_gen_path "$state_dir" "$id")
+  if { [ -e "$sidecar" ] || [ -L "$sidecar" ]; } \
+    && ! fm_busy_current_gen "$state_dir" "$id" >/dev/null 2>&1; then
+    rm -f "$sidecar" "$(fm_busy_record_path "$state_dir" "$id")" 2>/dev/null || true
+    return 0
+  fi
   if [ -n "$gen" ]; then
     "$SCRIPT_DIR/fm-busy-event.sh" retire "$state_dir" "$id" --gen "$gen"
-  elif [ -f "$state_dir/$id.busy-gen" ]; then
+  elif [ -f "$sidecar" ]; then
     "$SCRIPT_DIR/fm-busy-event.sh" retire "$state_dir" "$id" --current-gen
   fi
 }

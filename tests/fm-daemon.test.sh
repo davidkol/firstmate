@@ -1689,6 +1689,36 @@ test_primary_busy_guard_is_harness_scoped() {
   pass "primary busy guard isolates rendered signatures by detected harness"
 }
 
+test_primary_busy_guard_uses_union_when_harness_undetected() {
+  (
+    fm_backend_busy_state() { printf 'unknown'; }
+    fm_backend_capture() { printf 'esc to interrupt\n'; }
+    FM_DAEMON_PRIMARY_HARNESS=unknown pane_is_busy "default:w1:p2" herdr \
+      || fail "an undetected primary must still read a mid-turn agent busy through the vendor union"
+  ) || fail "undetected primary busy guard subshell failed"
+  pass "primary busy guard keeps the vendor union when the primary harness is undetected"
+}
+
+test_primary_harness_memo_binds_in_the_caller_scope() {
+  local dir calls
+  dir=$(make_supercase primary-harness-memo)
+  mkdir -p "$dir/bin"
+  printf '#!/usr/bin/env bash\nprintf x >> %s\nprintf claude\n' "$dir/harness-calls" > "$dir/bin/fm-harness.sh"
+  chmod +x "$dir/bin/fm-harness.sh"
+  (
+    unset FM_DAEMON_PRIMARY_HARNESS
+    FM_DAEMON_DIR="$dir/bin"
+    fm_backend_busy_state() { printf 'unknown'; }
+    fm_backend_capture() { printf 'nothing interesting\n'; }
+    pane_is_busy "default:w1:p2" herdr && fail "idle capture must not read busy"
+    pane_is_busy "default:w1:p2" herdr && fail "idle capture must not read busy"
+    :
+  ) || fail "primary harness memo subshell failed"
+  calls=$(wc -c < "$dir/harness-calls" | tr -d '[:space:]')
+  [ "$calls" = 1 ] || fail "primary harness detection ran $calls times instead of memoizing once"
+  pass "fm_daemon_primary_harness memoizes in the caller's scope instead of a subshell"
+}
+
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted() {
   local dir fakebin capture
   dir=$(make_supercase busy-default-backend)
@@ -1918,6 +1948,8 @@ test_discover_supervisor_backend_precedence
 test_discover_supervisor_target_herdr
 test_pane_is_busy_herdr_native_busy_state
 test_primary_busy_guard_is_harness_scoped
+test_primary_busy_guard_uses_union_when_harness_undetected
+test_primary_harness_memo_binds_in_the_caller_scope
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted
 test_pane_input_pending_herdr_dispatch
 test_inject_msg_herdr_busy_guard_defers
