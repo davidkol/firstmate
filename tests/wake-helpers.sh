@@ -323,43 +323,44 @@ case "$FM_TEST_SELF_PGID" in ''|*[!0-9]*) FM_TEST_SELF_PGID= ;; esac
 FM_TEST_REAP_PGIDS=" "
 FM_TEST_REAP_SEEN=" "
 
-# fm_wake_track <pid>...: fold each pid's process group into the reap inventory,
-# and drop groups that have gone empty.
+# fm_wake_process_table: one snapshot of the live process table, columns in a
+# fixed order: PID PGID PPID STAT. Every walk below indexes those positions, so
+# the order is settled here and nowhere else - in a reaper, reading a ppid where
+# a pgid was meant is not a style slip, it signals the wrong processes.
+fm_wake_process_table() {
+  ps -A -o pid= -o pgid= -o ppid= -o stat= 2>/dev/null || true
+}
+
+# fm_wake_track <pid>...: fold each pid's process group into the reap inventory.
 #
 # A group is recorded only when the pid is a LIVE DIRECT CHILD of this shell, so
 # the inventory can never name a group this suite does not own - the guard that
 # matters, because a stray reap would reach a sibling firstmate home's real
-# watcher. A group id outlives the child that leads it, so a recorded group is
-# kept while any member survives - but only that long: an empty process group
-# cannot legitimately regain members, so holding one would just wait for the
-# kernel to recycle that number onto a stranger's group. Each pid is inspected
-# once, off one process-table snapshot that also drives the prune.
+# watcher. A group id outlives the child that leads it, so a recorded group stays
+# until fm_wake_prune_pgids finds it empty. Each pid is inspected once - but only
+# once it HAS been inspected: an unreadable process table leaves a pid unseen so
+# the next observation retries it, rather than forfeiting its group for good.
 fm_wake_track() {
-  local pid fresh table live_pgids kept g line ppid pgid
-  fresh=
-  for pid in "$@"; do
-    case "$pid" in ''|*[!0-9]*) continue ;; esac
-    case "$FM_TEST_REAP_SEEN" in *" $pid "*) continue ;; esac
-    FM_TEST_REAP_SEEN="$FM_TEST_REAP_SEEN$pid "
-    fresh="$fresh $pid"
-  done
-  [ -n "$fresh" ] || return 0
+  local pid fresh table line pgid ppid
   # Monitor mode may be inactive, or this shell's own group unreadable: either
   # way a job's group is not provably distinct from the one holding the runner
   # and its `tee`. Record nothing - the pid walk still covers jobs and children.
   [ -n "$FM_TEST_SELF_PGID" ] || return 0
-  table=$(ps -A -o pid= -o ppid= -o pgid= 2>/dev/null || true)
-  live_pgids=" $(printf '%s\n' "$table" | awk '{ printf "%s ", $3 }')"
-  kept=" "
-  for g in $FM_TEST_REAP_PGIDS; do
-    case "$live_pgids" in *" $g "*) kept="$kept$g " ;; esac
+  fresh=
+  for pid in "$@"; do
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    case "$FM_TEST_REAP_SEEN" in *" $pid "*) continue ;; esac
+    fresh="$fresh $pid"
   done
-  FM_TEST_REAP_PGIDS=$kept
+  [ -n "$fresh" ] || return 0
+  table=$(fm_wake_process_table)
+  [ -n "$table" ] || return 0
   for pid in $fresh; do
+    FM_TEST_REAP_SEEN="$FM_TEST_REAP_SEEN$pid "
     line=$(printf '%s\n' "$table" | awk -v p="$pid" '$1 == p { print $2" "$3; exit }')
     [ -n "$line" ] || continue
-    ppid=${line% *}
-    pgid=${line#* }
+    pgid=${line% *}
+    ppid=${line#* }
     [ "$ppid" = "$$" ] || continue
     case "$pgid" in ''|*[!0-9]*) continue ;; esac
     [ "$pgid" -gt 1 ] || continue
@@ -367,6 +368,31 @@ fm_wake_track() {
     case "$FM_TEST_REAP_PGIDS" in *" $pgid "*) continue ;; esac
     FM_TEST_REAP_PGIDS="$FM_TEST_REAP_PGIDS$pgid "
   done
+}
+
+# fm_wake_prune_pgids: drop recorded groups that no longer have any member.
+#
+# An empty process group cannot legitimately regain one, so a group left in the
+# inventory is only waiting for the kernel to recycle its number onto a
+# stranger's group - a sibling firstmate home's real watcher, say. Run this at
+# the moment the inventory is USED, not merely when something new is recorded.
+#
+# A `ps` that fails or comes back empty is NO INFORMATION, never evidence that
+# nothing is live: read the other way it would silently empty the inventory and
+# re-open the waited and orphan doors this group key exists to close. Leave the
+# inventory exactly as it was.
+fm_wake_prune_pgids() {
+  local table live_pgids kept g
+  case "$FM_TEST_REAP_PGIDS" in *[0-9]*) ;; *) return 0 ;; esac
+  table=$(fm_wake_process_table)
+  [ -n "$table" ] || return 0
+  live_pgids=" $(printf '%s\n' "$table" | awk '{ printf "%s ", $2 }')"
+  [ "$live_pgids" != " " ] || return 0
+  kept=" "
+  for g in $FM_TEST_REAP_PGIDS; do
+    case "$live_pgids" in *" $g "*) kept="$kept$g " ;; esac
+  done
+  FM_TEST_REAP_PGIDS=$kept
 }
 
 # The job table drops a job as soon as it is waited, so record its group first.
@@ -377,7 +403,7 @@ wait() {
 
 # fm_wake_own_children: this shell's live direct children, by pid.
 fm_wake_own_children() {
-  ps -A -o pid= -o ppid= 2>/dev/null | awk -v p="$$" '$2 == p { print $1 }'
+  fm_wake_process_table | awk -v p="$$" '$3 == p { print $1 }'
 }
 
 # fm_wake_reap_members <pgids> <root-pids>: echo every LIVE pid that belongs to
@@ -389,7 +415,7 @@ fm_wake_own_children() {
 # watcher on this machine, including a sibling home's real supervision.
 fm_wake_reap_members() {
   local pgids=$1 roots=$2 table live frontier next seen pid child g
-  table=$(ps -A -o pid= -o pgid= -o ppid= -o stat= 2>/dev/null || true)
+  table=$(fm_wake_process_table)
   # Only pids the table still shows, and never a zombie. A root that has already
   # exited must leave the set: keeping it would defeat the caller's members-empty
   # early return - making every teardown burn the whole grace - and would aim the
@@ -482,6 +508,7 @@ fm_wake_reap_jobs() {
   kids=$(fm_wake_own_children)
   # shellcheck disable=SC2086 # deliberate word split: pids are one per line.
   fm_wake_track $kids
+  fm_wake_prune_pgids
   fm_wake_reap_scope "$FM_TEST_REAP_PGIDS" "$kids"
   # Reap exit statuses so no zombie outlives this shell. Only this shell's own
   # children can be waited for; their descendants are not ours to wait on.
