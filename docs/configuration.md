@@ -414,6 +414,7 @@ FM_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session-st
 FM_SESSION_START_TIMEOUT=120   # hard runtime bound on the whole session-start digest, which runs on a session-open hook that blocks session initialization
 FM_TIMEOUT_MECHANISM_OVERRIDE=   # bin/fm-timeout-lib.sh mechanism override; only "bash" is honored, forcing the dependency-free watchdog
 FM_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
+FM_BOOTSTRAP_LOCKED=0   # internal companion to FM_BOOTSTRAP_DETECT_ONLY, set by a session-start context re-emit: the sweeps were skipped because THIS lock-holding session already ran them, so TANGLE keeps its checkout repair command instead of the advisory wording
 FM_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, supervision repair, and checkout repair commands
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded operation WILL still run.'   # banner continuation line; fm-send.sh overrides it to name the requested message specifically
 FM_POLL=15              # seconds between watcher poll cycles

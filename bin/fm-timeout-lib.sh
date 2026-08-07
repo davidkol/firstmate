@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# fm-timeout-lib.sh - the single owner of bounded command execution.
+# fm-timeout-lib.sh - the shared owner of bounded command execution.
 #
 # Sourced, never executed. Provides one hard-bound runner so no caller has to
-# re-derive the coreutils/BSD/perl selection, and so every bounded call in this
-# repo agrees on what "the bound was hit" means.
+# re-derive the coreutils/BSD/perl selection, and so every bounded call that
+# sources it agrees on what "the bound was hit" means. It is where a new bounded
+# call belongs. Not every bounded call is converted yet: bin/fm-crew-state.sh,
+# bin/fm-watch.sh, and bin/fm-watch-checkpoint.sh still select their own
+# timeout/gtimeout/perl chain inline and do NOT make the signal-death and
+# never-started distinctions below, so read this runner rather than copying their
+# shape.
 #
 #   fm_timeout_mechanism
 #       Prints the mechanism fm_run_timed will use on this host: "timeout",
