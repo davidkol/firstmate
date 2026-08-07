@@ -243,12 +243,12 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
 # the file, no globals beyond the optional FM_CLASSIFY_RESOLVE_VERB override. This
 # is the durable open-set the fleet snapshot and any point-in-time consumer must use
 # instead of trusting the last status line.
-# The scan_open_decisions wrapper below enumerates a whole directory rather than
-# a single caller-chosen path, so a status file that is itself a symlink (e.g.
-# escaping the state directory) is rejected outright with a plain [ -L ] check
-# before any read - a cheap builtin, unlike fm_wake_latest_event's O_NOFOLLOW
-# subprocess read, which exists for that function's much narrower payload-driven
-# path resolution rather than this directory-local glob.
+# The scan_open_decisions_incremental wrapper below enumerates a whole directory
+# rather than a single caller-chosen path, so a status file that is itself a
+# symlink (e.g. escaping the state directory) is rejected outright with a plain
+# [ -L ] check before any read - a cheap builtin, unlike fm_wake_latest_event's
+# O_NOFOLLOW subprocess read, which exists for that function's much narrower
+# payload-driven path resolution rather than this directory-local glob.
 status_open_decisions() {  # <status-file>
   local f=$1 line resolve held open=''
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
@@ -258,30 +258,6 @@ status_open_decisions() {  # <status-file>
     open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
   done < "$f"
   printf '%s' "$open"
-}
-
-# Fleet-wide wrapper around status_open_decisions: scans every task's status
-# log under <state> and prefixes each still-open decision with its owning task
-# id, so a per-wake or per-session surface can print the consolidated open set
-# without re-walking the fold itself. A thin directory scan only - the fold
-# above remains the ONE place the open/resolved semantics are decided. Prints
-# one "<task>\t<key>\t<verb>\t<note>" line per open decision, in glob (task id)
-# order; prints nothing when none are open.
-scan_open_decisions() {  # <state>
-  local state=$1 f task open line
-  for f in "$state"/*.status; do
-    [ -e "$f" ] || continue
-    task=${f##*/}; task="${task%.status}"
-    open=$(status_open_decisions "$f") || continue
-    [ -n "$open" ] || continue
-    while IFS= read -r line; do
-      [ -n "$line" ] || continue
-      printf '%s\t%s\n' "$task" "$line"
-    done <<EOF
-$open
-EOF
-  done
-  return 0
 }
 
 # --- incremental (cursor-backed) open-decisions fold ------------------------
@@ -320,9 +296,16 @@ EOF
 #
 # The other real failure mode is OUR OWN read failing (a stat/wc/tail I/O
 # error), not a malformed writer: every such read here is checked, and on
-# failure this reports the already-trusted persisted set unchanged rather than
-# risking a silent invalidation that would wipe it - never a bare "empty" as if
-# nothing were open.
+# failure this never reports a bare "empty" as if nothing were open. Which
+# answer is safe depends on whether a cursor vouched for anything. With a
+# cursor this parsed, the persisted set is reported unchanged rather than
+# risking a silent invalidation that would wipe it. With NO parsed cursor -
+# the first drain after a spawn, or any drain after the cursor was deleted,
+# which AGENTS.md documents as safe to do - there is no persisted set to
+# report, so the read degrades to the authoritative whole-file
+# status_open_decisions fold instead: it reaches the same answer using only
+# builtins and a plain redirect, so it survives exactly the stat/wc/tail
+# failures that sent it there.
 #
 # Not a pure status-file read: this writes/rewrites the sibling cursor file as a
 # side effect (state/.<task>.open-decisions-cursor), the library's second
@@ -351,11 +334,14 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 }
 
 # Stat flavor for the device:inode identity below, resolved once at source time
-# the way _FM_CLASSIFY_LIB_DIR is: OSTYPE is a bash builtin variable, so the
-# common case costs no process at all, and the `uname` fallback runs at most
-# once per sourcing rather than once per status file per drain.
-case "${OSTYPE:-$(uname -s 2>/dev/null)}" in
-  [Dd]arwin*) _FM_CLASSIFY_STAT_IDENT_FLAG='-f' ;;
+# the way _FM_CLASSIFY_LIB_DIR is, so the per-drain scan costs no `uname` per
+# status file. It reads `uname -s`, the authoritative name of the running
+# kernel and the platform check every other script in bin/ uses; OSTYPE is not
+# consulted because bash only set_if_not's it, so an exported value inherited
+# from a profile or CI image would survive onto a host it does not describe and
+# hand every status file a stat flag its stat rejects.
+case "$(uname -s 2>/dev/null)" in
+  Darwin) _FM_CLASSIFY_STAT_IDENT_FLAG='-f' ;;
   *) _FM_CLASSIFY_STAT_IDENT_FLAG='-c' ;;
 esac
 
@@ -364,9 +350,23 @@ _fm_open_decisions_file_ident() {  # <file> -> "dev:inode", empty on I/O failure
   LC_ALL=C stat "$_FM_CLASSIFY_STAT_IDENT_FLAG" '%d:%i' "$1" 2>/dev/null
 }
 
+# The one answer every checked read failure in the incremental fold below hands
+# back, so no leg of it can degrade differently. A cursor that parsed vouches
+# for its persisted set (empty legitimately means "the last good fold saw
+# nothing open"); with no such cursor, nothing vouches for empty, so this
+# re-derives from the whole-file fold rather than reporting a silence it cannot
+# distinguish from an I/O error.
+_fm_open_decisions_read_failure() {  # <status-file> <cursor-parsed> <persisted-open>
+  if [ "$2" = true ]; then
+    printf '%s' "$3"
+    return 0
+  fi
+  status_open_decisions "$1"
+}
+
 status_open_decisions_incremental() {  # <status-file>
   local f=$1 cf offset ident open='' trusted_open='' cursor_data first rest ident_line
-  local size cur_ident resolve held chunk_file chunk_size line
+  local size cur_ident resolve held chunk_file chunk_size line cursor_parsed=false
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   cf=$(_fm_open_decisions_cursor_path "$f")
   offset=0
@@ -391,6 +391,7 @@ status_open_decisions_incremental() {  # <status-file>
                         *$'\n'*) open=${rest#*$'\n'} ;;
                       esac
                       trusted_open=$open
+                      cursor_parsed=true
                       ;;
                     *) offset=0 ;;
                   esac
@@ -405,14 +406,21 @@ status_open_decisions_incremental() {  # <status-file>
   fi
 
   # A stat/size-read failure is a genuine I/O error, not "the file is empty" -
-  # report the already-trusted persisted set unchanged rather than risking a
-  # silent invalidation that would wipe it.
-  cur_ident=$(_fm_open_decisions_file_ident "$f") || { printf '%s' "$trusted_open"; return 0; }
-  [ -n "$cur_ident" ] || { printf '%s' "$trusted_open"; return 0; }
+  # every leg hands off to the one shared degrade above so none of them can
+  # answer with a silence it cannot tell apart from that error.
+  cur_ident=$(_fm_open_decisions_file_ident "$f") \
+    || { _fm_open_decisions_read_failure "$f" "$cursor_parsed" "$trusted_open"; return 0; }
+  [ -n "$cur_ident" ] \
+    || { _fm_open_decisions_read_failure "$f" "$cursor_parsed" "$trusted_open"; return 0; }
   size=$(LC_ALL=C wc -c < "$f" 2>/dev/null) \
-    || { printf '%s' "$trusted_open"; return 0; }
+    || { _fm_open_decisions_read_failure "$f" "$cursor_parsed" "$trusted_open"; return 0; }
   size=${size//[[:space:]]/}
-  case "$size" in ''|*[!0-9]*) printf '%s' "$trusted_open"; return 0 ;; esac
+  case "$size" in
+    ''|*[!0-9]*)
+      _fm_open_decisions_read_failure "$f" "$cursor_parsed" "$trusted_open"
+      return 0
+      ;;
+  esac
 
   if [ -z "$ident" ] || [ "$ident" != "$cur_ident" ] || [ "$offset" -gt "$size" ]; then
     offset=0
@@ -422,12 +430,18 @@ status_open_decisions_incremental() {  # <status-file>
   if [ "$offset" -lt "$size" ]; then
     chunk_file="$cf.read.$$"
     tail -c "+$((offset + 1))" "$f" > "$chunk_file" 2>/dev/null \
-      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+      || { rm -f "$chunk_file"
+           _fm_open_decisions_read_failure "$f" "$cursor_parsed" "$trusted_open"; return 0; }
     chunk_size=$(LC_ALL=C wc -c < "$chunk_file" 2>/dev/null) \
-      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+      || { rm -f "$chunk_file"
+           _fm_open_decisions_read_failure "$f" "$cursor_parsed" "$trusted_open"; return 0; }
     chunk_size=${chunk_size//[[:space:]]/}
     case "$chunk_size" in
-      ''|*[!0-9]*) rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0 ;;
+      ''|*[!0-9]*)
+        rm -f "$chunk_file"
+        _fm_open_decisions_read_failure "$f" "$cursor_parsed" "$trusted_open"
+        return 0
+        ;;
     esac
     # Test-only observability seam (off by default, no production behavior
     # change): when set, records exactly how many bytes THIS call folded, so a
@@ -454,11 +468,15 @@ status_open_decisions_incremental() {  # <status-file>
   printf '%s' "$open"
 }
 
-# Incremental sibling of scan_open_decisions: same fleet-wide directory walk and
-# output shape ("<task>\t<key>\t<verb>\t<note>" per open decision), but folds
-# each task's status log through status_open_decisions_incremental instead of
-# the whole-file status_open_decisions, so a fleet-wide per-drain scan stays
-# bounded by new appends rather than total lifetime log size across every task.
+# Fleet-wide scan: walks every task's status log under <state> and prefixes each
+# still-open decision with its owning task id, so a per-wake or per-session
+# surface can print the consolidated open set without re-walking the fold
+# itself. Prints one "<task>\t<key>\t<verb>\t<note>" line per open decision, in
+# glob (task id) order; prints nothing when none are open. A thin directory scan
+# only - it folds each log through status_open_decisions_incremental, so the
+# open/resolved semantics stay decided in exactly one place while a fleet-wide
+# per-drain scan stays bounded by new appends rather than total lifetime log
+# size across every task.
 scan_open_decisions_incremental() {  # <state>
   local state=$1 f task open line
   for f in "$state"/*.status; do

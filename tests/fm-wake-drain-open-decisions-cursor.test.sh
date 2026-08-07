@@ -227,6 +227,79 @@ SH
   pass "a failed incremental read preserves the persisted open set instead of silently returning empty"
 }
 
+test_cold_cursor_identity_failure_still_surfaces_the_decision() {
+  local dir state fakebin statusfile cursor out
+  dir=$(make_case cold-cursor-ident-failure)
+  state="$dir/state"
+  fakebin="$dir/failbin"
+  mkdir -p "$fakebin"
+  statusfile="$state/task6.status"
+  cursor="$state/.task6.open-decisions-cursor"
+  out="$dir/drain.out"
+
+  # No cursor has ever been written for this task - the first drain after a
+  # spawn, and equally the state after an operator deletes the cursor, which
+  # AGENTS.md documents as safe. There is no persisted open set to fall back
+  # on, so a failing identity read must re-derive from the authoritative
+  # whole-file fold rather than report the task as having nothing open.
+  printf 'needs-decision [key=cold]: must survive a cold identity failure\n' > "$statusfile"
+  [ ! -e "$cursor" ] || fail "test setup error: a cursor already exists before the first drain"
+
+  # Fail ONLY the device:inode identity read, passing every other stat call
+  # (guard, wake lib) through to the real one.
+  cat > "$fakebin/stat" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in '%d:%i') exit 1 ;; esac
+done
+exec "$(command -v stat)" "\$@"
+SH
+  chmod +x "$fakebin/stat"
+
+  FM_STATE_OVERRIDE="$state" PATH="$fakebin:$PATH" "$DRAIN" > "$out" \
+    || fail "wake drain failed instead of degrading after a cold identity-read failure"
+  grep -F 'task6' "$out" | grep -F '[key=cold]' | grep -F 'must survive a cold identity failure' >/dev/null \
+    || fail "a cold identity-read failure silently hid an open decision: $(command cat "$out")"
+  [ ! -e "$cursor" ] \
+    || fail "a failed identity read wrote a cursor from an offset it could not verify"
+
+  pass "a read failure with no cursor yet refolds the whole status file instead of returning empty"
+}
+
+test_cold_cursor_content_read_failure_still_surfaces_the_decision() {
+  local dir state fakebin statusfile cursor out
+  dir=$(make_case cold-cursor-content-failure)
+  state="$dir/state"
+  fakebin="$dir/failbin"
+  mkdir -p "$fakebin"
+  statusfile="$state/task7.status"
+  cursor="$state/.task7.open-decisions-cursor"
+  out="$dir/drain.out"
+
+  # Same cold state, but the failing read is the byte-offset content pull. The
+  # whole-file fold needs no `tail` at all, so it still reaches the answer.
+  printf 'needs-decision [key=cold-tail]: must survive a cold content failure\n' > "$statusfile"
+  [ ! -e "$cursor" ] || fail "test setup error: a cursor already exists before the first drain"
+
+  cat > "$fakebin/tail" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in -c|-c*) exit 1 ;; esac
+done
+exec "$(command -v tail)" "\$@"
+SH
+  chmod +x "$fakebin/tail"
+
+  FM_STATE_OVERRIDE="$state" PATH="$fakebin:$PATH" "$DRAIN" > "$out" \
+    || fail "wake drain failed instead of degrading after a cold content-read failure"
+  grep -F 'task7' "$out" | grep -F '[key=cold-tail]' | grep -F 'must survive a cold content failure' >/dev/null \
+    || fail "a cold content-read failure silently hid an open decision: $(command cat "$out")"
+  [ ! -e "$cursor" ] \
+    || fail "a failed content read wrote a cursor for bytes it never folded"
+
+  pass "a content-read failure with no cursor yet refolds the whole status file instead of returning empty"
+}
+
 test_cursor_cache_read_failure_refolds_authoritative_status() {
   local dir state fakebin statusfile cursor out probe real_cat status_bytes probe_bytes
   dir=$(make_case cursor-cache-read-failure)
@@ -273,5 +346,7 @@ SH
 test_truncated_log_falls_back_to_a_full_refold_not_a_dropped_decision
 test_same_size_rewrite_is_detected_via_inode_identity
 test_read_failure_never_silently_returns_empty
+test_cold_cursor_identity_failure_still_surfaces_the_decision
+test_cold_cursor_content_read_failure_still_surfaces_the_decision
 test_cursor_cache_read_failure_refolds_authoritative_status
 test_buried_decision_survives_many_growing_drains_and_resolution_clears_it
