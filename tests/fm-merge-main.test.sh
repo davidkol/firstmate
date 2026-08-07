@@ -99,6 +99,19 @@ remote_main_sha() {
   git -C "$1/remote.git" rev-parse main
 }
 
+# fm-merge-main.sh runs the shared supervision guard, whose worktree-tangle and
+# watcher alarms are independent of the landing and are deliberately never
+# suppressed. They describe the checkout running this suite, not the fixture, so
+# on a feature branch - which is how every firstmate-repo change is made here -
+# the tangle banner's own "then re-validate ... in a proper isolated worktree"
+# line lands in the same stderr a negative assertion reads. Strip the guard's
+# output so such an assertion sees only what fm-merge-main.sh itself wrote: every
+# guard banner line is ●-prefixed, and its once-per-episode reminder is the one
+# WARNING: watcher line. fm-merge-main.sh emits neither shape.
+merge_main_own_stderr() {  # <stderr-file>
+  grep -v -e '^●' -e '^WARNING: watcher still down' "$1" || true
+}
+
 test_lands_published_head_and_pushes() {
   local case_dir rc branch_sha
   case_dir=$(make_case lands-published)
@@ -264,7 +277,7 @@ test_rerun_after_landing_reports_already_landed() {
   expect_code 0 "$rc" "rerun-landed: a re-run after a successful landing should report, not refuse"
   assert_grep 'already landed' "$case_dir/stdout2" \
     "rerun-landed: the re-run should say the work already landed"
-  assert_not_contains "$(cat "$case_dir/stderr2")" 're-validate' \
+  assert_not_contains "$(merge_main_own_stderr "$case_dir/stderr2")" 're-validate' \
     "rerun-landed: the re-run must not demand a rebase and re-validation of landed work"
   [ "$(remote_main_sha "$case_dir")" = "$after" ] \
     || fail "rerun-landed: the re-run must not move the host's main again"
