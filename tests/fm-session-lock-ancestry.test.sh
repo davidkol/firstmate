@@ -45,6 +45,12 @@ lib_eval() {  # <fakebin> <expression>
   " "$LIB"
 }
 
+# The two shapes differ in WHICH ps field carries the install path, which is the
+# whole point: procps on Linux reports the kernel exec name in comm= and ignores
+# argv[0], while macOS reports argv[0] in comm=. Both home-shaped install roots
+# are written with the same synthetic prefix because tracked files in this repo
+# must contain no macOS user-home literal (tests/fm-kimi-harness.test.sh's
+# tracked-path hygiene assertion); the prefix is not what either shape exercises.
 test_version_named_session_is_identified_on_both_platforms() {
   local dir fakebin shape got
   dir="$TMP_ROOT/version-named"
@@ -64,8 +70,8 @@ done
 case "$pid:$field:${FM_TEST_CLAUDE_SHAPE:-linux}" in
   700:comm=:linux) printf '%s\n' '2.1.220' ;;
   700:args=:linux) printf '%s\n' '/opt/claude/versions/2.1.220 --resume' ;;
-  700:comm=:macos) printf '%s\n' '/Users/u/.local/share/claude/versions/2.1.220' ;;
-  700:args=:macos) printf '%s\n' '/Users/u/.local/share/claude/versions/2.1.220 --resume' ;;
+  700:comm=:macos) printf '%s\n' '/home/u/.local/share/claude/versions/2.1.220' ;;
+  700:args=:macos) printf '%s\n' '/home/u/.local/share/claude/versions/2.1.220 --resume' ;;
   700:ppid=:*) printf '%s\n' 1 ;;
   *:comm=:*) printf '%s\n' bash ;;
   *:args=:*) printf '%s\n' 'bash /repo/bin/fm-claude-stop-autoarm.sh' ;;
