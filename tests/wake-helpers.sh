@@ -313,33 +313,56 @@ FM_TEST_REAP_GRACE=${FM_TEST_REAP_GRACE:-5}
 # suite job and everything that job started. Enable it before any suite spawns.
 set -m
 
+# Every pgid decision below is gated on knowing this shell's OWN group, because
+# that group holds bin/fm-test-run.sh and the `tee` reading this suite's output.
+# An unreadable or non-numeric answer is normalised to empty, and empty means the
+# pgid path is skipped entirely rather than compared against nothing: the guard
+# fails closed, back to pid-scoped reaping.
 FM_TEST_SELF_PGID=$(ps -p "$$" -o pgid= 2>/dev/null | tr -d '[:space:]')
+case "$FM_TEST_SELF_PGID" in ''|*[!0-9]*) FM_TEST_SELF_PGID= ;; esac
 FM_TEST_REAP_PGIDS=" "
 FM_TEST_REAP_SEEN=" "
 
-# fm_wake_track <pid>...: fold each pid's process group into the reap inventory.
+# fm_wake_track <pid>...: fold each pid's process group into the reap inventory,
+# and drop groups that have gone empty.
 #
 # A group is recorded only when the pid is a LIVE DIRECT CHILD of this shell, so
 # the inventory can never name a group this suite does not own - the guard that
 # matters, because a stray reap would reach a sibling firstmate home's real
-# watcher. Recorded early and kept, since a group id outlives the child that
-# leads it; each pid is inspected once.
+# watcher. A group id outlives the child that leads it, so a recorded group is
+# kept while any member survives - but only that long: an empty process group
+# cannot legitimately regain members, so holding one would just wait for the
+# kernel to recycle that number onto a stranger's group. Each pid is inspected
+# once, off one process-table snapshot that also drives the prune.
 fm_wake_track() {
-  local pid line ppid pgid
+  local pid fresh table live_pgids kept g line ppid pgid
+  fresh=
   for pid in "$@"; do
     case "$pid" in ''|*[!0-9]*) continue ;; esac
     case "$FM_TEST_REAP_SEEN" in *" $pid "*) continue ;; esac
     FM_TEST_REAP_SEEN="$FM_TEST_REAP_SEEN$pid "
-    line=$(ps -p "$pid" -o ppid= -o pgid= 2>/dev/null | awk 'NR == 1 { print $1" "$2 }')
+    fresh="$fresh $pid"
+  done
+  [ -n "$fresh" ] || return 0
+  # Monitor mode may be inactive, or this shell's own group unreadable: either
+  # way a job's group is not provably distinct from the one holding the runner
+  # and its `tee`. Record nothing - the pid walk still covers jobs and children.
+  [ -n "$FM_TEST_SELF_PGID" ] || return 0
+  table=$(ps -A -o pid= -o ppid= -o pgid= 2>/dev/null || true)
+  live_pgids=" $(printf '%s\n' "$table" | awk '{ printf "%s ", $3 }')"
+  kept=" "
+  for g in $FM_TEST_REAP_PGIDS; do
+    case "$live_pgids" in *" $g "*) kept="$kept$g " ;; esac
+  done
+  FM_TEST_REAP_PGIDS=$kept
+  for pid in $fresh; do
+    line=$(printf '%s\n' "$table" | awk -v p="$pid" '$1 == p { print $2" "$3; exit }')
     [ -n "$line" ] || continue
     ppid=${line% *}
     pgid=${line#* }
     [ "$ppid" = "$$" ] || continue
     case "$pgid" in ''|*[!0-9]*) continue ;; esac
     [ "$pgid" -gt 1 ] || continue
-    # Monitor mode inactive: the job shares this shell's group, which also holds
-    # the test runner and the `tee` reading its output. Never reap that - the pid
-    # walk below still covers the job and its descendants.
     [ "$pgid" != "$FM_TEST_SELF_PGID" ] || continue
     case "$FM_TEST_REAP_PGIDS" in *" $pgid "*) continue ;; esac
     FM_TEST_REAP_PGIDS="$FM_TEST_REAP_PGIDS$pgid "
@@ -365,15 +388,22 @@ fm_wake_own_children() {
 # bin/fm-watch.sh` (or any other -f pattern) matches every firstmate home's
 # watcher on this machine, including a sibling home's real supervision.
 fm_wake_reap_members() {
-  local pgids=$1 roots=$2 table frontier next seen pid child g
-  table=$(ps -A -o pid= -o pgid= -o ppid= 2>/dev/null || true)
+  local pgids=$1 roots=$2 table live frontier next seen pid child g
+  table=$(ps -A -o pid= -o pgid= -o ppid= -o stat= 2>/dev/null || true)
+  # Only pids the table still shows, and never a zombie. A root that has already
+  # exited must leave the set: keeping it would defeat the caller's members-empty
+  # early return - making every teardown burn the whole grace - and would aim the
+  # post-grace KILL at a number the kernel is already free to hand to a stranger.
+  live=" $(printf '%s\n' "$table" | awk '$4 !~ /^Z/ { printf "%s ", $1 }')"
   frontier=$roots
-  for g in $pgids; do
-    case "$g" in ''|*[!0-9]*) continue ;; esac
-    [ "$g" -gt 1 ] || continue
-    [ "$g" != "$FM_TEST_SELF_PGID" ] || continue
-    frontier="$frontier $(printf '%s\n' "$table" | awk -v x="$g" '$2 == x { printf "%s ", $1 }')"
-  done
+  if [ -n "$FM_TEST_SELF_PGID" ]; then
+    for g in $pgids; do
+      case "$g" in ''|*[!0-9]*) continue ;; esac
+      [ "$g" -gt 1 ] || continue
+      [ "$g" != "$FM_TEST_SELF_PGID" ] || continue
+      frontier="$frontier $(printf '%s\n' "$table" | awk -v x="$g" '$2 == x { printf "%s ", $1 }')"
+    done
+  fi
   seen=" "
   while [ -n "$frontier" ]; do
     next=
@@ -381,6 +411,7 @@ fm_wake_reap_members() {
       case "$pid" in ''|*[!0-9]*) continue ;; esac
       [ "$pid" -gt 1 ] || continue
       [ "$pid" != "$$" ] || continue
+      case "$live" in *" $pid "*) ;; *) continue ;; esac
       case "$seen" in *" $pid "*) continue ;; esac
       seen="$seen$pid "
       for child in $(printf '%s\n' "$table" | awk -v p="$pid" '$3 == p { print $1 }'); do
@@ -433,14 +464,16 @@ fm_wake_reap_scope() {
 fm_wake_reap_tree() {
   local roots="$*" pgids pid pgid
   pgids=
-  for pid in $roots; do
-    case "$pid" in ''|*[!0-9]*) continue ;; esac
-    pgid=$(ps -p "$pid" -o pgid= 2>/dev/null | tr -d '[:space:]')
-    case "$pgid" in ''|*[!0-9]*) continue ;; esac
-    [ "$pgid" -gt 1 ] || continue
-    [ "$pgid" != "$FM_TEST_SELF_PGID" ] || continue
-    pgids="$pgids $pgid"
-  done
+  if [ -n "$FM_TEST_SELF_PGID" ]; then
+    for pid in $roots; do
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      pgid=$(ps -p "$pid" -o pgid= 2>/dev/null | tr -d '[:space:]')
+      case "$pgid" in ''|*[!0-9]*) continue ;; esac
+      [ "$pgid" -gt 1 ] || continue
+      [ "$pgid" != "$FM_TEST_SELF_PGID" ] || continue
+      pgids="$pgids $pgid"
+    done
+  fi
   fm_wake_reap_scope "$pgids" "$roots"
 }
 

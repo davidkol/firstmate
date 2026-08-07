@@ -1003,10 +1003,17 @@ test_failing_suite_reaps_children_and_ends_its_output_pipe() {
   # stopped must OWN one - like the real watcher, and unlike a bare `sleep`,
   # whose default TERM disposition kills it stopped or not. Its marker file is
   # what proves the reaper continued it rather than just outliving it with KILL.
+  # Its own readiness file is what keeps that proof honest: the trap is installed
+  # milliseconds into startup, and a STOP that lands before it leaves the default
+  # disposition in force, so the CONT+TERM pair kills it silently and the marker
+  # never appears. Publish readiness from INSIDE the handler, after the trap - a
+  # fixed delay here would just be the peer race this branch exists to remove,
+  # wearing a different number.
   cat > "$dir/handler.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
 trap 'printf terminated > "$1"; exit 143' TERM
+printf ready > "$2"
 while :; do sleep 0.2; done
 SH
   cat > "$dir/deaf.sh" <<'SH'
@@ -1018,12 +1025,25 @@ SH
   cat > "$spawner" <<'SH'
 #!/usr/bin/env bash
 set -u
+i=0
 case "${2:-hold}" in
-  handle) bash "${0%/*}/handler.sh" "$3" & ;;
-  ignore) bash "${0%/*}/deaf.sh" & ;;
-  *) sleep 300 & ;;
+  handle)
+    bash "${0%/*}/handler.sh" "$3" "$4" &
+    child=$!
+    while [ "$i" -lt 100 ] && [ ! -s "$4" ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    if [ ! -s "$4" ]; then
+      kill -KILL "$child" 2>/dev/null || true
+      wait "$child" 2>/dev/null || true
+      exit 1
+    fi
+    ;;
+  ignore) bash "${0%/*}/deaf.sh" & child=$! ;;
+  *) sleep 300 & child=$! ;;
 esac
-printf '%s\n' "$!" > "$1"
+printf '%s\n' "$child" > "$1"
 wait
 SH
   chmod +x "$spawner" "$dir/handler.sh" "$dir/deaf.sh"
@@ -1033,7 +1053,7 @@ set -u
 . "$ROOT/tests/wake-helpers.sh"
 
 start_door() {
-  bash "$spawner" "$dir/\$1.gc" "\$2" "$dir/\$1.terminated" &
+  bash "$spawner" "$dir/\$1.gc" "\$2" "$dir/\$1.terminated" "$dir/\$1.ready" &
   printf '%s\n' "\$!" > "$dir/\$1.parent"
 }
 
