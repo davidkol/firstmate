@@ -10,7 +10,6 @@ Task-specific chronology, temporary paths, run identifiers, and delivery transcr
 
 The cross-harness transport pass ran on 2026-07-17 with Codex 0.144.4, Grok 0.2.103, OpenCode 1.17.18, Pi 0.80.10, and the tracked Claude hook wiring.
 It predates the run tier, so it covers the nudge payload's transport only; the Claude run-tier evidence is the separate dated subsection below.
-Codex's run-tier hook has not been re-measured on this fleet since the tier change; its transport shape is unchanged and only the invoked wrapper and its payload piping differ.
 
 Codex command shape:
 
@@ -22,6 +21,15 @@ codex exec --ephemeral --dangerously-bypass-hook-trust \
 ```
 
 Observed result: the `SessionStart` hook completed and its stdout reached model context.
+
+That result and the later Codex probe recorded under [Semantic busy state](#semantic-busy-state) disagree, and the conditions that distinguish them are only partly recorded.
+This one ran on codex-cli 0.144.4 and does not record its checkout shape, so it cannot be read as covering the primary checkout or a linked worktree specifically.
+The later one ran on codex-cli 0.145.0, explicitly in a linked worktree, and found that Firstmate-written project hooks under `<worktree>/.codex/hooks.json` fired for neither an interactive pane nor `codex exec`, while global `~/.codex/hooks.json` `SessionStart` hooks fired in the same runs.
+Both are real observations; they differ in codex-cli version and in checkout shape, and only the newer one says where it ran.
+
+The session-start tier for `codex exec` is therefore UNESTABLISHED.
+Nothing recorded here shows that a Firstmate-written project hook delivers the run-tier digest into model context on the installed build, and nothing here disproves it either.
+Re-verification against the installed codex-cli is tracked as `fm-codex-run-tier-unverified`.
 
 Grok command shape:
 
@@ -78,12 +86,7 @@ Two consequences for the session-start digest:
 
 Same-day comparison of the composition change alone, run against a copy of the main home's `data/` and `state/`: 128,856 bytes before, 123,926 after, entirely from `FLEET STATE` falling from 32,260 to 26,356 as done rows, the queued bound, and the per-line status cap took effect.
 
-What this cluster settles, stated plainly rather than left to be inferred from those counts: it is ONE PART of the session-start cost problem, not the whole of it.
-It does not by itself bring the digest under the inline limit - the main home's digest is still an order of magnitude above it - and bounding curated startup memory is separate later work.
-The byte delta also undersells the change, because two of its three behaviors are correctness rather than size.
-First, a tail-truncated digest no longer hides live fleet state: fleet identity now precedes curated memory in the payload the harness truncates from the tail.
-Second, the agent is now told to read the persisted file instead of acting on the head preview - a manual step firstmate performed by hand as recently as the 123,926-byte main-home digest recorded above.
-The size reduction is the third behavior and the smallest of the three.
+This composition change is one part of the session-start cost problem and does not by itself bring the digest under the inline limit, which the main home's digest still exceeds by an order of magnitude.
 
 Current deterministic and live entry points:
 
