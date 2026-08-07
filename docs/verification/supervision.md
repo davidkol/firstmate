@@ -27,9 +27,7 @@ This one ran on codex-cli 0.144.4 and does not record its checkout shape, so it 
 The later one ran on codex-cli 0.145.0, explicitly in a linked worktree, and found that Firstmate-written project hooks under `<worktree>/.codex/hooks.json` fired for neither an interactive pane nor `codex exec`, while global `~/.codex/hooks.json` `SessionStart` hooks fired in the same runs.
 Both are real observations; they differ in codex-cli version and in checkout shape, and only the newer one says where it ran.
 
-The session-start tier for `codex exec` is therefore UNESTABLISHED.
-Nothing recorded here shows that a Firstmate-written project hook delivers the run-tier digest into model context on the installed build, and nothing here disproves it either.
-Re-verification against the installed codex-cli is tracked as `fm-codex-run-tier-unverified`.
+Neither observation settles the installed build, so what session-open tier follows from them is not decided here: [`../sessionstart-nudge.md`](../sessionstart-nudge.md) owns tier assignment and the tracked re-verification card.
 
 Grok command shape:
 

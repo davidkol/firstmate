@@ -7,7 +7,7 @@ Firstmate ships two session-open tiers, and the tier is a property of the harnes
 
 | Tier | What the adapter does | Used by |
 | --- | --- | --- |
-| Run | Executes `bin/fm-session-start.sh` in the hook and lets its ordered digest land in model context before the first turn. | Claude, `codex exec` |
+| Run | Executes `bin/fm-session-start.sh` in the hook and lets its ordered digest land in model context before the first turn. | Claude |
 | Nudge | Asks the agent to run the digest through the native adapter or the tracked session-start instruction. | Grok, OpenCode, Pi / pi-signed, Codex interactive TUI, and run-tier sources routed to the nudge |
 
 The run tier exists because the nudge can only ask.
@@ -17,6 +17,11 @@ The nudge tier remains the floor for harnesses that cannot carry hook stdout int
 
 Pi stays on the nudge tier here.
 Its adapter is a tracked extension rather than a hook payload, and moving it to the run tier means rewriting that extension's delivery and truncation handling; this fleet runs Claude, so that work is not carried.
+
+The tier for `codex exec` is UNESTABLISHED, which is why it appears in neither row above.
+`.codex/hooks.json` is wired for the run tier, but the two recorded observations disagree and neither settles the installed build: on codex-cli 0.144.4 a `SessionStart` hook completed and its stdout reached model context, in a checkout whose shape was not recorded, while on codex-cli 0.145.0, explicitly in a linked worktree, Firstmate-written project hooks under `<worktree>/.codex/hooks.json` fired for neither an interactive pane nor `codex exec`, though global `~/.codex/hooks.json` hooks fired in those same runs.
+Re-verification against the installed codex-cli is tracked as `fm-codex-run-tier-unverified`, and [`verification/supervision.md`](verification/supervision.md#native-session-start-delivery) holds both dated observations.
+Until it is settled, nothing is lost if the hook never fires: the tracked `AGENTS.md` session-start instruction is the floor on any Codex surface, the same floor the interactive TUI row below records.
 
 ## Source routing
 
@@ -75,7 +80,7 @@ A lock another session holds, broken GitHub auth, and a truncated digest therefo
 | Harness | Tier | Tracked transport | Current compatibility |
 | --- | --- | --- | --- |
 | Claude | Run | `.claude/settings.json` registers one unmatched `SessionStart` hook, invoked through `CLAUDE_PROJECT_DIR` with a 180s timeout; the wrapper reads `source` from the hook payload. | Native stdout context injection is supported. |
-| Codex exec | Run | `.codex/hooks.json` anchors to the hook process working directory, verifies a Firstmate-shaped hook-bearing root, and pipes the hook payload into the wrapper with a 180s timeout. | Native stdout context injection is supported under `codex exec`. |
+| Codex exec | Unestablished | `.codex/hooks.json` anchors to the hook process working directory, verifies a Firstmate-shaped hook-bearing root, and pipes the hook payload into the wrapper with a 180s timeout. | Whether a Firstmate-written project hook fires and reaches model context is unsettled on the installed build; see the tier note above and `fm-codex-run-tier-unverified`. |
 | Codex interactive TUI | Nudge | The tracked `AGENTS.md` session-start instruction remains visible when the project hook does not fire. | Firstmate ships no global hook and does not depend on one. |
 | Pi / pi-signed | Nudge | `.pi/extensions/fm-primary-turnend-guard.ts` handles `session_start` reasons `startup`, `new`, and `resume`, then injects the wrapper output with `pi.sendMessage`. | The custom message reaches model context without racing an initial positional prompt. |
 | OpenCode | Nudge | `.opencode/plugins/fm-primary-sessionstart-nudge.js` listens for `session.created`, runs once per session id, and calls `client.session.promptAsync` only when the wrapper prints a nudge. | Interactive TUI delivery is supported; headless `opencode run` is intentionally fail-open because the process can exit before the queued turn. That early exit is also why OpenCode cannot use the run tier. |
@@ -92,7 +97,7 @@ That alternative expands trust and writes outside this repository, so Firstmate 
 `tests/fm-sessionstart-nudge.test.sh` proves the nudge wrapper's silence for both gate signals, an unmarked linked worktree, a missing state directory, and an already-owned lock.
 It proves exact U+2063 `FIRSTMATE_OP:`-prefixed, `session-start`-typed one-line output for a plain primary and a marked linked secondmate primary.
 It proves the run wrapper's source routing end to end against a real `fm-session-start.sh`, including completion-gated `--reemit` selection, rejection of a previous owner's completion record, resume delegation, an unrecognized source falling through to the full digest, and silence for the gate environment and an unmarked linked worktree.
-It also verifies every tracked transport registration listed above, including that the run-tier hooks carry no source matcher and register a timeout above the digest's own runtime bound.
+It also verifies every tracked transport registration listed above, including that the Claude hook carries no source matcher and that both hooks invoking the run wrapper register a timeout above the digest's own runtime bound.
 `tests/fm-session-start.test.sh` proves the runtime bound through the forced pure-Bash fallback: a TERM-resistant digest that exceeds its budget is force-killed with its grandchild, still emits its completed stages, names the incomplete stage and every stage it never reached, leaves no completion proof, and exits 0.
 It also proves `--reemit` skips startup's mutating sweeps, still drains queued wakes, and re-verifies lock ownership rather than assuming it.
 `tests/fm-captain-translation-contract.test.sh` proves Ahoy's current marker rule, narrow legacy compatibility exclusions, genuine captain-message near misses, and the shared marker on supported user-role operational injections.
