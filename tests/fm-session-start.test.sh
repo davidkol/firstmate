@@ -1594,11 +1594,13 @@ exit 1
 SH
   chmod +x "$fakebin/mktemp"
 
+  # shellcheck disable=SC2016  # Expansion is deliberately deferred to the child shell.
   env PATH="$fakebin:$BASE_PATH" bash -c \
     '. "$1"; fm_run_bash_timeout 5 true' _ "$ROOT/bin/fm-timeout-lib.sh" || status=$?
   expect_code 125 "$status" "the pure-Bash watchdog called an unusable TMPDIR a bound hit"
 
   status=0
+  # shellcheck disable=SC2016  # Expansion is deliberately deferred to the child shell.
   env PATH="$fakebin:$BASE_PATH" bash -c \
     '. "$1"; fm_run_external_timeout timeout 5 true' _ "$ROOT/bin/fm-timeout-lib.sh" || status=$?
   expect_code 125 "$status" "the external timeout path called an unusable TMPDIR a bound hit"
@@ -1679,12 +1681,14 @@ test_external_timeout_137_is_not_a_bound_hit() {
   mkdir -p "$fakebin"
   make_externally_killed_timeout "$fakebin"
 
+  # shellcheck disable=SC2016  # Expansion is deliberately deferred to the child shell.
   mechanism=$(env PATH="$fakebin:$BASE_PATH" bash -c '. "$1"; fm_timeout_mechanism' \
     _ "$ROOT/bin/fm-timeout-lib.sh")
   [ "$mechanism" = timeout ] || fail "the external-runner fixture selected '$mechanism' instead"
 
   # stderr is dropped only to keep the shell's own "Killed: 9" job notice for the
   # fixture out of the suite's output, where it reads like a failure.
+  # shellcheck disable=SC2016  # Expansion is deliberately deferred to the child shell.
   env PATH="$fakebin:$BASE_PATH" bash -c '. "$1"; fm_run_timed 30 true' \
     _ "$ROOT/bin/fm-timeout-lib.sh" 2>/dev/null || status=$?
   expect_code 137 "$status" "a SIGKILLed runner was reported as the bound being hit"
@@ -1744,6 +1748,7 @@ EOF
   make_fake_ps_claude "$fakebin"
   make_group_killed_tool "$fakebin" git
 
+  # shellcheck disable=SC2016  # Expansion is deliberately deferred to the child shell.
   mechanism=$(env PATH="$fakebin:$BASE_PATH" bash -c '. "$1"; fm_timeout_mechanism' \
     _ "$ROOT/bin/fm-timeout-lib.sh")
 
