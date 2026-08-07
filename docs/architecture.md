@@ -227,7 +227,8 @@ The firstmate repo itself is the exception: its `.no-mistakes/` directory is loc
 PR-based task merges go through `bin/fm-pr-merge.sh`, which records `pr=` and any available `pr_head=` through `bin/fm-pr-check.sh` before calling `gh-axi pr merge`.
 The helper requires a full `https://github.com/<owner>/<repo>/pull/<n>` URL, invokes `gh-axi pr merge <n> --repo <owner>/<repo>`, defaults to `--squash`, preserves explicit merge-method flags, and rejects malformed URLs or repo override flags before recording merge state; a well-formed GitLab merge request URL (see [docs/gitlab-merge-watch.md](gitlab-merge-watch.md)) is refused too, explicitly, rather than sent to the wrong forge.
 Teardown is fail-closed for ship worktrees: dirty worktrees refuse, and committed work must be landed before the worktree is returned.
-[`bin/fm-teardown.sh`](../bin/fm-teardown.sh)'s header owns the landed-work proofs, PR-discovery fallback, and stale-lock recovery procedure.
+Once those refusals pass, and before any destructive step, teardown concludes the task's own validation run when it is still parked at a gate and reaps processes leaked under that task's own worktree or tasktmp, so removing the worker never strands a run holding a fleet slot or a background process holding the worktree; `bin/fm-nm-run-lib.sh` is the single owner of the branch-and-code-identity rule that attributes such a run to a worktree, shared with `bin/fm-crew-state.sh` so both bind runs by the same contract.
+[`bin/fm-teardown.sh`](../bin/fm-teardown.sh)'s header owns the landed-work proofs, PR-discovery fallback, stale-lock recovery procedure, and both pre-teardown cleanup steps.
 
 ## Optional X mode
 
