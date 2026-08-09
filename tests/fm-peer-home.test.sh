@@ -378,6 +378,7 @@ test_session_lock_is_per_peer_home() {
   # CI) would fail on that instead of on the contested lock. The trailing
   # commands keep bash from exec'ing away the harness-named process, and pass the
   # real exit status back out.
+  # shellcheck disable=SC2016  # single quotes are deliberate: "$0", $?, and "$rc" must reach the harness-named child shell verbatim, not expand here.
   out=$(FM_HOME="$a" "$fakebin/claude" -c '"$0"; rc=$?; exit "$rc"' \
     "$ROOT/bin/fm-lock.sh" 2>&1) && fail "a second session took a held peer-home lock"
   assert_contains "$out" "another live firstmate session holds the lock" "held peer-home lock was not refused clearly"
