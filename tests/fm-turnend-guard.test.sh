@@ -386,6 +386,26 @@ test_hook_codex_continuation_defers_to_redirected_repair_line() {
   pass "fm-turnend-guard: Codex continuation defers to a redirected repair line"
 }
 
+# --codex comes from Codex's own registered Stop hook, so it outranks harness
+# detection, which checks environment markers before process ancestry: a foreign
+# CLAUDECODE marker retained in a stored multiplexer environment must not hand a
+# markerless Codex session another harness's repair instruction.
+test_hook_codex_pins_its_own_harness_repair_line() {
+  local dir home out status reason
+  dir=$(make_primary_dir "$TMP_ROOT/hook-codex-harness-pin")
+  home=$(cd "$dir" && pwd)
+  : > "$dir/state/task1.meta"
+  out=$(printf '{"cwd":"%s","stop_hook_active":false}' "$home" \
+    | CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" --codex 2>&1); status=$?
+  expect_code 0 "$status" "Codex hook must emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "bin/fm-watch-checkpoint.sh --seconds" \
+    "Codex continuation must carry its own harness's repair instruction"
+  assert_not_contains "$reason" "$REQUIRED_REASON" \
+    "a foreign environment marker must not swap in another harness's repair line"
+  pass "fm-turnend-guard: Codex pins the repair line to its own harness"
+}
+
 test_hook_blocks_from_fm_home_state() {
   local dir home out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-fm-home")
@@ -1660,6 +1680,7 @@ test_hook_blocks_with_live_lock_and_stale_beacon
 test_hook_blocks_when_unhealthy_in_primary
 test_hook_codex_uses_typed_quiet_continuation_when_unhealthy
 test_hook_codex_continuation_defers_to_redirected_repair_line
+test_hook_codex_pins_its_own_harness_repair_line
 test_hook_blocks_from_fm_home_state
 test_hook_x_mode_reason_sources_cadence
 test_hook_x_mode_only_blocks_in_default_mode

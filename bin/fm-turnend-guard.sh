@@ -92,6 +92,16 @@ for arg in "$@"; do
   esac
 done
 
+# A mode flag is set by that harness's OWN registered Stop hook, so it is
+# authoritative about which harness this session runs, and it outranks
+# bin/fm-harness.sh detection for the repair line: detection checks environment
+# markers before process ancestry, so a foreign marker retained in a stored
+# multiplexer environment can otherwise hand a markerless harness (codex) a
+# different harness's repair instruction. Modes without a flag keep detecting.
+HARNESS_PIN=
+[ "$CLAUDE_MODE" -eq 1 ] && HARNESS_PIN=claude
+[ "$CODEX_MODE" -eq 1 ] && HARNESS_PIN=codex
+
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
 # shellcheck source=bin/fm-primary-scope-lib.sh
@@ -171,11 +181,14 @@ fi
 
 block_stop() {
   local afk x_mode reason rule continuation
+  local -a instr_args
   afk=0
   [ -e "$STATE/.afk" ] && afk=1
   x_mode=0
   [ -f "$CONFIG/x-mode.env" ] && x_mode=1
-  reason=$("$SCRIPT_DIR/fm-supervision-instructions.sh" --afk "$afk" --x-mode "$x_mode" --repair-line 2>/dev/null \
+  instr_args=(--afk "$afk" --x-mode "$x_mode" --repair-line)
+  [ -n "$HARNESS_PIN" ] && instr_args=(--harness "$HARNESS_PIN" "${instr_args[@]}")
+  reason=$("$SCRIPT_DIR/fm-supervision-instructions.sh" "${instr_args[@]}" 2>/dev/null \
     || printf '%s\n' 'tasks in flight, no live watcher - repair missing watcher supervision according to the session-start operating block before ending the turn')
   if [ "$CODEX_MODE" -eq 1 ]; then
     # bin/fm-supervision-instructions.sh owns what this session must actually do.
