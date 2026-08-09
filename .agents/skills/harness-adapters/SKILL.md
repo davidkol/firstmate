@@ -211,12 +211,13 @@ The decision persists for the repo, so later worktrees of the same project skip 
 Resume after exit with `codex resume <session-id>`.
 The session id is printed on quit.
 
-**Primary-session guard fact (verified 2026-07-08, codex-cli 0.142.1).**
+**Primary-session guard fact (verified 2026-07-08, codex-cli 0.142.1; typed continuation verified 2026-08-09, codex-cli 0.147.0).**
 The firstmate PRIMARY's own `.codex/hooks.json` registers a Stop hook that pipes Codex's Stop payload to `bin/fm-turnend-guard.sh`.
-Codex Stop hooks block on exit 2 and expose `stop_hook_active`, which the guard's non-`--claude` loop safety uses to let the second stop of a turn finish after one continuation.
+Codex Stop hooks honor a native typed `decision:"block"` continuation - the hook's concise reason is displayed, the session continues automatically with no human input, and a later clean stop ends the turn normally - and they also block on exit 2, which stays the guard's fallback when it cannot emit a typed block.
+They expose `stop_hook_active`, which the guard's non-`--claude` loop safety uses to let the second stop of a turn finish after one continuation.
 Codex's Stop payload includes `cwd`, but the tracked primary hook does not use it to choose the guard executable.
 Verified on 2026-07-08: Codex runs the Stop hook command with process PWD set to the hook-loaded project root, and no `CODEX_PROJECT_DIR`, `CODEX_WORKSPACE_ROOT`, or `CODEX_CWD` root variable is set.
-The tracked hook anchors to `pwd -P`, verifies that root is firstmate-shaped and hook-bearing, and then invokes `bin/fm-turnend-guard.sh` with the original payload.
+The tracked hook anchors to `pwd -P`, verifies that root is firstmate-shaped and hook-bearing, and then invokes `bin/fm-turnend-guard.sh --codex` with the original payload.
 Codex's primary watcher protocol is `bin/fm-watch-checkpoint.sh --seconds "${FM_CODEX_WATCH_CHECKPOINT:-180}"`, not `bin/fm-watch-arm.sh`.
 The checkpoint is deliberately foreground and bounded so Codex regains control regularly to process user messages and queued wakes.
 

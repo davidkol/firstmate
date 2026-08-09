@@ -136,12 +136,13 @@ tests/fm-crew-state.test.sh
 
 ## Turn-end guard
 
-The direct and passive mechanisms were validated across all five harnesses on 2026-07-08 through 2026-07-12, with Claude's replacement Stop-owned path revalidated on 2026-07-24.
+The direct and passive mechanisms were validated across all five harnesses on 2026-07-08 through 2026-07-12, with Claude's replacement Stop-owned path revalidated on 2026-07-24 and Codex's replacement native typed continuation validated on 2026-08-09.
 
 | Harness | Version verified | Mechanism | Observed result |
 | --- | --- | --- | --- |
 | Claude | 2.1.219 | Cooperative blocking `Stop` guard plus `asyncRewake` auto-arm | A fresh unsupervised session ran session start first, reclaimed a stale dead-owner lock, completed two tokenless rewake cycles with no model arm command or guard continuation, and left a competing live owner unchanged. |
-| Codex | 0.142.1 | Blocking `Stop` hook | Hook process root stayed anchored to the trusted checkout and one continuation ran. |
+| Codex | 0.147.0 | Native typed `Stop` continuation | In a throwaway trusted repository, a Stop hook returned `decision:"block"` with a concise reason after the first turn emitted `INITIAL_OK`; Codex displayed that feedback, continued automatically without human input, emitted `CONTINUATION_OK`, then stopped normally. |
+| Codex | 0.142.1 | Exit-2 blocking `Stop` hook, now the typed path's fallback | Hook process root stayed anchored to the trusted checkout and one continuation ran. |
 | OpenCode | 1.17.6 | Passive `session.idle` callback | Throwing could not block, while `promptAsync` scheduled one TUI follow-up; headless remained fail-open. |
 | Pi | 0.80.5 | Passive `agent_settled` callback | Exactly one guard follow-up ran for an unhealthy cycle, with no recursion across tool turns. |
 | Grok | 0.2.112 native and 0.2.73 pre-native | Running-payload adaptive `Stop` | Native false-to-true continuation stayed in one process with two model turns and zero resume launches; the field-absent pre-native process launched exactly one guarded resume. |
@@ -232,7 +233,7 @@ The pull guard accepted a fresh checkpoint beacon without a live watcher only mi
 A secondmate launch pinned the supervision model of its OWN harness from the single mapping owner, so a spawned Codex secondmate stayed quiet mid-turn while a persistent-watcher secondmate still alarmed.
 The default fleet view counted only run-step or semantic-busy work as active, marked every other working report unverified, listed terminal work with its PR or report pointer, and left only records with no live, terminal, or blocked state for reconciliation.
 Every registered primary guard integration remained covered by the shared guard suite, and the runtime backends remained outside this change because the view renders only the backend-agnostic fleet snapshot contract.
-This deterministic pass is the only current record for the typed Codex continuation; the dated Codex row in the table above covers the exit-2 blocking path that remains its fallback.
+This pass covers the guard's own decisions; the codex-cli 0.147.0 row in the table above is the live record that Codex honors the typed continuation, and the 0.142.1 row covers the exit-2 banner that remains its fallback.
 
 ```sh
 bin/fm-lint.sh
