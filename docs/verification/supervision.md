@@ -232,6 +232,7 @@ The pull guard accepted a fresh checkpoint beacon without a live watcher only mi
 A secondmate launch pinned the supervision model of its OWN harness from the single mapping owner, so a spawned Codex secondmate stayed quiet mid-turn while a persistent-watcher secondmate still alarmed.
 The default fleet view counted only run-step or semantic-busy work as active, marked every other working report unverified, listed terminal work with its PR or report pointer, and left only records with no live, terminal, or blocked state for reconciliation.
 Every registered primary guard integration remained covered by the shared guard suite, and the runtime backends remained outside this change because the view renders only the backend-agnostic fleet snapshot contract.
+This deterministic pass is the only current record for the typed Codex continuation; the dated Codex row in the table above covers the exit-2 blocking path that remains its fallback.
 
 ```sh
 bin/fm-lint.sh

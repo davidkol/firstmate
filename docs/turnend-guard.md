@@ -51,11 +51,10 @@ If `jq` is missing or hook stdin is empty, the guard exits 0 because it cannot s
   The tracked Claude Stop entries are inert when `GROK_AGENT` is present, so Grok's Claude-compatible settings loading cannot create a second continuation path.
 
 Claude blocks a Stop directly with exit status 2 and stderr.
-Codex uses its native JSON `decision:"block"` continuation output, so it receives one typed instruction without rendering the full operator banner as chat.
+Codex uses its native JSON `decision:"block"` continuation output, so it receives one typed instruction without rendering the full operator banner as chat, carrying it with the same canonical `turn-end-guard` operational-input marking as the passive follow-ups below.
 That instruction is the harness repair line itself, led by an explicit "start the next foreground supervision checkpoint" only while away mode and X mode leave that line unredirected, and a continuation that cannot be emitted falls through to the exit-2 banner rather than allowing a blind stop.
 Either mode flag comes from that harness's own registered Stop hook, so it pins the repair line's harness instead of letting `bin/fm-harness.sh` detect one: detection checks environment markers before process ancestry, and a foreign marker left in a stored multiplexer environment would otherwise hand a markerless harness another harness's instruction.
-Both payloads carry `stop_hook_active`.
-In the default Codex mode, a true value lets the second stop finish after one forced continuation.
+Both payloads carry `stop_hook_active`, and `--codex` keeps the shared non-`--claude` loop guard, so a true value lets the second stop finish after one forced continuation.
 
 Claude runs the guard with `--claude`, which ignores `stop_hook_active` and cooperates with the Stop-owned auto-arm.
 Claude Code sets `stop_hook_active=true` on every stop after any stop-hook continuation, including `asyncRewake` rewakes, which re-opened the 2026-07-21 blind window under the default one-shot behavior.
@@ -108,7 +107,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 
 ## Regression coverage
 
-`tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
+`tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the live-lock and fresh-beacon guard predicate, the `--codex` typed continuation with its deference to a redirected repair line and its own-harness repair pin, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
 `tests/fm-guard-stale-banner.test.sh` covers the pull-guard predicate, including the persistent-model fresh-leftover-beacon negative control, the Claude auto-arm and Codex foreground-checkpoint models' healthy fresh-beacon-without-a-watcher cases and stale-beacon alarms, the true-reason banner wording, and the reason-keyed episode dedup surviving a beacon mtime change.
 `tests/fm-kimi-harness.test.sh` covers the separate Kimi crew hook's format preservation, idempotence, refusal cases, token guard, spawn registration, and teardown cleanup.
 `tests/fm-supervision-instructions.test.sh` covers recovery-line ownership and pi-signed's identity-preserving reuse of Pi's protocol.

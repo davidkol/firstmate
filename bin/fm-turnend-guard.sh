@@ -30,7 +30,8 @@
 # primary checkout - the main home or a genuinely marked secondmate home - and
 # stay a silent, fast no-op inside child task worktrees.
 #
-# Loop-guard, codex/Grok (default) mode: never block twice in the same turn.
+# Loop-guard, every mode except --claude (--codex, Grok, and the cross-harness
+# default): never block twice in the same turn.
 # Codex uses stop_hook_active and Grok uses stopHookActive; typed camel-case
 # takes precedence when both spellings are present. A true value means the
 # current stop attempt already follows a block, so this guard always allows it.
