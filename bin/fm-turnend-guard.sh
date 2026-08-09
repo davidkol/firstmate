@@ -10,7 +10,9 @@
 # fleet-touching command itself, can sit blind for hours.
 # This script is push-based: verified harness turn-end hooks invoke it every time
 # the primary is about to end a turn.
-# Claude and codex can block directly by preserving exit status 2 and stderr.
+# Claude blocks directly with exit status 2 and stderr.
+# Codex uses its native structured Stop continuation so routine recovery stays
+# typed and compact instead of rendering the full operator diagnostic banner.
 # OpenCode and pi adapters use the same predicate and force one bounded
 # follow-up because their turn-end events are passive. Grok delegates native
 # blocking when its running Stop payload advertises that capability, with one
@@ -68,6 +70,7 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 GRACE=${FM_GUARD_GRACE:-300}
 WATCH="$SCRIPT_DIR/fm-watch.sh"
 CLAUDE_MODE=0
+CODEX_MODE=0
 SYNC_WAIT_MS=${FM_CLAUDE_AUTOARM_SYNC_WAIT_MS:-800}
 EPOCH_FRESH=${FM_CLAUDE_AUTOARM_EPOCH_FRESH:-15}
 BLOCK_BUDGET=${FM_CLAUDE_TURNEND_BLOCK_BUDGET:-3}
@@ -77,8 +80,15 @@ case "$BLOCK_BUDGET" in ''|*[!0-9]*|0) BLOCK_BUDGET=3 ;; esac
 
 for arg in "$@"; do
   case "$arg" in
-    --claude) CLAUDE_MODE=1 ;;
-    *) echo "usage: $(basename "$0") [--claude]" >&2; exit 2 ;;
+    --claude)
+      [ "$CODEX_MODE" -eq 0 ] || { echo "usage: $(basename "$0") [--claude|--codex]" >&2; exit 2; }
+      CLAUDE_MODE=1
+      ;;
+    --codex)
+      [ "$CLAUDE_MODE" -eq 0 ] || { echo "usage: $(basename "$0") [--claude|--codex]" >&2; exit 2; }
+      CODEX_MODE=1
+      ;;
+    *) echo "usage: $(basename "$0") [--claude|--codex]" >&2; exit 2 ;;
   esac
 done
 
@@ -160,13 +170,21 @@ if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
 fi
 
 block_stop() {
-  local afk x_mode reason rule
+  local afk x_mode reason rule continuation
   afk=0
   [ -e "$STATE/.afk" ] && afk=1
   x_mode=0
   [ -f "$CONFIG/x-mode.env" ] && x_mode=1
   reason=$("$SCRIPT_DIR/fm-supervision-instructions.sh" --afk "$afk" --x-mode "$x_mode" --repair-line 2>/dev/null \
     || printf '%s\n' 'tasks in flight, no live watcher - repair missing watcher supervision according to the session-start operating block before ending the turn')
+  if [ "$CODEX_MODE" -eq 1 ]; then
+    continuation=$(printf 'Start the next foreground supervision checkpoint now. %s' "$reason" \
+      | "$SCRIPT_DIR/fm-operational-input.sh" encode turn-end-guard 2>/dev/null || true)
+    if [ -n "$continuation" ]; then
+      jq -cn --arg reason "$continuation" '{decision:"block",reason:$reason}'
+      exit 0
+    fi
+  fi
   rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   {
     printf '●%s\n' "$rule"

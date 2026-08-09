@@ -74,6 +74,19 @@ run_guard_case_autoarm() {
     "$ROOT/bin/fm-guard.sh" 2>&1
 }
 
+# Codex foreground checkpoints run during the primary turn and intentionally
+# exit before the next tool call. A fresh beacon is therefore healthy while the
+# primary can start the next checkpoint; the stricter Stop hook still blocks a
+# turn end with no live watcher.
+run_guard_case_checkpoint() {
+  local dir=$1
+  FM_ROOT_OVERRIDE="$(case_root "$dir")" \
+    FM_HOME="$(case_home "$dir")" \
+    FM_GUARD_GRACE=999 \
+    FM_SUPERVISION_MODEL=checkpoint \
+    "$ROOT/bin/fm-guard.sh" 2>&1
+}
+
 count_text() {
   local haystack=$1 needle=$2
   awk -v needle="$needle" 'index($0, needle) { c++ } END { print c + 0 }' <<EOF
@@ -311,6 +324,27 @@ test_autoarm_fresh_beacon_without_watcher_is_healthy() {
   pass "fm-guard stale banner: auto-arm fresh beacon without a live watcher is healthy"
 }
 
+test_checkpoint_fresh_beacon_without_watcher_is_healthy() {
+  local dir out
+  dir=$(make_guard_case checkpoint-fresh)
+  touch "$(case_home "$dir")/state/.last-watcher-beat"
+  out=$(run_guard_case_checkpoint "$dir")
+  [ -z "$out" ] \
+    || fail "foreground checkpoint with a fresh beacon and no watcher must stay silent, got: $out"
+  pass "fm-guard stale banner: foreground checkpoint fresh beacon without a live watcher is healthy"
+}
+
+test_checkpoint_stale_beacon_alarms() {
+  local dir out
+  dir=$(make_guard_case checkpoint-stale)
+  out=$(run_guard_case_checkpoint "$dir")
+  [ "$(count_text "$out" "WATCHER DOWN - SUPERVISION IS OFF")" -eq 1 ] \
+    || fail "foreground checkpoint with an absent/stale beacon must alarm: $out"
+  assert_contains "$out" "no watcher has a fresh beacon" \
+    "foreground checkpoint stale banner must name the stale-beacon reason"
+  pass "fm-guard stale banner: foreground checkpoint stale beacon alarms"
+}
+
 test_autoarm_stale_beacon_alarms_with_correct_reason() {
   local dir out
   dir=$(make_guard_case autoarm-stale)
@@ -376,6 +410,8 @@ test_persistent_no_watcher_episode_survives_beacon_touch() {
 test_first_stale_call_prints_full_banner
 test_repeated_same_episode_prints_reminder_only
 test_autoarm_fresh_beacon_without_watcher_is_healthy
+test_checkpoint_fresh_beacon_without_watcher_is_healthy
+test_checkpoint_stale_beacon_alarms
 test_autoarm_stale_beacon_alarms_with_correct_reason
 test_autoarm_stale_episode_is_stable
 test_persistent_no_watcher_banner_names_missing_process

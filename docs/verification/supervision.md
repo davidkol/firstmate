@@ -227,6 +227,19 @@ fm-doc-audience-check: ok surfaces=57 local_links=177
 FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=117611
 ```
 
+The Codex foreground-checkpoint correction and concise fleet-status projection were deterministically verified in this repository on 2026-08-09.
+The pull guard accepted a fresh checkpoint beacon without a live watcher only mid-turn, while the Codex Stop hook still emitted a typed block that required the next foreground checkpoint.
+The default fleet view counted only run-step or semantic-busy work as active and kept status-log-only work and stale metadata visibly separate.
+Every registered primary guard integration remained covered by the shared guard suite, and the runtime backends remained outside this change because the view renders only the backend-agnostic fleet snapshot contract.
+
+```sh
+bin/fm-lint.sh
+bin/fm-doc-audience-check.sh
+bin/fm-test-run.sh tests/fm-guard-stale-banner.test.sh tests/fm-turnend-guard.test.sh tests/fm-fleet-snapshot-view.test.sh tests/fm-supervision-instructions.test.sh tests/fm-documentation-audiences.test.sh
+```
+
+All commands exited zero.
+
 The broader relevant regression pass was first run upstream on 2026-08-02 and rerun in this repository on 2026-08-07, in both cases without live-home or daemon mutation.
 
 ```sh

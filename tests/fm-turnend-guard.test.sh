@@ -186,6 +186,13 @@ run_hook() {
   printf '{"stop_hook_active":%s}' "$stop_active" | CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1
 }
 
+run_hook_codex() {
+  local dir=$1 stop_active=$2 home
+  home=$(cd "$dir" && pwd)
+  printf '{"cwd":"%s","stop_hook_active":%s}' "$home" "$stop_active" \
+    | FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" --codex 2>&1
+}
+
 nonexistent_pid() {
   local pid=999999
   while kill -0 "$pid" 2>/dev/null; do
@@ -341,6 +348,24 @@ test_hook_blocks_when_unhealthy_in_primary() {
   assert_contains "$out" "$REQUIRED_REASON" "block reason must contain the exact required instruction"
   assert_contains "$out" "TURN WOULD END BLIND" "block banner must read as an alarm"
   pass "fm-turnend-guard: blocks with the exact required reason in the primary when unhealthy"
+}
+
+test_hook_codex_uses_typed_quiet_continuation_when_unhealthy() {
+  local dir out status reason
+  dir=$(make_primary_dir "$TMP_ROOT/hook-codex-quiet-continuation")
+  : > "$dir/state/task1.meta"
+  out=$(run_hook_codex "$dir" false); status=$?
+  expect_code 0 "$status" "Codex hook must use its native structured continuation"
+  printf '%s' "$out" | jq -e '.decision == "block" and (.reason | startswith("\u2063FIRSTMATE_OP: v1 turn-end-guard: "))' >/dev/null \
+    || fail "Codex hook did not emit a typed continuation JSON object: $out"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "Start the next foreground supervision checkpoint" \
+    "Codex continuation must name the one required foreground action"
+  assert_not_contains "$out" "TURN WOULD END BLIND" \
+    "Codex continuation must keep the full diagnostic banner out of routine chat"
+  assert_not_contains "$out" "WATCHER DOWN" \
+    "Codex continuation must not present pull-guard diagnostics as a routine update"
+  pass "fm-turnend-guard: Codex uses a typed quiet continuation while preserving the stop block"
 }
 
 test_hook_blocks_from_fm_home_state() {
@@ -791,6 +816,7 @@ test_codex_hook_invokes_shared_guard() {
   assert_contains "$command" 'pwd -P' "codex hook must anchor from the hook process working directory"
   assert_contains "$command" '.codex/hooks.json' "codex hook must verify the hook-loaded firstmate root"
   assert_contains "$command" 'fm-turnend-guard.sh' "codex hook must invoke the shared guard"
+  assert_contains "$command" 'fm-turnend-guard.sh" --codex' "codex hook must select the structured Codex Stop continuation"
   assert_not_contains "$command" '.cwd' "codex hook must not use payload cwd to select the guard executable"
   pass ".codex/hooks.json: Stop hook invokes the shared primary guard"
 }
@@ -1614,6 +1640,7 @@ test_hook_silent_with_live_lock_and_fresh_beacon
 test_hook_non_claude_health_ignores_claude_budget_contention
 test_hook_blocks_with_live_lock_and_stale_beacon
 test_hook_blocks_when_unhealthy_in_primary
+test_hook_codex_uses_typed_quiet_continuation_when_unhealthy
 test_hook_blocks_from_fm_home_state
 test_hook_x_mode_reason_sources_cadence
 test_hook_x_mode_only_blocks_in_default_mode

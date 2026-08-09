@@ -147,7 +147,8 @@ test_empty_fleet_json() {
   ' >/dev/null \
     || fail "empty snapshot schema or absence markers wrong: $out"
   view=$(FM_HOME="$home" "$VIEW")
-  assert_contains "$view" "No live task metadata found." "empty fleet view should say no live metadata"
+  assert_contains "$view" "Active work: none." "empty fleet view should say no active work"
+  assert_contains "$view" "Task records needing reconciliation: none." "empty fleet view should say no stale records"
   pass "empty fleet snapshot and view use explicit absence markers"
 }
 
@@ -550,7 +551,7 @@ EOF
       and .paths.report.path == ($data + "/bold-task/report.md")
       and .paths.report.present == true
   ' >/dev/null || fail "bold task did not join to override-backed backlog and report"
-  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$data" FM_PROJECTS_OVERRIDE="$projects" "$VIEW")
+  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$data" FM_PROJECTS_OVERRIDE="$projects" "$VIEW" --details)
   assert_contains "$view" "| bold-task | done / status-log | scout | alpha | tmux | present | $data/bold-task/report.md" \
     "view should render bold in-flight row from snapshot"
   assert_contains "$view" "| blocked-reason | Blocked Reason | beta | ship | queued-comma - waits on queued-comma | - |" \
@@ -568,19 +569,23 @@ test_view_renders_snapshot() {
   write_fixture "$home"
   fakebin=$(make_fakebin "$home")
   view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
-  assert_contains "$view" "| ship-task | working / pane | ship | alpha | tmux | present | https://github.com/kunchenguid/firstmate/pull/9" \
-    "view should render ship row from snapshot"
-  assert_contains "$view" "| queued-task | Queued Task | alpha | ship | ship-task | -" \
-    "view should render queued backlog row"
-  assert_contains "$view" "| done-task | Done Task | alpha | ship | - | https://github.com/kunchenguid/firstmate/pull/7 |" \
-    "view should render done backlog row"
-  assert_contains "$view" "bin/fm-send.sh fm-secondmate-task" \
-    "view should show secondmate send guidance"
-  assert_contains "$view" "| secondmate-task | working / status-log | secondmate | $home/secondmate-home | tmux | present / alive |" \
-    "view should show secondmate endpoint agent liveness"
-  assert_not_contains "$view" "fm-peek.sh fm-secondmate-task" \
-    "view must not tell firstmate to routinely peek secondmates"
-  pass "fleet view renders the snapshot without secondmate peek guidance"
+  assert_contains "$view" "Active work (1):" \
+    "status view should count only current-state-backed active work"
+  assert_contains "$view" "- Ship Task (alpha) [ship-task]" \
+    "status view should name the active ship task"
+  assert_contains "$view" "Reported working, not verified (1):" \
+    "status view should separate a status-log-only report from active work"
+  assert_contains "$view" "- secondmate-task" \
+    "status view should retain the unverified secondmate record without counting it active"
+  assert_contains "$view" "Completed investigations (1):" \
+    "status view should surface a completed scout separately from active work"
+  assert_contains "$view" "Task records needing reconciliation (1): cmux-task (unknown)." \
+    "status view should identify stale metadata without inflating active work"
+  assert_contains "$view" "Details: bin/fm-fleet-view.sh --details" \
+    "status view should keep operator diagnostics on demand"
+  assert_not_contains "$view" "## Queued" \
+    "status view should not drown current work in backlog inventory"
+  pass "fleet view keeps active work concise and separates unverified or stale records"
 }
 
 test_view_renders_dead_secondmate_agent_status() {
@@ -596,12 +601,12 @@ test_view_renders_dead_secondmate_agent_status() {
     "projects=alpha, beta"
   printf 'working: watching delegated scope\n' > "$home/state/dead-secondmate.status"
   fakebin=$(make_fakebin "$home")
-  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --details)
   assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | present / dead |" \
     "view should distinguish a present secondmate endpoint from a dead agent"
   assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | present / dead | - | $home/secondmate-home (absent) |" \
     "view should show a recorded missing secondmate home path"
-  pass "fleet view renders secondmate agent liveness"
+  pass "fleet diagnostics render secondmate agent liveness"
 }
 
 # A still-open decision must survive a LATER, UNRELATED terminal event on the same
