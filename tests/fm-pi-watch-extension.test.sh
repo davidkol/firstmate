@@ -1411,7 +1411,17 @@ const hooks = await mod.FmPrimaryWatchArm({
 const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, "999999\n");
 await hooks.event(event);
-await new Promise((resolve) => setTimeout(resolve, 120));
+// The event handler fires the arm attempt without awaiting it, so the unowned
+// verdict is still in flight when hooks.event returns. Join that same attempt
+// instead of sleeping a fixed span: the plugin shares one in-flight launch, so
+// on a host whose ownership gate (two git probes plus the ps ancestry walk)
+// outlasts the sleep, the NEXT event reuses this stale read-only result and
+// never arms - a real re-arm read as one that ran without the lock.
+const denied = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test", client);
+if (denied !== "read-only") {
+  console.error(`expected read-only without the session lock, got ${denied}`);
+  process.exit(1);
+}
 if (existsSync(process.env.FM_ARM_LOG)) {
   console.error("watch arm ran without owning the session lock");
   process.exit(1);
