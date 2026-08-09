@@ -716,9 +716,17 @@ guard_tangle_noise() {
 }
 
 test_spawned_secondmate_uses_its_harness_supervision_model() {
-  local harness expected w sm launchlog launch fakebin out tangle_noise
+  local harness model w sm launchlog launch fakebin out tangle_noise
   tangle_noise=$(guard_tangle_noise)
-  for harness in codex claude; do
+  # claude arms between turns and codex only inside its bounded foreground
+  # checkpoint, so a mid-turn fresh beacon with no watcher process is healthy for
+  # both; every persistent-watcher harness (opencode here) must still alarm.
+  for harness in codex claude opencode; do
+    case "$harness" in
+      claude) model=autoarm ;;
+      codex) model=checkpoint ;;
+      *) model=persistent ;;
+    esac
     w="$TMP_ROOT/spawn-supervision-model-$harness"
     sm="$w/sm"
     launchlog="$w/launch.log"
@@ -735,16 +743,17 @@ test_spawned_secondmate_uses_its_harness_supervision_model() {
 SH
     chmod +x "$fakebin/$harness"
     launch=$(cat "$launchlog")
+    assert_contains "$launch" "FM_SUPERVISION_MODEL=$model " \
+      "$harness secondmate launch must pin its own harness supervision model"
     out=$(PATH="$fakebin:$BASE_PATH" CLAUDECODE=1 bash -c "$launch" 2>&1)
     case "$harness" in
-      codex)
-        expected='WATCHER DOWN - SUPERVISION IS OFF'
-        assert_contains "$out" "$expected" \
-          "Codex secondmate inherited Claude auto-arm despite its persistent watcher model"
+      opencode)
+        assert_contains "$out" 'WATCHER DOWN - SUPERVISION IS OFF' \
+          "persistent-watcher secondmate inherited a quiet model despite its live-process watcher"
         ;;
-      claude)
+      *)
         [ "$out" = "$tangle_noise" ] \
-          || fail "Claude secondmate with a fresh beacon should use auto-arm supervision, got: $out"
+          || fail "$harness secondmate with a fresh beacon should stay quiet mid-turn, got: $out"
         ;;
     esac
   done

@@ -368,6 +368,24 @@ test_hook_codex_uses_typed_quiet_continuation_when_unhealthy() {
   pass "fm-turnend-guard: Codex uses a typed quiet continuation while preserving the stop block"
 }
 
+# The repair line, not this guard, owns what the session must do next. Away mode
+# hands watcher supervision to the daemon, so the continuation must carry that
+# instruction alone instead of also ordering the checkpoint it forbids.
+test_hook_codex_continuation_defers_to_redirected_repair_line() {
+  local dir out status reason
+  dir=$(make_primary_dir "$TMP_ROOT/hook-codex-afk-continuation")
+  : > "$dir/state/task1.meta"
+  : > "$dir/state/.afk"
+  out=$(run_hook_codex "$dir" false); status=$?
+  expect_code 0 "$status" "Codex hook must still emit its structured continuation in away mode"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "Away mode owns watcher supervision" \
+    "away mode must keep owning the Codex continuation instruction"
+  assert_not_contains "$reason" "Start the next foreground supervision checkpoint" \
+    "Codex continuation must not order a checkpoint that its own repair line forbids"
+  pass "fm-turnend-guard: Codex continuation defers to a redirected repair line"
+}
+
 test_hook_blocks_from_fm_home_state() {
   local dir home out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-fm-home")
@@ -1641,6 +1659,7 @@ test_hook_non_claude_health_ignores_claude_budget_contention
 test_hook_blocks_with_live_lock_and_stale_beacon
 test_hook_blocks_when_unhealthy_in_primary
 test_hook_codex_uses_typed_quiet_continuation_when_unhealthy
+test_hook_codex_continuation_defers_to_redirected_repair_line
 test_hook_blocks_from_fm_home_state
 test_hook_x_mode_reason_sources_cadence
 test_hook_x_mode_only_blocks_in_default_mode

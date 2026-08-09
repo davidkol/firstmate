@@ -3,9 +3,11 @@
 # canonical fleet snapshot.
 #
 # The default status deliberately counts only current-state-backed work
-# (run-step or semantic busy evidence). A status-log-only working event stays
-# visible but is explicitly unverified, and inactive metadata becomes a
-# reconciliation record rather than inflating the active-work count.
+# (run-step or semantic busy evidence). A working report without that evidence
+# stays visible but explicitly unverified, terminal work is listed with its PR
+# or report pointer, and only a record whose state is not live, terminal, or
+# blocked becomes a reconciliation record rather than inflating the
+# active-work count.
 # --details retains the fuller operator diagnostic view. Neither path parses
 # raw fleet state itself; both render fm-fleet-snapshot.sh --json.
 set -u
@@ -40,13 +42,21 @@ render_status() {
     def title_of($t): $t.backlog.title // $t.id;
     def repo_of($t): dash($t.backlog.repo // $t.project);
     def line($t): "- \(title_of($t)) (\(repo_of($t))) [\($t.id)]";
+    def pointer($t):
+      if ($t.pr.url // "") != "" then " - \($t.pr.url)"
+      elif $t.paths.report.present then " - \($t.paths.report.path)"
+      else "" end;
     def active:
       .current_state.state == "working"
       and (.current_state.source == "run-step" or .current_state.source == "pane");
     def reported_working:
-      .current_state.state == "working" and .current_state.source == "status-log";
-    def completed_investigation:
-      .kind == "scout" and .current_state.state == "done";
+      .current_state.state == "working"
+      and .current_state.source != "run-step"
+      and .current_state.source != "pane";
+    def reported_note($t):
+      if $t.current_state.source == "status-log" then "reports working only from its status log"
+      else "reports working with no run-step or busy-state evidence" end;
+    def completed: .current_state.state == "done";
     def attention:
       .current_state.state == "parked"
       or .current_state.state == "blocked"
@@ -64,9 +74,9 @@ render_status() {
         else $shown end;
     ([.tasks[] | select(active)]) as $active
     | ([.tasks[] | select(reported_working)]) as $reported
-    | ([.tasks[] | select(completed_investigation)]) as $completed
+    | ([.tasks[] | select(completed)]) as $completed
     | ([.tasks[] | select(attention)]) as $attention
-    | ([.tasks[] | select((active or reported_working or completed_investigation or attention) | not)]) as $reconcile
+    | ([.tasks[] | select((active or reported_working or completed or attention) | not)]) as $reconcile
     | [
         "# Fleet Status",
         "",
@@ -79,7 +89,7 @@ render_status() {
         (if ($reported | length) == 0 then empty else
            "",
            "Reported working, not verified (\($reported | length)):",
-           ($reported[] | "\(line(.)) - reports working only from its status log.")
+           ($reported[] | "\(line(.)) - \(reported_note(.)).")
          end),
         (if ($attention | length) == 0 then empty else
            "",
@@ -88,8 +98,8 @@ render_status() {
          end),
         (if ($completed | length) == 0 then empty else
            "",
-           "Completed investigations (\($completed | length)):",
-           ($completed[] | line(.))
+           "Completed, awaiting the captain (\($completed | length)):",
+           ($completed[] | "\(line(.))\(pointer(.))")
          end),
         "",
         (if ($reconcile | length) == 0 then

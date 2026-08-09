@@ -1683,13 +1683,13 @@ if [ "$KIND" = secondmate ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
   # The secondmate's own guards must judge watcher health by ITS harness's
   # supervision model, not by the primary's: a Claude secondmate runs its
-  # watcher only between turns, so a mid-turn absent watcher process with a
-  # fresh beacon is healthy there (bin/fm-wake-lib.sh's
-  # fm_watcher_supervision_verdict).
-  case "$HARNESS" in
-    claude) supervision_model=autoarm ;;
-    *) supervision_model=persistent ;;
-  esac
+  # watcher only between turns and a Codex secondmate only inside its bounded
+  # foreground checkpoint, so a mid-turn absent watcher process with a fresh
+  # beacon is healthy for both (bin/fm-wake-lib.sh's
+  # fm_watcher_supervision_verdict). The mapping itself belongs to
+  # fm_supervision_model_for_harness there, so this launch pin cannot drift from
+  # the model the secondmate's own guards would otherwise detect.
+  supervision_model=$(fm_supervision_model_for_harness "$HARNESS")
   LAUNCH="FM_ROOT_OVERRIDE= FM_STATE_OVERRIDE= FM_DATA_OVERRIDE= FM_PROJECTS_OVERRIDE= FM_CONFIG_OVERRIDE= FM_HOME=$sq_home FM_SUPERVISION_MODEL=$supervision_model $LAUNCH"
 fi
 # Export GOTMPDIR into the crewmate's pane shell so the agent and every child

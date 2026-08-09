@@ -577,8 +577,10 @@ test_view_renders_snapshot() {
     "status view should separate a status-log-only report from active work"
   assert_contains "$view" "- secondmate-task" \
     "status view should retain the unverified secondmate record without counting it active"
-  assert_contains "$view" "Completed investigations (1):" \
-    "status view should surface a completed scout separately from active work"
+  assert_contains "$view" "Completed, awaiting the captain (1):" \
+    "status view should surface completed work separately from active work"
+  assert_contains "$view" "- Scout Task (alpha) [scout-task] - $home/data/scout-task/report.md" \
+    "completed scout should carry its report pointer"
   assert_contains "$view" "Task records needing reconciliation (1): cmux-task (unknown)." \
     "status view should identify stale metadata without inflating active work"
   assert_contains "$view" "Details: bin/fm-fleet-view.sh --details" \
@@ -586,6 +588,37 @@ test_view_renders_snapshot() {
   assert_not_contains "$view" "## Queued" \
     "status view should not drown current work in backlog inventory"
   pass "fleet view keeps active work concise and separates unverified or stale records"
+}
+
+# Terminal SHIP work is finished work awaiting the captain, not stale metadata:
+# it belongs in the completed bucket with its PR pointer, never in the
+# reconciliation line that reads as "a record to clean up".
+test_view_lists_completed_delivery_with_its_pointer() {
+  local home fakebin view
+  home=$(make_home completed-delivery)
+  mkdir -p "$home/projects/alpha-worktree"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] green-task - Green Task https://github.com/kunchenguid/firstmate/pull/11 (repo: alpha) (kind: ship) (since 2026-08-01)
+EOF
+  fm_write_meta "$home/state/green-task.meta" \
+    "window=firstmate:fm-green-task" \
+    "worktree=$home/projects/alpha-worktree" \
+    "project=alpha" \
+    "harness=codex" \
+    "kind=ship" \
+    "mode=ship" \
+    "pr=https://github.com/kunchenguid/firstmate/pull/11"
+  printf 'done: checks green, PR ready for review\n' > "$home/state/green-task.status"
+  fakebin=$(make_fakebin "$home")
+  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  assert_contains "$view" "Completed, awaiting the captain (1):" \
+    "a terminal ship task must read as completed work, not as a record to reconcile"
+  assert_contains "$view" "- Green Task (alpha) [green-task] - https://github.com/kunchenguid/firstmate/pull/11" \
+    "completed delivery must carry the PR pointer the captain needs"
+  assert_contains "$view" "Task records needing reconciliation: none." \
+    "completed delivery must not be filed as stale metadata"
+  pass "fleet view surfaces terminal delivery with its PR pointer instead of as a stale record"
 }
 
 test_view_renders_dead_secondmate_agent_status() {
@@ -798,4 +831,5 @@ test_parked_scout_decision_stays_pending
 test_scout_reports_include_teardown_reports
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
+test_view_lists_completed_delivery_with_its_pointer
 test_view_renders_dead_secondmate_agent_status

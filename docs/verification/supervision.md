@@ -228,14 +228,15 @@ FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=117611
 ```
 
 The Codex foreground-checkpoint correction and concise fleet-status projection were deterministically verified in this repository on 2026-08-09.
-The pull guard accepted a fresh checkpoint beacon without a live watcher only mid-turn, while the Codex Stop hook still emitted a typed block that required the next foreground checkpoint.
-The default fleet view counted only run-step or semantic-busy work as active and kept status-log-only work and stale metadata visibly separate.
+The pull guard accepted a fresh checkpoint beacon without a live watcher only mid-turn, while the Codex Stop hook still emitted a typed block that required the next foreground checkpoint, and that block deferred to the away-mode instruction instead of contradicting it.
+A secondmate launch pinned the supervision model of its OWN harness from the single mapping owner, so a spawned Codex secondmate stayed quiet mid-turn while a persistent-watcher secondmate still alarmed.
+The default fleet view counted only run-step or semantic-busy work as active, marked every other working report unverified, listed terminal work with its PR or report pointer, and left only records with no live, terminal, or blocked state for reconciliation.
 Every registered primary guard integration remained covered by the shared guard suite, and the runtime backends remained outside this change because the view renders only the backend-agnostic fleet snapshot contract.
 
 ```sh
 bin/fm-lint.sh
 bin/fm-doc-audience-check.sh
-bin/fm-test-run.sh tests/fm-guard-stale-banner.test.sh tests/fm-turnend-guard.test.sh tests/fm-fleet-snapshot-view.test.sh tests/fm-supervision-instructions.test.sh tests/fm-documentation-audiences.test.sh
+bin/fm-test-run.sh tests/fm-guard-stale-banner.test.sh tests/fm-turnend-guard.test.sh tests/fm-fleet-snapshot-view.test.sh tests/fm-secondmate-harness.test.sh tests/fm-supervision-instructions.test.sh tests/fm-documentation-audiences.test.sh
 ```
 
 All commands exited zero.

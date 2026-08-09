@@ -132,17 +132,25 @@ fm_watcher_healthy() {
 # FM_SUPERVISION_MODEL overrides detection (tests, and callers that already know
 # the harness). Otherwise bin/fm-harness.sh is the single detection owner, so this
 # stays consistent with the harness-specific repair line the guards already emit.
+# fm_supervision_model_for_harness is the ONLY harness -> model mapping: a caller
+# that launches a session whose harness it already knows (bin/fm-spawn.sh pinning
+# FM_SUPERVISION_MODEL for a secondmate) resolves the value here instead of
+# restating the map, so the two can never disagree about a harness.
+fm_supervision_model_for_harness() {  # <harness>
+  case "${1:-}" in
+    claude) printf 'autoarm\n' ;;
+    codex) printf 'checkpoint\n' ;;
+    *) printf 'persistent\n' ;;
+  esac
+}
+
 fm_supervision_model() {
   local harness
   case "${FM_SUPERVISION_MODEL:-}" in
     autoarm|checkpoint|persistent) printf '%s\n' "$FM_SUPERVISION_MODEL"; return 0 ;;
   esac
   harness=$("$FM_WAKE_LIB_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
-  case "$harness" in
-    claude) printf 'autoarm\n' ;;
-    codex) printf 'checkpoint\n' ;;
-    *) printf 'persistent\n' ;;
-  esac
+  fm_supervision_model_for_harness "$harness"
 }
 
 # fm_watcher_supervision_verdict <state> <watch-path> [grace] [home]

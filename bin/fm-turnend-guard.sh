@@ -178,10 +178,22 @@ block_stop() {
   reason=$("$SCRIPT_DIR/fm-supervision-instructions.sh" --afk "$afk" --x-mode "$x_mode" --repair-line 2>/dev/null \
     || printf '%s\n' 'tasks in flight, no live watcher - repair missing watcher supervision according to the session-start operating block before ending the turn')
   if [ "$CODEX_MODE" -eq 1 ]; then
-    continuation=$(printf 'Start the next foreground supervision checkpoint now. %s' "$reason" \
+    # bin/fm-supervision-instructions.sh owns what this session must actually do.
+    # Its line is the ordinary Codex checkpoint instruction only while neither
+    # away mode nor X mode redirects it; away mode hands supervision to the
+    # daemon and X mode requires sourcing its cadence first, so a hardcoded
+    # "start the checkpoint now" lead-in would contradict or reorder the very
+    # instruction it introduces. Add the lead-in only for the ordinary line.
+    if [ "$afk" -eq 0 ] && [ "$x_mode" -eq 0 ]; then
+      continuation="Start the next foreground supervision checkpoint now. $reason"
+    else
+      continuation=$reason
+    fi
+    continuation=$(printf '%s' "$continuation" \
       | "$SCRIPT_DIR/fm-operational-input.sh" encode turn-end-guard 2>/dev/null || true)
-    if [ -n "$continuation" ]; then
-      jq -cn --arg reason "$continuation" '{decision:"block",reason:$reason}'
+    # Fail closed like every other edge here: only a successfully emitted typed
+    # block may allow this stop, otherwise fall through to the exit-2 banner.
+    if [ -n "$continuation" ] && jq -cn --arg reason "$continuation" '{decision:"block",reason:$reason}'; then
       exit 0
     fi
   fi
