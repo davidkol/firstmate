@@ -372,7 +372,14 @@ test_session_lock_is_per_peer_home() {
   "$fakebin/claude" -c 'sleep 120; :' & holder=$!
   printf '%s\n' "$holder" > "$a/state/.lock"
 
-  out=$(FM_HOME="$a" "$ROOT/bin/fm-lock.sh" 2>&1) && fail "a second session took a held peer-home lock"
+  # Acquire from under a harness-named parent rather than this suite's own
+  # ancestry: fm-lock.sh resolves the acquiring session by walking its parents,
+  # so a run whose ancestry holds no verified harness (a detached gate driver,
+  # CI) would fail on that instead of on the contested lock. The trailing
+  # commands keep bash from exec'ing away the harness-named process, and pass the
+  # real exit status back out.
+  out=$(FM_HOME="$a" "$fakebin/claude" -c '"$0"; rc=$?; exit "$rc"' \
+    "$ROOT/bin/fm-lock.sh" 2>&1) && fail "a second session took a held peer-home lock"
   assert_contains "$out" "another live firstmate session holds the lock" "held peer-home lock was not refused clearly"
 
   out=$(FM_HOME="$b" "$ROOT/bin/fm-lock.sh" status 2>&1)
