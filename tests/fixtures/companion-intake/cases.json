@@ -1,12 +1,42 @@
 {
-  "named_game_status_request": {
-    "registered_game_project": "Delivery",
-    "verbatim": "Okay, we can try it for Delivery Pull up the status report of the game",
-    "verbatim_in_intake": "Okay, we can try it for Delivery Pull up the status report of the game",
-    "request_kind": "read-only game status report",
-    "expected_owner": "companion-intake",
-    "generic_owner_not_selected": "bearings"
-  },
+  "routing_cases": [
+    {
+      "id": "named_game_is_report_object",
+      "verbatim": "Okay, we can try it for Delivery Pull up the status report of the game",
+      "registered_game_project": "Delivery",
+      "requested_status_object": "Delivery game",
+      "game_is_requested_object": true,
+      "explicit_bearings": false,
+      "expected_owner": "companion-intake"
+    },
+    {
+      "id": "explicit_bearings_mentions_game",
+      "verbatim": "/bearings for Delivery",
+      "registered_game_project": "Delivery",
+      "requested_status_object": "Firstmate fleet",
+      "game_is_requested_object": false,
+      "explicit_bearings": true,
+      "expected_owner": "bearings"
+    },
+    {
+      "id": "fleet_work_status_mentions_game",
+      "verbatim": "give me the fleet work status for Delivery",
+      "registered_game_project": "Delivery",
+      "requested_status_object": "fleet work",
+      "game_is_requested_object": false,
+      "explicit_bearings": false,
+      "expected_owner": "bearings"
+    },
+    {
+      "id": "unnamed_fleet_status",
+      "verbatim": "Pull up the fleet status report",
+      "registered_game_project": null,
+      "requested_status_object": "fleet",
+      "game_is_requested_object": false,
+      "explicit_bearings": false,
+      "expected_owner": "bearings"
+    }
+  ],
   "clear_request": {
     "verbatim": "Okay, for the grappling hook, when I let go, keep the swing speed and, uh, don't let it hook enemies yet. Make it feel like you carry through instead of just dropping.",
     "verbatim_in_intake": "Okay, for the grappling hook, when I let go, keep the swing speed and, uh, don't let it hook enemies yet. Make it feel like you carry through instead of just dropping.",
@@ -85,7 +115,7 @@
       ]
     }
   },
-  "cold_worker_handoff": {
+  "expected_cold_worker_handoff": {
     "desired_behavior": "On release, carry forward 1.15 times the current tangential swing velocity. Keep enemy attachment disabled and do not change hook projectile or swing timing.",
     "source_references": [
       {

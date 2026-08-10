@@ -244,7 +244,7 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 ### Intake and authority
 
 When a game-development request arrives in natural or dictated language, load `companion-intake` before writing the task brief.
-When a natural or dictated request names a registered game project, `companion-intake` takes precedence over generic status or report routing, including for read-only game status or report requests.
+When a natural or dictated request asks for the status or report of a resolved registered game itself, `companion-intake` takes precedence over generic status or report routing, while explicit `/bearings` and fleet, session, Firstmate, or work-status requests remain Bearings-owned even when they mention that game.
 Purpose, doctrine, and design intent remain human-owned; never invent a missing value.
 The skill owns faithful cleanup, project-source pointers, pertinent ambiguity, corrections, and the cold-readable handoff.
 

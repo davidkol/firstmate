@@ -3,7 +3,7 @@ name: companion-intake
 description: >-
   Turn natural or dictated game-development requests into faithful, decision-free task content using project-owned sources.
   Use before writing a task brief when intake needs a verbatim request, cleaned reading, project context, pertinent-ambiguity check, captain correction, proportional review evidence, or cold-worker handoff.
-  Also use before generic status or report routing when a natural or dictated request names a game project, including read-only game status or report requests.
+  Also use before generic status or report routing when a natural or dictated request asks for a resolved game project's own status or report; explicit /bearings and fleet, session, Firstmate, or work-status requests remain Bearings-owned even when they mention that game.
 user-invocable: false
 metadata:
   internal: true
@@ -14,11 +14,12 @@ metadata:
 This skill is the single owner of the Companion intake transformation.
 Keep the boundary modular as inputs plus output so a later captain decision could move it to another agent, but run it in the current intake path and do not create a separate intake agent now.
 
-## Named project precedence
+## Game status precedence
 
-Resolve an explicitly named registered game project before interpreting generic words such as `status` or `report`.
-When such a project resolves, this skill owns intake even when the requested game status or report is read-only.
-Bearings owns fleet, session, and Firstmate work status only after no named game-project intent resolves.
+Resolve an explicitly named registered game project and the requested status or report object before interpreting generic words such as `status` or `report`.
+When the resolved game itself is that object, this skill owns intake even when the requested game status or report is read-only.
+Do not infer that a game is the requested object merely because a fleet-status request mentions it.
+Explicit `/bearings` and requests whose object is fleet, session, Firstmate, or work status remain Bearings-owned even when they mention the resolved game.
 For a read-only game status or report request, apply the same project-source and pertinent-ambiguity discipline, then use section 7's existing informational-response path instead of forcing a task brief or dispatch.
 
 ## Authority boundary

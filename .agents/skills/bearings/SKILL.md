@@ -3,7 +3,7 @@ name: bearings
 description: >-
   Generate a "pick up where I left off" status report from firstmate's live fleet state.
   Use when the captain invokes /bearings or asks for a bearings report, morning brief, status report, catch-up, "where did I leave off", or "what's in the works".
-  Exclude requests that name a game project; companion-intake owns those before generic status or report routing, including read-only game status or report requests.
+  Defer only when a request asks for a resolved registered game's own status or report; retain explicit /bearings and fleet, session, Firstmate, or work-status requests even when they mention that game.
   Read bounded local fleet state cheaply, optionally check open PRs when requested, compose a scannable dated report to data/status-report-<YYYY-MM-DD>.md, and surface a concise version in chat; remain read-mostly and do not tear down, merge, or mutate task state as a side effect of producing the brief.
 user-invocable: true
 metadata:
