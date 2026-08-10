@@ -3,6 +3,7 @@ name: companion-intake
 description: >-
   Turn natural or dictated game-development requests into faithful, decision-free task content using project-owned sources.
   Use before writing a task brief when intake needs a verbatim request, cleaned reading, project context, pertinent-ambiguity check, captain correction, proportional review evidence, or cold-worker handoff.
+  Also use before generic status or report routing when a natural or dictated request names a game project, including read-only game status or report requests.
 user-invocable: false
 metadata:
   internal: true
@@ -12,6 +13,13 @@ metadata:
 
 This skill is the single owner of the Companion intake transformation.
 Keep the boundary modular as inputs plus output so a later captain decision could move it to another agent, but run it in the current intake path and do not create a separate intake agent now.
+
+## Named project precedence
+
+Resolve an explicitly named registered game project before interpreting generic words such as `status` or `report`.
+When such a project resolves, this skill owns intake even when the requested game status or report is read-only.
+Bearings owns fleet, session, and Firstmate work status only after no named game-project intent resolves.
+For a read-only game status or report request, apply the same project-source and pertinent-ambiguity discipline, then use section 7's existing informational-response path instead of forcing a task brief or dispatch.
 
 ## Authority boundary
 
@@ -25,7 +33,7 @@ Treat project-owned files as game truth and point to them instead of copying the
 1. Preserve the complete request verbatim before interpreting it.
 2. Write a cleaned reading that removes transcription noise and repairs readability without adding, dropping, broadening, or narrowing meaning.
 3. Inspect the project's authoritative design, implementation, decision, and acceptance sources that bear on the request.
-4. Keep a concise private project context card made of current synthesis, source pointers, and relevant captain corrections; use the existing project-private equivalent when one exists, otherwise use `data/project-context/<project>.md` in the active Firstmate home.
+4. Keep a concise private project context card made of the current goal, priorities, built, planned, and unknown state, pertinent open decisions, source pointers with a pertinence rationale, and relevant captain corrections; use the existing project-private equivalent when one exists, otherwise use `data/project-context/<project>.md` in the active Firstmate home.
 5. Let the Companion intake that resolved the request be the card's only writer; workers read it through source pointers.
 6. Identify only ambiguity whose answer could change the pertinent behavior or implementation boundary.
 7. Take the fast path when no pertinent ambiguity remains.

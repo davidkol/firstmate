@@ -1,7 +1,15 @@
 {
+  "named_game_status_request": {
+    "registered_game_project": "Delivery",
+    "verbatim": "Okay, we can try it for Delivery Pull up the status report of the game",
+    "verbatim_in_intake": "Okay, we can try it for Delivery Pull up the status report of the game",
+    "request_kind": "read-only game status report",
+    "expected_owner": "companion-intake",
+    "generic_owner_not_selected": "bearings"
+  },
   "clear_request": {
     "verbatim": "Okay, for the grappling hook, when I let go, keep the swing speed and, uh, don't let it hook enemies yet. Make it feel like you carry through instead of just dropping.",
-    "verbatim_in_output": "Okay, for the grappling hook, when I let go, keep the swing speed and, uh, don't let it hook enemies yet. Make it feel like you carry through instead of just dropping.",
+    "verbatim_in_intake": "Okay, for the grappling hook, when I let go, keep the swing speed and, uh, don't let it hook enemies yet. Make it feel like you carry through instead of just dropping.",
     "cleaned_reading": "When the grappling hook is released, preserve the current swing speed so the player carries through instead of dropping. Do not allow the hook to attach to enemies yet.",
     "meaning_facts": [
       "release preserves current swing speed",
@@ -13,25 +21,37 @@
       "the player carries through instead of dropping",
       "enemy attachment remains disabled"
     ],
-    "pertinent_question": null,
+    "pertinent_ambiguity": {
+      "status": "none",
+      "question": null,
+      "unresolved_decisions": []
+    },
     "path": "fast"
   },
   "pertinent_ambiguity": {
-    "verbatim": "Make the grapple faster too.",
-    "impact": "The answer would change hook projectile timing or swing acceleration.",
+    "verbatim": "Make the grapple faster, too... right?",
+    "verbatim_in_intake": "Make the grapple faster, too... right?",
+    "status": "open",
     "questions": [
-      "When you say faster, do you mean the hook projectile should travel faster or the player should accelerate faster while swinging?"
-    ],
-    "dependent_work": [
-      "grapple speed tuning"
-    ],
-    "unrelated_work_that_can_continue": [
-      "release carry-through",
-      "enemy attachment restriction"
+      {
+        "text": "When you say faster, do you mean the hook projectile should travel faster or the player should accelerate faster while swinging?",
+        "could_change": [
+          "hook projectile timing",
+          "swing acceleration"
+        ],
+        "dependent_work": [
+          "grapple speed tuning"
+        ],
+        "unrelated_work_that_can_continue": [
+          "release carry-through",
+          "enemy attachment restriction"
+        ]
+      }
     ]
   },
   "captain_correction": {
     "request_verbatim_after_correction": "Okay, for the grappling hook, when I let go, keep the swing speed and, uh, don't let it hook enemies yet. Make it feel like you carry through instead of just dropping.",
+    "follow_up_verbatim_after_correction": "Make the grapple faster, too... right?",
     "offered_options": [
       "increase hook projectile speed",
       "increase swing acceleration"
@@ -39,14 +59,12 @@
     "verbatim_correction": "Neither. Keep the hook timing and make only the release carry fifteen percent faster.",
     "cleaned_reading_after_correction": "Keep hook projectile and swing timing unchanged. On release, carry forward 1.15 times the current tangential swing velocity.",
     "rejected_offered_options": true,
-    "context_entry": "2026-08-10 - Captain correction: \"Neither. Keep the hook timing and make only the release carry fifteen percent faster.\" Source: intake response."
-  },
-  "context_card": {
-    "source_pointers": [
-      "tests/fixtures/companion-intake/project/design.json#/release",
-      "tests/fixtures/companion-intake/project/implementation.json#/current_behavior"
-    ],
-    "current_correction": "2026-08-10 - Captain correction: \"Neither. Keep the hook timing and make only the release carry fifteen percent faster.\" Source: intake response."
+    "resolved_ambiguity": {
+      "status": "none",
+      "question": null,
+      "unresolved_decisions": []
+    },
+    "context_entry": "2026-08-10 - Captain correction from intake response:\n> Neither.\n> Keep the hook timing and make only the release carry fifteen percent faster."
   },
   "review_routes": {
     "mechanical": {
@@ -62,39 +80,61 @@
       "depth": "full",
       "evidence": [
         "full project check",
-        "observed traversal behavior",
+        "observed grapple release",
         "fresh reviewer when the selected delivery path warrants it"
       ]
     }
   },
   "cold_worker_handoff": {
     "desired_behavior": "On release, carry forward 1.15 times the current tangential swing velocity. Keep enemy attachment disabled and do not change hook projectile or swing timing.",
-    "source_pointers": [
-      "tests/fixtures/companion-intake/project/design.json#/release",
-      "tests/fixtures/companion-intake/project/design.json#/acceptance_environment",
-      "tests/fixtures/companion-intake/project/implementation.json#/current_behavior",
-      "tests/fixtures/companion-intake/project/implementation.json#/seam_invariants"
+    "source_references": [
+      {
+        "pointer": "tests/fixtures/companion-intake/project/design.json#/release",
+        "rationale": "Owns the human-approved release intent, multiplier, and enemy-attachment non-goal."
+      },
+      {
+        "pointer": "tests/fixtures/companion-intake/project/grapple.py#release_grapple",
+        "rationale": "Shows the current release seam, carried-velocity calculation, and target filter."
+      },
+      {
+        "pointer": "tests/fixtures/companion-intake/project/status.json#/grapple_release_claim",
+        "rationale": "Contains the older zero-velocity claim that current code and the acceptance check disprove."
+      },
+      {
+        "pointer": "tests/fixtures/companion-intake/project/open-decisions.json#/decisions/0",
+        "rationale": "Names an unresolved visual-feedback choice that does not affect release carry work."
+      },
+      {
+        "pointer": "tests/fixtures/companion-intake/project/check_grapple_release.py",
+        "rationale": "Is the runnable acceptance environment for carried velocity, tether clearing, and enemy rejection."
+      }
     ],
-    "relevant_correction": "2026-08-10 - Captain correction: \"Neither. Keep the hook timing and make only the release carry fifteen percent faster.\" Source: intake response.",
+    "relevant_correction": "2026-08-10 - Captain correction from intake response:\n> Neither.\n> Keep the hook timing and make only the release carry fifteen percent faster.",
+    "pertinent_ambiguity": {
+      "status": "none",
+      "question": null,
+      "unresolved_decisions": []
+    },
     "non_goals": [
       "enemy attachment",
       "hook projectile timing changes",
-      "swing acceleration changes"
+      "swing acceleration changes",
+      "anchor visual-feedback design"
     ],
     "seam_invariants": [
       "Release clears the tether before applying carried velocity.",
-      "Anchor filtering remains owned by the target classifier."
+      "Anchor filtering remains owned by the target classifier.",
+      "The release change does not alter hook projectile or swing timing."
     ],
     "acceptance_environment": {
-      "scene": "scenes/traversal_arena.tscn",
-      "check": "tests/traversal/grapple_release.test.gd"
+      "check": "tests/fixtures/companion-intake/project/check_grapple_release.py",
+      "expected_output": "grapple-release acceptance: velocity=23.00 tether_cleared=true enemy_attach=false"
     },
     "observable_done": [
-      "The release check proves a 1.15 multiplier on carried tangential velocity.",
-      "A traversal-arena playthrough shows forward carry instead of a drop.",
-      "Enemy targets remain ineligible."
+      "The runnable release check observes a 1.15 multiplier on carried tangential velocity.",
+      "The same check observes tether clearing before carried velocity is returned.",
+      "The same check observes that enemy targets remain ineligible."
     ],
-    "review_depth": "full",
-    "unresolved_decisions": []
+    "review_depth": "full"
   }
 }

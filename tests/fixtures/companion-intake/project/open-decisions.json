@@ -1,0 +1,12 @@
+{
+  "decisions": [
+    {
+      "id": "grapple-anchor-feedback",
+      "status": "open",
+      "question": "Should valid grapple anchors pulse before the player fires?",
+      "affects": [
+        "pre-fire visual feedback"
+      ]
+    }
+  ]
+}

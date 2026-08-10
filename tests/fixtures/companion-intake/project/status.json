@@ -1,0 +1,5 @@
+{
+  "updated": "2026-07-28",
+  "grapple_release_claim": "Releasing the grapple clears tether state and drops carried tangential velocity to zero.",
+  "anchor_filtering_claim": "Enemy targets are not valid grapple anchors."
+}

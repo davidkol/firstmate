@@ -1,9 +1,0 @@
-{
-  "document_role": "authoritative project-owned implementation state",
-  "current_behavior": "release_grapple clears tether state and currently zeroes carried tangential velocity.",
-  "seam_invariants": [
-    "Release clears the tether before applying carried velocity.",
-    "Anchor filtering remains owned by the target classifier.",
-    "The release change must not alter hook projectile or swing timing."
-  ]
-}
