@@ -243,6 +243,10 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 
 ### Intake and authority
 
+When a game-development request arrives in natural or dictated language, load `companion-intake` before writing the task brief.
+Purpose, doctrine, and design intent remain human-owned; never invent a missing value.
+The skill owns faithful cleanup, project-source pointers, pertinent ambiguity, corrections, and the cold-readable handoff.
+
 Resolve the project independently for every request.
 An explicit project wins, a clear follow-up inherits its referent, and otherwise match the request against the registry, work under way, and project code or README.
 Proceed on one confident match while naming the project in plain language; ask one concise question when multiple or no projects plausibly match.

@@ -1,0 +1,100 @@
+{
+  "clear_request": {
+    "verbatim": "Okay, for the grappling hook, when I let go, keep the swing speed and, uh, don't let it hook enemies yet. Make it feel like you carry through instead of just dropping.",
+    "verbatim_in_output": "Okay, for the grappling hook, when I let go, keep the swing speed and, uh, don't let it hook enemies yet. Make it feel like you carry through instead of just dropping.",
+    "cleaned_reading": "When the grappling hook is released, preserve the current swing speed so the player carries through instead of dropping. Do not allow the hook to attach to enemies yet.",
+    "meaning_facts": [
+      "release preserves current swing speed",
+      "the player carries through instead of dropping",
+      "enemy attachment remains disabled"
+    ],
+    "cleaned_facts": [
+      "release preserves current swing speed",
+      "the player carries through instead of dropping",
+      "enemy attachment remains disabled"
+    ],
+    "pertinent_question": null,
+    "path": "fast"
+  },
+  "pertinent_ambiguity": {
+    "verbatim": "Make the grapple faster too.",
+    "impact": "The answer would change hook projectile timing or swing acceleration.",
+    "questions": [
+      "When you say faster, do you mean the hook projectile should travel faster or the player should accelerate faster while swinging?"
+    ],
+    "dependent_work": [
+      "grapple speed tuning"
+    ],
+    "unrelated_work_that_can_continue": [
+      "release carry-through",
+      "enemy attachment restriction"
+    ]
+  },
+  "captain_correction": {
+    "request_verbatim_after_correction": "Okay, for the grappling hook, when I let go, keep the swing speed and, uh, don't let it hook enemies yet. Make it feel like you carry through instead of just dropping.",
+    "offered_options": [
+      "increase hook projectile speed",
+      "increase swing acceleration"
+    ],
+    "verbatim_correction": "Neither. Keep the hook timing and make only the release carry fifteen percent faster.",
+    "cleaned_reading_after_correction": "Keep hook projectile and swing timing unchanged. On release, carry forward 1.15 times the current tangential swing velocity.",
+    "rejected_offered_options": true,
+    "context_entry": "2026-08-10 - Captain correction: \"Neither. Keep the hook timing and make only the release carry fifteen percent faster.\" Source: intake response."
+  },
+  "context_card": {
+    "source_pointers": [
+      "tests/fixtures/companion-intake/project/design.json#/release",
+      "tests/fixtures/companion-intake/project/implementation.json#/current_behavior"
+    ],
+    "current_correction": "2026-08-10 - Captain correction: \"Neither. Keep the hook timing and make only the release carry fifteen percent faster.\" Source: intake response."
+  },
+  "review_routes": {
+    "mechanical": {
+      "example": "Rename the traversal debug label.",
+      "depth": "focused",
+      "evidence": [
+        "targeted check",
+        "selected delivery path's required review"
+      ]
+    },
+    "behavior_change": {
+      "example": "Change grapple release velocity.",
+      "depth": "full",
+      "evidence": [
+        "full project check",
+        "observed traversal behavior",
+        "fresh reviewer when the selected delivery path warrants it"
+      ]
+    }
+  },
+  "cold_worker_handoff": {
+    "desired_behavior": "On release, carry forward 1.15 times the current tangential swing velocity. Keep enemy attachment disabled and do not change hook projectile or swing timing.",
+    "source_pointers": [
+      "tests/fixtures/companion-intake/project/design.json#/release",
+      "tests/fixtures/companion-intake/project/design.json#/acceptance_environment",
+      "tests/fixtures/companion-intake/project/implementation.json#/current_behavior",
+      "tests/fixtures/companion-intake/project/implementation.json#/seam_invariants"
+    ],
+    "relevant_correction": "2026-08-10 - Captain correction: \"Neither. Keep the hook timing and make only the release carry fifteen percent faster.\" Source: intake response.",
+    "non_goals": [
+      "enemy attachment",
+      "hook projectile timing changes",
+      "swing acceleration changes"
+    ],
+    "seam_invariants": [
+      "Release clears the tether before applying carried velocity.",
+      "Anchor filtering remains owned by the target classifier."
+    ],
+    "acceptance_environment": {
+      "scene": "scenes/traversal_arena.tscn",
+      "check": "tests/traversal/grapple_release.test.gd"
+    },
+    "observable_done": [
+      "The release check proves a 1.15 multiplier on carried tangential velocity.",
+      "A traversal-arena playthrough shows forward carry instead of a drop.",
+      "Enemy targets remain ineligible."
+    ],
+    "review_depth": "full",
+    "unresolved_decisions": []
+  }
+}

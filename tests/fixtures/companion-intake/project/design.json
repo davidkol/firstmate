@@ -1,0 +1,12 @@
+{
+  "document_role": "authoritative project-owned design intent",
+  "feature": "grappling hook",
+  "release": {
+    "intent": "Release carries the player's tangential swing velocity forward instead of dropping the player.",
+    "attachment_targets": "Only tagged anchor surfaces are valid targets; enemy attachment is out of scope."
+  },
+  "acceptance_environment": {
+    "scene": "scenes/traversal_arena.tscn",
+    "check": "tests/traversal/grapple_release.test.gd"
+  }
+}
