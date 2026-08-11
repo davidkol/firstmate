@@ -1227,6 +1227,14 @@ test_design_intake_scaffold_is_read_only_and_bounded() {
     "design-intake brief lost the first-steer completion order"
   assert_grep "second ordinary steer" "$brief" \
     "design-intake brief lost the second-steer terminal authorization"
+  assert_grep "After and only after the second ordinary steer says the completion check passed, re-read the current status file" "$brief" \
+    "design-intake brief did not require a fresh status read after the second steer"
+  assert_grep "verify that \`report-ready\` is already resolved" "$brief" \
+    "design-intake brief did not verify report-ready resolution before terminal done"
+  assert_grep "Append the literal line \`done: design-intake report reconciled\` at EOF" "$brief" \
+    "design-intake brief did not require the literal terminal line at EOF"
+  assert_grep "Never edit, reorder, replace, or otherwise rewrite any existing status line" "$brief" \
+    "design-intake brief did not prohibit rewriting append-only status history"
   assert_no_grep "The worktree is your laboratory" "$brief" \
     "design-intake inherited ordinary scout scratch-edit permission"
   assert_no_grep "make scratch commits freely" "$brief" \

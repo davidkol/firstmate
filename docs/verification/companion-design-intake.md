@@ -29,6 +29,16 @@ git diff --check
 
 Record the final implementation commit and bounded summaries from every command above after the writer lane commits the change.
 
+## Observed cold-acceptance failure and focused rerun
+
+The 2026-08-11 cold Delivery acceptance exposed a terminal status-write violation after the authorized second steer.
+The scout used an editor on a stale status snapshot, temporarily placed `done: design-intake report reconciled` above the existing `resolved [key=report-ready]:` line, and then rewrote the append-only status log to repair the order.
+That run does not satisfy required observation 16 and is retained as failing model-behavior evidence.
+The generated contract now requires a fresh status-file read after the second steer, verification that `report-ready` is already resolved, a literal terminal line appended at EOF, and no edit, reorder, replacement, or other rewrite of existing status lines.
+On 2026-08-11, `/bin/bash -n bin/fm-brief.sh` exited 0 after the contract fix.
+On 2026-08-11, `bin/fm-test-run.sh tests/fm-brief.test.sh` reported `total=1 failed=0 skipped_gate=0` after focused assertions covered all four terminal-write constraints.
+This focused rerun proves the generated normative contract only and does not replace a genuinely cold Delivery rerun from the final fix commit.
+
 ## Cold Delivery boundary
 
 The genuinely cold Delivery acceptance must not be run in the implementation writer lane.
@@ -73,4 +83,5 @@ It must inspect `data/delivery-game-status-report/decision-fl5c-helm-view.md`, t
 
 ## Current status
 
-The cold Delivery acceptance is intentionally pending a separate fresh Codex process from the final committed writer head.
+The first cold Delivery acceptance exposed the append-only terminal status violation recorded above.
+A genuinely cold Delivery rerun is pending from the final committed fix head.

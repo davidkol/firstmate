@@ -550,7 +550,10 @@ When the report and before-and-after read-only checks are complete, append exact
 
 Stop without appending \`done\`.
 After the first steer resolves \`report-ready\`, remain stopped and do not append a terminal line.
-After and only after the second ordinary steer says the completion check passed, append \`done: design-intake report reconciled\` and stop.
+After and only after the second ordinary steer says the completion check passed, re-read the current status file before writing anything.
+From that fresh read, verify that \`report-ready\` is already resolved.
+Append the literal line \`done: design-intake report reconciled\` at EOF and stop.
+Never edit, reorder, replace, or otherwise rewrite any existing status line.
 
 # Definition of done
 The report stands alone and satisfies the exact bounded schema and command grammar above.
