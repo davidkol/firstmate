@@ -1242,8 +1242,8 @@ test_design_intake_scaffold_is_read_only_and_bounded() {
   pass "fm-brief.sh: --design-intake renders a bounded read-only scout contract"
 }
 
-# DESIGN_INTAKE is tracked independently from KIND and HERDR_LAB so either flag
-# order rejects before a brief is written.
+# DESIGN_INTAKE and explicit SECONDMATE presence are tracked independently from
+# last-option-wins KIND so intervening or trailing --scout cannot bypass rejection.
 test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order() {
   local home id rc
   home="$TMP_ROOT/design-intake-conflicts"
@@ -1260,6 +1260,30 @@ test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order() {
     >/dev/null 2>&1; rc=$?
   expect_code 1 "$rc" "--secondmate after --design-intake must fail"
   assert_absent "$home/data/$id/brief.md" "reverse-order secondmate/design-intake brief was written"
+
+  id=design-intake-secondmate-trailing-scout
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Delivery --design-intake --secondmate --scout \
+    >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "trailing --scout must not erase --secondmate after --design-intake"
+  assert_absent "$home/data/$id/brief.md" "trailing-scout mixed design-intake brief was written"
+
+  id=secondmate-design-intake-trailing-scout
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Delivery --secondmate --design-intake --scout \
+    >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "trailing --scout must not erase --secondmate before --design-intake"
+  assert_absent "$home/data/$id/brief.md" "reverse-order trailing-scout mixed brief was written"
+
+  id=design-intake-intervening-scout-secondmate
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Delivery --design-intake --scout --secondmate \
+    >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "intervening --scout must not permit --secondmate after --design-intake"
+  assert_absent "$home/data/$id/brief.md" "intervening-scout mixed design-intake brief was written"
+
+  id=secondmate-intervening-scout-design-intake
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Delivery --secondmate --scout --design-intake \
+    >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "intervening --scout must not erase --secondmate before --design-intake"
+  assert_absent "$home/data/$id/brief.md" "reverse-order intervening-scout mixed brief was written"
 
   id=design-intake-herdr-first
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Delivery --herdr-lab --design-intake \

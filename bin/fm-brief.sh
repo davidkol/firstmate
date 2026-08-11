@@ -116,12 +116,13 @@ PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 KIND=ship
 HERDR_LAB=0
 DESIGN_INTAKE=0
+SECONDMATE=0
 NO_PROJECTS=0
 POS=()
 for a in "$@"; do
   case "$a" in
     --scout) KIND=scout ;;
-    --secondmate) KIND=secondmate ;;
+    --secondmate) KIND=secondmate; SECONDMATE=1 ;;
     --herdr-lab) HERDR_LAB=1 ;;
     --design-intake) DESIGN_INTAKE=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
@@ -130,7 +131,7 @@ for a in "$@"; do
 done
 ID=${POS[0]}
 
-if [ "$DESIGN_INTAKE" -eq 1 ] && [ "$KIND" = secondmate ]; then
+if [ "$DESIGN_INTAKE" -eq 1 ] && [ "$SECONDMATE" -eq 1 ]; then
   echo "error: --design-intake cannot be combined with --secondmate" >&2
   exit 1
 fi

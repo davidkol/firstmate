@@ -27,7 +27,25 @@ bin/fm-test-run.sh --all
 git diff --check
 ```
 
-Record the final implementation commit and bounded summaries from every command above after the writer lane commits the change.
+The initial behavior implementation committed as `50950226eb80a12a0863600be3855cd51d554a90` on 2026-08-11.
+The bounded deterministic evidence for that behavior tree is:
+
+- `/bin/bash -n bin/fm-brief.sh` exited 0 with no output.
+- `bin/fm-test-run.sh tests/fm-brief.test.sh` passed all 36 focused checks.
+- `bin/fm-test-run.sh tests/fm-companion-intake.test.sh` passed all 10 Companion-intake checks.
+- `bin/fm-test-run.sh tests/fm-decision-hold-lifecycle.test.sh` passed all 12 lifecycle checks.
+- `bin/fm-test-run.sh tests/fm-send-resolve-key.test.sh` passed all nine keyed-send checks.
+- `bin/fm-test-run.sh tests/fm-wake-drain-open-decisions.test.sh` passed all 11 open-decision checks.
+- `bin/fm-test-run.sh tests/fm-wake-drain-open-decisions-cursor.test.sh` passed all eight cursor checks.
+- `bin/fm-doc-audience-check.sh` exited 0 with `surfaces=62 local_links=194`.
+- `bin/fm-lint.sh` exited 0 with pinned ShellCheck `0.11.0`.
+- `bin/fm-test-run.sh --changed --require-nonempty` reported `total=68 failed=0 skipped_gate=2` in `1323567` milliseconds.
+- The two declared changed-gate skips were the unavailable `tsc` check for `fm-pi-primary-types` and the disabled live Codex opt-in.
+- `git diff --check` exited 0 with no output.
+
+The planned `bin/fm-test-run.sh --all` run was intentionally interrupted during `tests/fm-session-start.test.sh` after the captain's 2026-08-11 scope correction stopped the redundant full-repository suite.
+The run had reported no failures before interruption, but it produced no terminal summary and is not claimed green.
+The later captain prioritization superseded indiscriminate repetition of the full suite, so neither that suite nor the changed-wide suite was rerun to manufacture replacement evidence.
 
 ## Observed cold-acceptance failure and focused rerun
 
