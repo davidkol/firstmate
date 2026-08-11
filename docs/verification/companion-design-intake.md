@@ -37,7 +37,27 @@ That run does not satisfy required observation 16 and is retained as failing mod
 The generated contract now requires a fresh status-file read after the second steer, verification that `report-ready` is already resolved, a literal terminal line appended at EOF, and no edit, reorder, replacement, or other rewrite of existing status lines.
 On 2026-08-11, `/bin/bash -n bin/fm-brief.sh` exited 0 after the contract fix.
 On 2026-08-11, `bin/fm-test-run.sh tests/fm-brief.test.sh` reported `total=1 failed=0 skipped_gate=0` after focused assertions covered all four terminal-write constraints.
-This focused rerun proves the generated normative contract only and does not replace a genuinely cold Delivery rerun from the final fix commit.
+This focused rerun proves the generated normative contract only, while the successful cold rerun below supplies separate model-behavior evidence.
+
+## Successful cold Delivery rerun
+
+On 2026-08-11, the genuinely cold Delivery rerun from Firstmate fix commit `81238c326458ffb25c3632cf4606c76d218ac1a0` passed.
+The acceptance root was `/Users/davidkol/.firstmate-acceptance/companion-design-intake-agent-81238c3`.
+Its fresh code checkout at `/Users/davidkol/.firstmate-acceptance/companion-design-intake-agent-81238c3/code` was detached and clean at exact commit `81238c326458ffb25c3632cf4606c76d218ac1a0`.
+The peer home was `/Users/davidkol/.firstmate-acceptance/companion-design-intake-agent-81238c3/home`.
+The Delivery primary checkout was `/Users/davidkol/.firstmate-acceptance/companion-design-intake-agent-81238c3/home/projects/Delivery`, and the isolated scout worktree was `/Users/davidkol/.treehouse/Delivery-32e7b3/3/Delivery` at exact clean commit `d0b0c15f7ca9aeb8270cd7ee7817ee177615d429`.
+The cold Codex xhigh task was `delivery-design-intake-cold-rerun`.
+It retained a 52-line report at `home/data/delivery-design-intake-cold-rerun/report.md` with exactly four sections, 12 candidate dispositions, and three new shortlist items.
+The report classified the viewport question as answered from the verbatim decision, reconciled multiple duplicates from their full records, classified ready-up as implementation-only, and classified every surviving shortlist question as play-answerable.
+The peer home registered the new holds `thin-run-cohesion`, `last-stand-wake-beat`, and `launch-discoverability`.
+The first steer resolved `report-ready` while explicitly withholding terminal `done`.
+The existing `complete` and `verify` checks passed with all three new keys.
+Regular Companion immediately presented `thin-run-cohesion` with its real recorded default, `Keep the nine-minute thin run and current event cadence`.
+Before the second steer, the status file was 238 bytes with SHA-256 `1f2cae1ed04a21c13a6ce76739f03608fd2e1c10ad31609cd70ee0f3eb519c95`.
+After the second steer, the status file had exactly three lines, its first 238 bytes retained that exact hash, and its last line was exactly `done: design-intake report reconciled`.
+The retained transcript showed a fresh status re-read before a `+1/-0` EOF addition, with no existing status line edited or reordered.
+Delivery remained at the exact clean commit before and after the scout.
+Ordinary teardown verified the decision inventory, returned the isolated worktree, removed runtime metadata, and retained the report.
 
 ## Cold Delivery boundary
 
@@ -84,4 +104,4 @@ It must inspect `data/delivery-game-status-report/decision-fl5c-helm-view.md`, t
 ## Current status
 
 The first cold Delivery acceptance exposed the append-only terminal status violation recorded above.
-A genuinely cold Delivery rerun is pending from the final committed fix head.
+The separate genuinely cold Delivery rerun from the fix head passed with the successful evidence recorded above.
