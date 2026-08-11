@@ -61,18 +61,17 @@ test_buried_decision_survives_many_growing_drains_and_resolution_clears_it() {
   [ -n "$bootstrap_bytes" ] && [ "$bootstrap_bytes" -gt 0 ] \
     || fail "the bootstrap drain recorded no incremental read at all"
 
-  # Many further drains, each appending only a SMALL increment while the total
-  # log keeps growing large. The buried decision must resurface on EVERY one of
-  # them (never dropped just because it is old or buried under more appends),
-  # and each drain's read-probe byte count must match ONLY that round's small
-  # increment - never the ever-growing total file size - proving the read cost
-  # is bounded by new appends, not by total log size.
+  # Many further routine drains each append only a SMALL unrelated increment
+  # while the total log keeps growing large. The buried decision remains open
+  # in the cursor, but it must not interrupt the transcript again until its
+  # keyed record changes. Each drain still reads only that round's increment.
   for round in 1 2 3 4 5; do
     increment_bytes=$(append_filler "$status" 20)
     FM_STATE_OVERRIDE="$state" FM_OPEN_DECISIONS_READ_PROBE="$probe" "$DRAIN" > "$out" \
       || fail "drain $round over a growing log failed"
-    grep -F 'task1' "$out" | grep -F '[key=api-shape]' | grep -F 'pick REST or RPC' >/dev/null \
-      || fail "the buried decision was dropped on growth round $round"
+    if grep -F 'OPEN DECISIONS' "$out" >/dev/null; then
+      fail "the unchanged buried decision interrupted routine growth round $round: $(cat "$out")"
+    fi
     probe_bytes=$(last_probe_bytes "$probe" "$status")
     [ "$probe_bytes" = "$increment_bytes" ] \
       || fail "round $round read $probe_bytes bytes, expected exactly this round's $increment_bytes-byte increment (cost is not bounded)"
@@ -80,6 +79,13 @@ test_buried_decision_survives_many_growing_drains_and_resolution_clears_it() {
   total_size=$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')
   [ "$total_size" -gt "$bootstrap_bytes" ] \
     || fail "test setup error: the log never grew past its bootstrap size"
+
+  # Session recovery explicitly asks for the full durable open set, even when
+  # a prior routine drain already surfaced it.
+  FM_STATE_OVERRIDE="$state" "$DRAIN" --open-decisions all > "$out" \
+    || fail "full recovery drain failed"
+  grep -F 'task1' "$out" | grep -F '[key=api-shape]' | grep -F 'pick REST or RPC' >/dev/null \
+    || fail "the full recovery drain did not restore the still-open decision"
 
   # Now resolve it. The very next drain's own read (a small increment) must
   # clear it - not by rescanning the whole now-large file, but by folding the
@@ -107,7 +113,32 @@ test_buried_decision_survives_many_growing_drains_and_resolution_clears_it() {
   [ "$probe_bytes" = "$increment_bytes" ] \
     || fail "the post-resolution drain read $probe_bytes bytes, expected exactly the $increment_bytes-byte increment (cost is not bounded)"
 
-  pass "a buried decision survives many growing drains with bounded read cost, and resolution durably clears it at bounded cost too"
+  pass "an unchanged buried decision stays durable without repeating on routine drains, and full recovery plus resolution remain bounded"
+}
+
+test_identical_duplicate_stays_silent_but_identical_reopen_surfaces() {
+  local dir state status out
+  dir=$(make_case identical-reopen)
+  state="$dir/state"
+  status="$state/task-reopen.status"
+  out="$dir/drain.out"
+  printf 'needs-decision [key=gate]: choose the release gate\n' > "$status"
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "initial decision drain failed"
+  grep -F 'task-reopen [key=gate]' "$out" >/dev/null \
+    || fail "the initial decision did not surface"
+
+  printf 'needs-decision [key=gate]: choose the release gate\n' >> "$status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "duplicate decision drain failed"
+  [ ! -s "$out" ] || fail "an identical still-open decision repeated without becoming newly actionable: $(cat "$out")"
+
+  printf 'resolved [key=gate]: prior gate answered\n' >> "$status"
+  printf 'needs-decision [key=gate]: choose the release gate\n' >> "$status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "reopened decision drain failed"
+  grep -F 'task-reopen [key=gate] needs-decision: choose the release gate' "$out" >/dev/null \
+    || fail "an identically worded decision did not surface after it became newly actionable again: $(cat "$out")"
+
+  pass "an identical duplicate stays silent while an identical resolved-then-reopened decision surfaces"
 }
 
 test_truncated_log_falls_back_to_a_full_refold_not_a_dropped_decision() {
@@ -350,3 +381,4 @@ test_cold_cursor_identity_failure_still_surfaces_the_decision
 test_cold_cursor_content_read_failure_still_surfaces_the_decision
 test_cursor_cache_read_failure_refolds_authoritative_status
 test_buried_decision_survives_many_growing_drains_and_resolution_clears_it
+test_identical_duplicate_stays_silent_but_identical_reopen_surfaces

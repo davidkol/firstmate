@@ -228,6 +228,25 @@ fm-doc-audience-check: ok surfaces=57 local_links=177
 FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=117611
 ```
 
+The captain-visible Codex supervision-noise correction was deterministically verified in this repository on 2026-08-10.
+The quiet checkpoint returned status 124 with no output, a preexisting durable queue returned an immediate `queue:` reason, and a real signal still passed through with its queue record intact for the drain.
+Routine drains suppressed an unchanged buried decision while boundedly reading only new status bytes, surfaced an identically worded decision after resolution made it newly actionable again, and `--open-decisions all` restored the complete durable set for session recovery.
+A session-start Codex preflight suppressed only the impossible pre-first-checkpoint watcher-down banner, while the next ordinary guard call still emitted the full liveness alarm.
+A surfaced signal absorbed its one following bare stale duplicate into the stuck timer, changed pipeline step-log evidence reset that timer, and unchanged pipeline evidence still wedge-escalated.
+Declared pauses and captain-held dead endpoints recorded their bounded internal rechecks without queueing another captain wake, while a live external-decision gate still surfaced once.
+An explicit `branch_sync.state: pipeline_owned` fixture kept a divergent live fix round attributable, while the historical same-branch rewritten-head negative control still fell back from run-step state.
+
+```sh
+tests/fm-watch-checkpoint.test.sh
+tests/fm-wake-drain-open-decisions-cursor.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-session-start.test.sh
+tests/fm-watch-triage.test.sh
+```
+
+All five commands exited zero.
+The opt-in `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` passed with codex-cli 0.147.0, starting no checkpoint for the idle home and delivering plus draining the live home's real actionable wake.
+
 The Codex foreground-checkpoint correction and concise fleet-status projection were deterministically verified in this repository on 2026-08-09.
 The pull guard accepted a fresh checkpoint beacon without a live watcher only mid-turn, while the Codex Stop hook still emitted a typed block that required the next foreground checkpoint, and that block deferred to the away-mode instruction instead of contradicting it.
 A secondmate launch pinned the supervision model of its OWN harness from the single mapping owner, so a spawned Codex secondmate stayed quiet mid-turn while a persistent-watcher secondmate still alarmed.

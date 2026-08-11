@@ -61,8 +61,11 @@
 #      attributed to this crew, a dead endpoint also reports unknown · none rather
 #      than trusting a stale status log.
 #
+# `--progress-token <id>` prints a stable token for an attributable active
+# run-step and its bounded active-step log tail, or nothing when no such owned
+# progress source is active.
 # Read-only and side-effect free. Always exits 0 on a successful read regardless
-# of state; exit 2 only on a usage error (no id).
+# of state; exit 2 only on a usage error.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -81,8 +84,14 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
 
+PROGRESS_TOKEN_MODE=0
+if [ "${1:-}" = --progress-token ]; then
+  PROGRESS_TOKEN_MODE=1
+  shift
+fi
 ID=${1:-}
-[ -n "$ID" ] || { echo "usage: fm-crew-state.sh <id>" >&2; exit 2; }
+[ -n "$ID" ] && [ "$#" -eq 1 ] \
+  || { echo "usage: fm-crew-state.sh [--progress-token] <id>" >&2; exit 2; }
 
 META="$STATE/$ID.meta"
 LOG="$STATE/$ID.status"
@@ -99,6 +108,12 @@ SEP=' · '
 # Emit the one canonical line and exit 0. Detail is optional.
 emit() {  # <state> <source> [detail]
   local line="state: $1${SEP}source: $2"
+  if [ "$PROGRESS_TOKEN_MODE" -eq 1 ]; then
+    if [ "$1" = working ] && [ "$2" = run-step ] && [ "${RUN_SOURCE:-}" = full ]; then
+      emit_run_progress_token
+    fi
+    exit 0
+  fi
   [ -n "${3:-}" ] && line="$line${SEP}$3"
   printf '%s\n' "$line"
   exit 0
@@ -416,6 +431,63 @@ nm_run_head_matches_worktree() {
   fm_nm_head_matches_worktree "$WT" "$run_head"
 }
 
+# Current no-mistakes explicitly reports a daemon-owned branch split during a
+# live fix round. Accept that divergence only when every ownership field binds
+# the active run to this exact branch and worktree tip.
+nm_pipeline_owned_matches_worktree() {
+  local block local_block pipeline_block state run_status run_id pipeline_run
+  local local_branch local_head submitted_head current_head run_head worktree_head
+  block=$(printf '%s\n' "$RUN_OUT" | sed -n '/^branch_sync:/,$p')
+  [ -n "$block" ] || return 1
+  state=$(strip_quotes "$(printf '%s\n' "$block" | sed -n 's/^  state:[[:space:]]*//p' | head -1)")
+  [ "$state" = pipeline_owned ] || return 1
+  run_status=$(strip_quotes "$(nm_field status)")
+  case "$run_status" in running|fixing|ci) ;; *) return 1 ;; esac
+  run_id=$(strip_quotes "$(nm_field id)")
+  run_head=$(strip_quotes "$(nm_field head)")
+  [ -n "$run_id" ] && [ -n "$run_head" ] || return 1
+
+  local_block=$(printf '%s\n' "$block" | sed -n '/^  local:/,/^  pipeline:/p')
+  pipeline_block=$(printf '%s\n' "$block" | sed -n '/^  pipeline:/,$p')
+  local_branch=$(strip_quotes "$(printf '%s\n' "$local_block" | sed -n 's/^    branch:[[:space:]]*//p' | head -1)")
+  local_head=$(strip_quotes "$(printf '%s\n' "$local_block" | sed -n 's/^    head:[[:space:]]*//p' | head -1)")
+  pipeline_run=$(strip_quotes "$(printf '%s\n' "$pipeline_block" | sed -n 's/^    run:[[:space:]]*//p' | head -1)")
+  submitted_head=$(strip_quotes "$(printf '%s\n' "$pipeline_block" | sed -n 's/^    submitted_head:[[:space:]]*//p' | head -1)")
+  current_head=$(strip_quotes "$(printf '%s\n' "$pipeline_block" | sed -n 's/^    current_head:[[:space:]]*//p' | head -1)")
+  worktree_head=$(git -C "$WT" rev-parse HEAD 2>/dev/null || true)
+  [ -n "$worktree_head" ] \
+    && [ "$local_branch" = "$CREW_BRANCH" ] \
+    && [ "$local_head" = "$worktree_head" ] \
+    && [ "$submitted_head" = "$worktree_head" ] \
+    && [ "$pipeline_run" = "$run_id" ] \
+    && [ "$current_head" = "$run_head" ]
+}
+
+nm_active_step() {
+  local row step
+  row=$(printf '%s\n' "$RUN_OUT" \
+    | grep -E '^[[:space:]]*[^,]+,[[:space:]]*"?(running|fixing|awaiting_approval|fix_review)"?[[:space:]]*,' \
+    | head -1)
+  [ -n "$row" ] || return 0
+  row=$(trim "$row")
+  step=$(trim "${row%%,*}")
+  strip_quotes "$step"
+}
+
+emit_run_progress_token() {
+  local run_id run_head run_status active_step log_tail material
+  run_id=$(strip_quotes "$(nm_field id)")
+  run_head=$(strip_quotes "$(nm_field head)")
+  run_status=$(strip_quotes "$(nm_field status)")
+  active_step=$(nm_active_step)
+  [ -n "$active_step" ] || active_step=$run_status
+  [ -n "$run_id" ] && [ -n "$active_step" ] || return 0
+  log_tail=$(nm_run axi logs --step "$active_step" --run "$run_id" | tail -80)
+  material=$(printf 'run=%s\nhead=%s\nstatus=%s\nstep=%s\n%s' \
+    "$run_id" "$run_head" "$run_status" "$active_step" "$log_tail")
+  printf '%s' "$material" | LC_ALL=C cksum | awk '{ printf "%s:%s\n", $1, $2 }'
+}
+
 # Coarse runs-list rows are "<status> <branch> <short-sha> ...". 0 if the short
 # sha for this branch row matches the worktree head under the same shared rule,
 # taking the sha as an argument rather than reading it from $RUN_OUT.
@@ -436,7 +508,8 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
   RUN_OUT=$(nm_run axi status)
   if [ -n "$RUN_OUT" ]; then
     run_branch=$(strip_quotes "$(nm_field branch)")
-    if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ] && nm_run_head_matches_worktree; then
+    if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ] \
+      && { nm_run_head_matches_worktree || nm_pipeline_owned_matches_worktree; }; then
       HAVE_RUN=1
     else
       # The active-or-most-recent run is for another branch, or same branch with

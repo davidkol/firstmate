@@ -146,6 +146,10 @@ run_crew_state() {  # <case-dir> <id>
   PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" "$CREW_STATE" "$2"
 }
 
+run_crew_progress() {  # <case-dir> <id>
+  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" "$CREW_STATE" --progress-token "$2"
+}
+
 new_case() {  # <name> -> echoes case dir with an empty state/
   local d="$TMP_ROOT/$1"
   mkdir -p "$d/state"
@@ -203,6 +207,31 @@ run:
   head: "${FM_FAKE_RUN_HEAD:-abc1234}"
   pr: ""
   findings: none
+EOF
+}
+
+run_fixing_pipeline_owned() {  # <branch> <submitted-head> <pipeline-head>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: fixing
+  head: "$3"
+  pr: ""
+  findings: none
+branch_sync:
+  state: pipeline_owned
+  changed: false
+  local:
+    branch: $1
+    head: $2
+    clean: true
+  pipeline:
+    run: "01RUN"
+    status: running
+    phase: pre_push
+    submitted_head: $2
+    current_head: $3
 EOF
 }
 
@@ -374,6 +403,26 @@ test_active_run_is_authoritative() {
   assert_contains "$out" "source: run-step" "active run -> run-step source"
   assert_contains "$out" "validating (running)" "active run reports the step"
   pass "active run-step is authoritative"
+}
+
+test_active_run_progress_token_tracks_step_log() {
+  reset_fakes
+  local d first same changed
+  d=$(new_case active-progress)
+  make_repo_on_branch "$d/wt" fm/feat-progress
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-progress.meta" "window=fm:fm-feat-progress" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_running fm/feat-progress)"
+  FM_FAKE_CI_LOGS='review agent emitted first progress line'
+  first=$(run_crew_progress "$d" feat-progress)
+  [ -n "$first" ] || fail "active run produced no progress token"
+  same=$(run_crew_progress "$d" feat-progress)
+  [ "$same" = "$first" ] || fail "unchanged active run progress token was unstable"
+  FM_FAKE_CI_LOGS='review agent emitted a later progress line'
+  changed=$(run_crew_progress "$d" feat-progress)
+  [ -n "$changed" ] && [ "$changed" != "$first" ] \
+    || fail "changed active step log did not change the progress token"
+  pass "active run progress tokens are stable until the owned step log changes"
 }
 
 # (b) needs-decision log + a resumed (running/fixing) run = SUPERSEDED
@@ -1420,6 +1469,29 @@ test_active_run_descendant_fix_head_remains_current() {
   pass "active run with valid descendant fix head remains current"
 }
 
+# During a daemon-owned fix round the pipeline may commit on its isolated head
+# while the crew worktree deliberately remains at the submitted head. Current
+# no-mistakes reports that split explicitly as branch_sync.pipeline_owned; it is
+# stronger ownership evidence than ancestry between the two divergent tips.
+test_pipeline_owned_divergent_fix_head_remains_current() {
+  reset_fakes
+  local d submitted_head pipeline_head out
+  d=$(new_case pipeline-owned-divergent)
+  make_repo_on_branch "$d/wt" fm/feat-pipeline-owned
+  submitted_head=$(git -C "$d/wt" rev-parse HEAD)
+  git -C "$d/wt" checkout -q --orphan pipeline-fix
+  git -C "$d/wt" commit -q --allow-empty -m 'pipeline isolated fix commit'
+  pipeline_head=$(git -C "$d/wt" rev-parse HEAD)
+  git -C "$d/wt" checkout -q fm/feat-pipeline-owned
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/pipe-owned.meta" "window=fm:fm-pipe-owned" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_fixing_pipeline_owned fm/feat-pipeline-owned "$submitted_head" "$pipeline_head")"
+  out=$(run_crew_state "$d" pipe-owned)
+  assert_contains "$out" "source: run-step" "pipeline-owned divergent fix head remains run-step"
+  assert_contains "$out" "state: working" "pipeline-owned fix round remains working"
+  pass "explicit pipeline-owned branch sync keeps a divergent live fix round attributable"
+}
+
 # Head-binding: local work that advanced past the run head invalidates the run.
 test_local_advanced_past_run_head_invalidates() {
   reset_fakes
@@ -1462,6 +1534,7 @@ test_missing_run_head_falls_back_to_current_state() {
 }
 
 test_active_run_is_authoritative
+test_active_run_progress_token_tracks_step_log
 test_stale_needs_decision_superseded
 test_stale_blocked_superseded
 test_genuine_parked_not_superseded
@@ -1513,6 +1586,7 @@ test_not_provably_working_when_stopped
 test_usage_error
 test_historical_same_branch_rewritten_head_not_current
 test_active_run_descendant_fix_head_remains_current
+test_pipeline_owned_divergent_fix_head_remains_current
 test_local_advanced_past_run_head_invalidates
 test_missing_run_head_falls_back_to_current_state
 

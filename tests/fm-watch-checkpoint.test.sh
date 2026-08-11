@@ -23,9 +23,25 @@ test_quiet_checkpoint_exits_124_cleanly() {
   status=0
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 1 >"$out" 2>"$err" || status=$?
   expect_code 124 "$status" "quiet checkpoint exit"
-  assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 1s" "quiet checkpoint line missing"
+  [ ! -s "$out" ] || fail "quiet checkpoint printed routine output: $(cat "$out")"
+  [ ! -s "$err" ] || fail "quiet checkpoint printed routine diagnostics: $(cat "$err")"
   assert_absent "$home/state/.watch.lock/pid" "watch lock pid survived quiet checkpoint timeout"
-  pass "quiet checkpoint exits 124 with a clean checkpoint line and no live lock"
+  pass "quiet checkpoint exits 124 silently and leaves no live lock"
+}
+
+test_pending_queue_short_circuits_to_a_real_reason() {
+  local home out err status
+  home=$(make_home pending-queue)
+  out="$home/out.txt"
+  err="$home/err.txt"
+  printf '1\t1\tsignal\tdemo.status\tdone: queued result\n' > "$home/state/.wake-queue"
+  status=0
+  FM_HOME="$home" "$CHECKPOINT" --seconds 5 >"$out" 2>"$err" || status=$?
+  expect_code 0 "$status" "pending queue checkpoint exit"
+  assert_contains "$(cat "$out")" "queue: durable wake pending" "pending queue reason missing"
+  [ ! -s "$err" ] || fail "pending queue checkpoint printed diagnostics: $(cat "$err")"
+  assert_absent "$home/state/.watch.lock/pid" "pending queue checkpoint started a watcher before the drain"
+  pass "checkpoint reports a durable queued wake immediately without starting another watcher"
 }
 
 test_signal_passes_through_and_exits_zero() {
@@ -88,6 +104,7 @@ test_existing_singleton_watcher_is_not_success() {
 }
 
 test_quiet_checkpoint_exits_124_cleanly
+test_pending_queue_short_circuits_to_a_real_reason
 test_signal_passes_through_and_exits_zero
 test_registered_check_uses_preserved_watcher_environment
 test_existing_singleton_watcher_is_not_success

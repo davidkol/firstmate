@@ -2014,6 +2014,27 @@ EOF
   pass "an empty fleet reports (none) for in-flight tasks and an absent AFK flag"
 }
 
+test_codex_session_preflight_is_quiet_but_later_liveness_still_alarms() {
+  local rec root home fakebin out guard
+  rec=$(new_world codex-supervision-preflight)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_harness "$fakebin" codex
+  printf 'window=fm:fm-live\nkind=ship\n' > "$home/state/live.meta"
+
+  out=$(FM_FAKE_HARNESS=codex run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "WATCHER DOWN - SUPERVISION IS OFF" \
+    "Codex session preflight rendered a watcher-down banner before its first legal checkpoint"
+
+  guard=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_SUPERVISION_MODEL=checkpoint \
+    "$ROOT/bin/fm-guard.sh" 2>&1)
+  assert_contains "$guard" "WATCHER DOWN - SUPERVISION IS OFF" \
+    "the ephemeral preflight context weakened ordinary Codex liveness alarms"
+  pass "Codex session preflight is quiet while ordinary post-start liveness stays enforced"
+}
+
 test_next_step_sources_x_mode_cadence() {
   local rec root home fakebin out
   rec=$(new_world next-step-x)
@@ -2233,6 +2254,7 @@ test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
+test_codex_session_preflight_is_quiet_but_later_liveness_still_alarms
 test_next_step_sources_x_mode_cadence
 test_next_step_afk_delegates_to_daemon
 test_supervision_block_exactly_one_and_pi_diagnostic

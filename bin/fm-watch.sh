@@ -7,8 +7,8 @@
 # actively-running no-mistakes step, or a backend busy signal), and surfaced
 # otherwise, so a crew that finishes (or stops and waits) without a current
 # working signal is never silently swallowed. A declared external-wait pause is
-# the separate idle absorb case and re-surfaces only on its long bounded cadence,
-# although its initial no-verb status signal still surfaces in normal mode.
+# the separate idle absorb case and is rechecked internally on its long bounded
+# cadence, although its initial no-verb status signal still surfaces in normal mode.
 # While state/.afk exists, the daemon owns triage and this watcher queues and exits
 # on every wake. Printed reason lines:
 #   signal: <file>...      status/turn-end signals, surfaced when a listed status
@@ -20,7 +20,7 @@
 #                          line, since the crew's own log gets no new entry once
 #                          firstmate hands it to a no-mistakes validation. A declared
 #                          external-wait pause is absorbed instead with its own long
-#                          re-surface cadence, never as a wedge. Only when neither
+#                          internal-recheck cadence, never as a wedge. Only when neither
 #                          absorb class applies does the log's last line decide:
 #                          terminal (captain-relevant) or non-terminal (no verb),
 #                          both surfaced at once. A provably-working stale past the
@@ -133,6 +133,11 @@ SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trai
 # daemon owns triage, so this watcher reverts to one-shot (enqueue + exit on every
 # wake) and never double-triages - and never runs the costly provably-working read.
 STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
+# A surfaced signal and the first static-pane observation can describe the same
+# completed turn. Suppress that one transport duplicate while retaining the
+# ordinary stale timer, so an unchanged lane still reaches stuck detection.
+SIGNAL_STALE_GRACE=${FM_SIGNAL_STALE_GRACE:-$STALE_ESCALATE_SECS}
+case "$SIGNAL_STALE_GRACE" in ''|*[!0-9]*) SIGNAL_STALE_GRACE=$STALE_ESCALATE_SECS ;; esac
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
 # so a hung foreground call can remain hidden even while its rendered busy
 # footer changes every poll. BUSY_TURN_MAX_SECS bounds how long any busy pane
@@ -263,24 +268,50 @@ recorded_windows() {
 FM_WEDGE_DEMAND_INSPECT_COUNT=${FM_WEDGE_DEMAND_INSPECT_COUNT:-3}
 
 # Repeat-poll wedge-timer bookkeeping for an already-classified stale hash
-# absorbed as provably-working - repairs a missing/corrupt timer (self-heals a
-# watcher restart between recording the hash and recording the timer), or
-# escalates once STALE_ESCALATE_SECS have elapsed. Never re-reads the crew
-# state (the costly check already ran once, at classification time). Shared by
-# both places a hash can be absorbed this way: the plain non-terminal path,
-# and the stale_is_terminal-overridden path (a captain-relevant status-log
-# line that an active run/busy pane outranked).
-wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file>
-  local win=$1 since_file=$2 label=$3 escalation_file=$4 since age n reason
+# absorbed as provably-working repairs a missing/corrupt timer or escalates once
+# STALE_ESCALATE_SECS have elapsed.
+# At that threshold it makes one bounded progress-token read, resetting only
+# when owned active-run evidence changed and otherwise preserving escalation.
+wedge_progress_token() {  # <task>
+  [ -n "${1:-}" ] || return 0
+  "$FM_CREW_STATE_BIN" --progress-token "$1" 2>/dev/null || true
+}
+
+wedge_timer_start() {  # <window> <since-file> [task]
+  local win=$1 since_file=$2 task=${3:-} key progress_file token
+  key=$(printf '%s' "$win" | tr ':/.' '___')
+  progress_file="$STATE/.stale-progress-$key"
+  token=$(wedge_progress_token "$task")
+  if [ -n "$token" ]; then
+    printf '%s' "$token" > "$progress_file"
+  else
+    rm -f "$progress_file"
+  fi
+  date +%s > "$since_file"
+}
+
+wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> [task]
+  local win=$1 since_file=$2 label=$3 escalation_file=$4 task=${5:-}
+  local since age n reason key progress_file previous_progress current_progress
+  key=$(printf '%s' "$win" | tr ':/.' '___')
+  progress_file="$STATE/.stale-progress-$key"
   since=$(cat "$since_file" 2>/dev/null || true)
   case "$since" in
     ''|*[!0-9]*)
-      date +%s > "$since_file"
+      wedge_timer_start "$win" "$since_file" "$task"
       triage_log "absorbed $label timer reset: $win"
       ;;
     *)
       age=$(( $(date +%s) - since ))
       if [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
+        current_progress=$(wedge_progress_token "$task")
+        previous_progress=$(cat "$progress_file" 2>/dev/null || true)
+        if [ -n "$current_progress" ] && [ "$current_progress" != "$previous_progress" ]; then
+          printf '%s' "$current_progress" > "$progress_file"
+          date +%s > "$since_file"
+          triage_log "absorbed $label after owned pipeline progress: $win"
+          return 0
+        fi
         n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
         echo "$n" > "$escalation_file"
         reason="stale: $win (idle ${age}s, possible wedge, escalation $n)"
@@ -310,21 +341,22 @@ busy_turn_over_age() {  # <task>
 }
 
 # Absorb a stale pane under a declared external-wait pause (paused:) or a
-# dead-agent captain-held transfer, and re-surface it once every
-# PAUSE_RESURFACE_SECS for a recheck so it cannot rot invisibly. Called on any
+# dead-agent captain-held transfer, and recheck it internally once every
+# PAUSE_RESURFACE_SECS. Called on any
 # stale poll once pause_state_class permits the bounded cadence, so it must be
 # cheap: it NEVER re-reads crew state. The re-surface age is anchored on the
 # status file mtime, not a per-hash marker, so a churny idle pane (a ticking
 # clock, a token counter) cannot keep resetting the cadence the way a hash-tied
 # timer would. A .paused-resurfaced-<key> throttle marker records the last
-# re-surface epoch so, once past the window, it fires once per window rather than
-# every poll. Advances the stale suppressor to <hash> and flags the key paused.
+# recheck epoch so the authoritative classification is revisited once per window
+# without producing another captain interruption. Advances the stale suppressor
+# to <hash> and flags the key paused.
 handle_paused_stale() {  # <window> <task> <hash>
-  local win=$1 task=$2 h=$3 key statusf mtime age rf rf_age reason
+  local win=$1 task=$2 h=$3 key statusf mtime age rf rf_age
   key=$(printf '%s' "$win" | tr ':/.' '___')
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
-  rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  rm -f "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key" "$STATE/.wedge-escalations-$key"
   statusf="$STATE/$task.status"
   mtime=$(stat_mtime "$statusf")
   case "$mtime" in ''|*[!0-9]*) mtime=$(date +%s) ;; esac
@@ -332,12 +364,11 @@ handle_paused_stale() {  # <window> <task> <hash>
   rf="$STATE/.paused-resurfaced-$key"
   rf_age=$(age_of "$rf")   # 999999 when no prior re-surface
   if [ "$age" -ge "$PAUSE_RESURFACE_SECS" ] && [ "$rf_age" -ge "$PAUSE_RESURFACE_SECS" ]; then
-    reason="stale: $win (paused ${age}s, awaiting external - declared pause, rechecked on a long cadence not a wedge; confirm the wait still holds)"
-    fm_wake_append stale "$win" "$reason" || exit 1
     date +%s > "$rf"
-    wake "$reason"
+    triage_log "rechecked stale (paused, awaiting external, age ${age}s): $win"
+  else
+    triage_log "absorbed stale (paused, awaiting external, age ${age}s): $win"
   fi
-  triage_log "absorbed stale (paused, awaiting external, age ${age}s): $win"
 }
 
 clear_pause_state() {  # <window>
@@ -354,7 +385,7 @@ clear_pause_tracking() {  # <window>
   key=${key//\//_}
   key=${key//./_}
   clear_pause_state "$win"
-  rm -f "$STATE/.stale-$key" "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  rm -f "$STATE/.stale-$key" "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key" "$STATE/.wedge-escalations-$key"
 }
 
 # Reconcile a declared pause or captain-held status with authoritative crew state.
@@ -407,12 +438,20 @@ pause_state_class() {  # <window> <task>
 }
 
 surface_nonterminal_stale() {  # <window> <hash>
-  local win=$1 h=$2 key task last
+  local win=$1 h=$2 key task last signal_marker
   key=$(printf '%s' "$win" | tr ':/.' '___')
+  task=$(window_to_task "$win" "$STATE")
+  signal_marker="$STATE/.signal-surfaced-$task"
+  if [ "$(age_of "$signal_marker")" -lt "$SIGNAL_STALE_GRACE" ]; then
+    printf '%s' "$h" > "$STATE/.stale-$key"
+    rm -f "$signal_marker"
+    wedge_timer_start "$win" "$STATE/.stale-since-$key" "$task"
+    triage_log "absorbed bare stale duplicate after surfaced signal: $win"
+    return 0
+  fi
   fm_wake_append stale "$win" "stale: $win" || exit 1
   printf '%s' "$h" > "$STATE/.stale-$key"
-  rm -f "$STATE/.stale-since-$key"
-  task=$(window_to_task "$win" "$STATE")
+  rm -f "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key" "$signal_marker"
   last=$(last_status_line "$STATE/$task.status")
   if status_is_paused_or_captain_held "$last"; then
     : > "$STATE/.paused-$key"
@@ -839,6 +878,14 @@ EOF
         [ -n "$sf" ] || continue
         printf '%s' "$sig" > "$sf"
         mark_surfaced "$f"
+        if ! afk_present; then
+          case "$f" in
+            "$STATE"/*.status) signal_task=${f##*/}; signal_task=${signal_task%.status} ;;
+            "$STATE"/*.turn-ended) signal_task=${f##*/}; signal_task=${signal_task%.turn-ended} ;;
+            *) signal_task= ;;
+          esac
+          [ -z "$signal_task" ] || : > "$STATE/.signal-surfaced-$signal_task"
+        fi
       done <<EOF
 $pending
 EOF
@@ -878,6 +925,7 @@ EOF
     cf="$STATE/.count-$key"
     sf="$STATE/.stale-$key"
     ssf="$STATE/.stale-since-$key"
+    spf="$STATE/.stale-progress-$key"
     ewf="$STATE/.wedge-escalations-$key"
     pf="$STATE/.paused-$key"   # flag: this key's stale is using the bounded pause cadence
     prev=$(cat "$hf" 2>/dev/null || true)
@@ -923,21 +971,28 @@ EOF
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             if crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
               printf '%s' "$h" > "$sf"
-              date +%s > "$ssf"
+              wedge_timer_start "$w" "$ssf" "$task"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
             else
-              fm_wake_append stale "$w" "stale: $w" || exit 1
-              printf '%s' "$h" > "$sf"
-              rm -f "$ssf"
-              mark_surfaced "$STATE/$(window_to_task "$w" "$STATE").status"
-              wake "stale: $w"
+              signal_marker="$STATE/.signal-surfaced-$task"
+              if [ "$(age_of "$signal_marker")" -lt "$SIGNAL_STALE_GRACE" ]; then
+                printf '%s' "$h" > "$sf"
+                rm -f "$ssf" "$spf" "$signal_marker"
+                triage_log "absorbed terminal stale duplicate after surfaced signal: $w"
+              else
+                fm_wake_append stale "$w" "stale: $w" || exit 1
+                printf '%s' "$h" > "$sf"
+                rm -f "$ssf" "$spf" "$signal_marker"
+                mark_surfaced "$STATE/$(window_to_task "$w" "$STATE").status"
+                wake "stale: $w"
+              fi
             fi
           elif [ -e "$ssf" ]; then
             # This exact hash was already overridden as provably-working (a
             # wedge timer is running for it) - keep treating it that way
             # without re-reading the crew state every poll, and without
             # letting the still-captain-relevant log line re-surface it.
-            wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf"
+            wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf" "$task"
           fi
           # else: already surfaced as genuinely terminal on a prior poll of
           # this same hash - nothing left to do (matches the original,
@@ -963,7 +1018,7 @@ EOF
               working)
                 clear_pause_tracking "$w"
                 printf '%s' "$h" > "$sf"
-                date +%s > "$ssf"
+                wedge_timer_start "$w" "$ssf" "$task"
                 triage_log "absorbed non-terminal stale (provably working): $w"
                 ;;
               paused)
@@ -980,12 +1035,12 @@ EOF
                 paused)  handle_paused_stale "$w" "$task" "$h" ;;
                 working) clear_pause_state "$w"
                          printf '%s' "$h" > "$sf"
-                         wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf"
+                         wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf" "$task"
                          triage_log "absorbed non-terminal stale (provably working): $w" ;;
                 *)       handle_paused_stale "$w" "$task" "$h" ;;
               esac
             else
-              wedge_timer_check "$w" "$ssf" "non-terminal stale" "$ewf"
+              wedge_timer_check "$w" "$ssf" "non-terminal stale" "$ewf" "$task"
             fi
           fi
         fi
@@ -994,9 +1049,9 @@ EOF
         # unless a genuinely busy pane has gone too long with no completed turn -
         # then route it through the same wedge timer instead of erasing it.
         if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
-          wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf"
+          wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf" "$task"
         else
-          rm -f "$ssf" "$ewf"
+          rm -f "$ssf" "$spf" "$ewf"
         fi
         if [ -e "$pf" ] && { [ "$n" -ge 2 ] || ! status_is_paused_or_captain_held "$(last_status_line "$STATE/$(window_to_task "$w" "$STATE").status")"; }; then
           clear_pause_tracking "$w"
@@ -1006,9 +1061,9 @@ EOF
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
       if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
-        wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf"
+        wedge_timer_check "$w" "$ssf" "busy (no completed turn)" "$ewf" "$task"
       else
-        rm -f "$ssf" "$ewf"
+        rm -f "$ssf" "$spf" "$ewf"
       fi
       task=$(window_to_task "$w" "$STATE")
       if ! afk_present && status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")" && [ "$busy_now" -ne 0 ]; then

@@ -36,6 +36,8 @@ Under either model a beacon fresh within grace is healthy even with no live watc
 The strict turn-end predicate remains unchanged for both models, so a Codex checkpoint must be restarted before its primary can finish a turn.
 Under every persistent-watcher harness a live identity-matched watcher with a fresh beacon is still required, so the pull guard keeps the same strict semantics there.
 Its banner names the true failing condition, either a missing live watcher process or a genuinely stale beacon with its real age, and keys the once-per-episode dedup on that condition rather than the beacon mtime.
+Session start marks only its locked wake-drain invocation with the ephemeral `FM_SUPERVISION_PREFLIGHT=1` context.
+For the Codex checkpoint model, that context suppresses the impossible pre-first-checkpoint watcher-down banner without weakening queued-wake or worktree-tangle warnings, writing durable state, or changing any later pull-guard or turn-end verdict.
 
 `FM_STATE_OVERRIDE` wins over `FM_HOME/state`, and `FM_HOME` wins over repository-root `state/`.
 `FM_GUARD_GRACE` controls beacon freshness and defaults to 300 seconds.

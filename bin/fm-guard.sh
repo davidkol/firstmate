@@ -36,6 +36,8 @@ GRACE=${FM_GUARD_GRACE:-300}
 queue_pending=false
 READ_ONLY=${FM_GUARD_READ_ONLY:-0}
 case "$READ_ONLY" in 1|true|TRUE|yes|YES) READ_ONLY=1 ;; *) READ_ONLY=0 ;; esac
+PREFLIGHT=${FM_SUPERVISION_PREFLIGHT:-0}
+case "$PREFLIGHT" in 1|true|TRUE|yes|YES) PREFLIGHT=1 ;; *) PREFLIGHT=0 ;; esac
 CONTINUE_LINE=${FM_GUARD_CONTINUE_LINE:-This is a supervision warning only; the guarded operation WILL still run.}
 
 # Volatile, home-scoped episode marker: one line = the current stale-episode key.
@@ -151,6 +153,7 @@ fm_supervision_status "$STATE" "$GRACE"
 in_flight=$FM_SUP_IN_FLIGHT
 needed=$FM_SUP_NEEDED
 beacon_desc=$FM_SUP_BEACON_DESC
+supervision_model=$(fm_supervision_model)
 fm_watcher_supervision_verdict "$STATE" "$WATCH" "$GRACE" "$FM_HOME"
 watcher_healthy=$FM_WATCHER_VERDICT_OK
 watcher_down_reason=$FM_WATCHER_VERDICT_REASON
@@ -167,7 +170,7 @@ fi
 # No fresh watcher with tasks in flight is the dangerous state: emit a prominent,
 # bordered banner FIRST so it reads as an alarm, not a buried stderr line. Later
 # calls in the same episode get a one-line reminder only.
-if [ "$watcher_healthy" = false ]; then
+if [ "$watcher_healthy" = false ] && ! { [ "$PREFLIGHT" -eq 1 ] && [ "$supervision_model" = checkpoint ]; }; then
   episode_key=$(fm_guard_stale_episode_key "$watcher_down_reason")
   episode_key=${episode_key%$'\n'}
   print_full_banner=0
@@ -216,7 +219,7 @@ if [ "$watcher_healthy" = false ]; then
     printf 'WARNING: watcher still down (same stale episode; last beat: %s, grace %ss) - full banner already printed this episode.\n' \
       "$beacon_desc" "$GRACE" >&2
   fi
-else
+elif [ "$watcher_healthy" = true ]; then
   # Healthy again while work is still in flight: end the episode so a later
   # restale re-prints the full banner.
   [ "$READ_ONLY" -eq 1 ] || fm_guard_clear_stale_banner

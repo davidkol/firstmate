@@ -217,6 +217,16 @@ $set
 EOF
   printf '%s' "$out"
 }
+
+_fm_decision_has_key() {  # <open-set> <key>
+  local set=$1 key=$2 line
+  while IFS= read -r line; do
+    case "$line" in "$key"$'\t'*) return 0 ;; esac
+  done <<EOF
+$set
+EOF
+  return 1
+}
 # Fold ONE status line into an existing "<key>\t<verb>\t<note>\n"-per-line open
 # set, applying the same needs-decision/blocked-opens, resolved/captain-held-closes
 # rule status_open_decisions documents above. Pure text transform, no file I/O.
@@ -385,9 +395,33 @@ _fm_open_decisions_read_failure() {  # <status-file> <cursor-parsed> <persisted-
   status_open_decisions "$1"
 }
 
-status_open_decisions_incremental() {  # <status-file>
-  local f=$1 cf offset ident open='' trusted_open='' cursor_data first rest ident_line
+_fm_open_decisions_changed() {  # <previous-open> <current-open> <newly-reopened>
+  local previous=$1 current=$2 newly_reopened=$3 line prior found reopened
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    found=false
+    while IFS= read -r prior; do
+      [ "$prior" = "$line" ] && { found=true; break; }
+    done <<EOF
+$previous
+EOF
+    reopened=false
+    while IFS= read -r prior; do
+      [ "$prior" = "$line" ] && { reopened=true; break; }
+    done <<EOF
+$newly_reopened
+EOF
+    [ "$found" = false ] || [ "$reopened" = true ] || continue
+    printf '%s\n' "$line"
+  done <<EOF
+$current
+EOF
+}
+
+status_open_decisions_incremental() {  # <status-file> [all|changed]
+  local f=$1 mode=${2:-all} cf offset ident open='' trusted_open='' cursor_data first rest ident_line
   local size cur_ident resolve held chunk_file chunk_size line cursor_parsed=false
+  local before_open verb last_open last_record key newly_reopened=''
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   cf=$(_fm_open_decisions_cursor_path "$f")
   offset=0
@@ -473,7 +507,28 @@ status_open_decisions_incremental() {  # <status-file>
     resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
     held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
     while IFS= read -r line || [ -n "$line" ]; do
+      before_open=$open
       open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
+      if [ "$mode" = changed ]; then
+        verb=$(status_line_verb "$line")
+        case "$verb" in
+          needs-decision|blocked)
+            last_open=''
+            while IFS= read -r last_record; do
+              [ -n "$last_record" ] && last_open=$last_record
+            done <<EOF
+$open
+EOF
+            if [ -n "$last_open" ]; then
+              key=${last_open%%$'\t'*}
+              if ! _fm_decision_has_key "$before_open" "$key"; then
+                [ -n "$newly_reopened" ] && newly_reopened="${newly_reopened}"$'\n'
+                newly_reopened="${newly_reopened}${last_open}"
+              fi
+            fi
+            ;;
+        esac
+      fi
     done < "$chunk_file"
     rm -f "$chunk_file"
     {
@@ -486,7 +541,11 @@ status_open_decisions_incremental() {  # <status-file>
       if [ -n "$open" ]; then printf '%s' "$open"; fi
     } > "$cf.tmp.$$" && mv -f "$cf.tmp.$$" "$cf"
   fi
-  printf '%s' "$open"
+  if [ "$mode" = changed ] && [ "$cursor_parsed" = true ]; then
+    _fm_open_decisions_changed "$trusted_open" "$open" "$newly_reopened"
+  else
+    printf '%s' "$open"
+  fi
 }
 
 # Fleet-wide scan: walks every task's status log under <state> and prefixes each
@@ -498,12 +557,12 @@ status_open_decisions_incremental() {  # <status-file>
 # open/resolved semantics stay decided in exactly one place while a fleet-wide
 # per-drain scan stays bounded by new appends rather than total lifetime log
 # size across every task.
-scan_open_decisions_incremental() {  # <state>
-  local state=$1 f task open line
+scan_open_decisions_incremental() {  # <state> [all|changed]
+  local state=$1 mode=${2:-all} f task open line
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     task=${f##*/}; task="${task%.status}"
-    open=$(status_open_decisions_incremental "$f") || continue
+    open=$(status_open_decisions_incremental "$f" "$mode") || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue

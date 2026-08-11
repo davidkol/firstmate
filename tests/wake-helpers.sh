@@ -106,13 +106,26 @@ SH
 # A per-id override FM_FAKE_CREW_STATE_<sanitized-id> wins; otherwise the shared
 # FM_FAKE_CREW_STATE; otherwise an unknown verdict (NOT provably working), the
 # safe default so a test that forgets to set one surfaces rather than absorbs.
+# `--progress-token <id>` uses the parallel FM_FAKE_CREW_PROGRESS variables so
+# pipeline-progress tests can change the daemon-owned source independently of
+# the pane/current-state verdict.
 make_fake_crew_state() {  # <fakebin>
   local fakebin=$1
   cat > "$fakebin/fm-crew-state.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
+mode=state
+if [ "${1:-}" = --progress-token ]; then
+  mode=progress
+  shift
+fi
 id=${1:-}
 key=$(printf '%s' "$id" | tr -c 'A-Za-z0-9' '_')
+if [ "$mode" = progress ]; then
+  var="FM_FAKE_CREW_PROGRESS_$key"
+  printf '%s\n' "${!var:-${FM_FAKE_CREW_PROGRESS:-}}"
+  exit 0
+fi
 var="FM_FAKE_CREW_STATE_$key"
 val=${!var:-${FM_FAKE_CREW_STATE:-}}
 printf '%s\n' "${val:-state: unknown · source: none · fake default}"

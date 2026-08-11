@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/fm-wake-drain-open-decisions.test.sh - behavior tests for the OPEN
-# DECISIONS section bin/fm-wake-drain.sh prints on every drain (including the
-# empty-queue fast path). The section is pure wiring around
+# DECISIONS section bin/fm-wake-drain.sh prints for selected changed or complete
+# durable decision views, including the empty-queue fast path. The section is pure wiring around
 # fm-classify-lib.sh's status_open_decisions fold (the ONE authoritative
 # open/resolved statement); these tests exercise the real drain script over
 # crafted status logs and assert on its printed output, not on the fold's own
@@ -255,7 +255,8 @@ test_unreadable_key_slug_still_opens_but_never_closes() {
 
   # A resolving line whose slug is equally unreadable must NOT close it.
   printf 'resolved [key=bad slug!]: typo in the closing key too\n' >> "$state/task-bad.status"
-  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed after an unreadable resolving key"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" --open-decisions all > "$out" \
+    || fail "full decision drain failed after an unreadable resolving key"
   grep -F 'task-bad [key=default] needs-decision:' "$out" >/dev/null \
     || fail "an unreadable resolving key silently closed a decision nobody answered: $(cat "$out")"
 

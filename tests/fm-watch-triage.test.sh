@@ -36,7 +36,7 @@ watch_bg() {  # <state> <fakebin> <out> [extra env assignments...]
   local state=$1 fakebin=$2 out=$3
   shift 3
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
-    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$@" "$WATCH" > "$out" &
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 env "$@" "$WATCH" > "$out" &
 }
 
 # Wait up to <limit> 0.1s ticks while <pid> stays alive; 0 if still alive, 1 if it died.
@@ -608,18 +608,109 @@ test_nonterminal_stale_not_working_surfaced() {
   pass "a not-provably-working non-terminal stale is surfaced immediately (never left to wait out the timer)"
 }
 
-# --- non-terminal stale, crew DECLARED a pause: absorbed, re-surfaced on a long
-#     cadence, never wedge-escalated ------------------------------------------
+# A surfaced turn-end already woke the supervisor for this exact boundary.
+# The static-pane detector may notice the same idle state on the next watcher
+# poll; that duplicate is absorbed into the ordinary stuck timer rather than
+# producing a second bare stale wake, while a genuinely unchanged lane still
+# escalates when the timer expires.
+test_recent_surfaced_signal_deduplicates_following_bare_stale() {
+  local dir state fakebin out capture_file window key pane_hash sig pid
+  dir=$(make_case signal-then-stale); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-signal-stale"
+  printf 'idle after completed turn' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/signal-stale.meta"
+  printf 'working: implementation turn ended\n' > "$state/signal-stale.status"
+  sig=$(seen_sig "$state/signal-stale.status"); printf '%s' "$sig" > "$state/.seen-signal-stale_status"
+  : > "$state/.signal-surfaced-signal-stale"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle after completed turn")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+
+  watch_bg "$state" "$fakebin" "$out" FM_STALE_ESCALATE_SECS=999 FM_SIGNAL_STALE_GRACE=240
+  pid=$!
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "the stale duplicate after a surfaced signal woke again: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || { reap "$pid"; fail "the signal/stale duplicate printed a second reason: $(cat "$out")"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "the signal/stale duplicate queued a second wake"; }
+  [ -s "$state/.stale-since-$key" ] || { reap "$pid"; fail "the deduplicated stale did not retain stuck-worker timing"; }
+  reap "$pid"
+
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  watch_bg "$state" "$fakebin" "$out" FM_STALE_ESCALATE_SECS=240 FM_SIGNAL_STALE_GRACE=240
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "the deduplicated lane never escalated after the stuck threshold"
+  grep -F "possible wedge" "$out" >/dev/null || fail "the delayed stuck-worker escalation lost its reason"
+  unset FM_FAKE_CREW_STATE
+  pass "a surfaced signal suppresses only its duplicate bare stale and preserves later stuck detection"
+}
+
+# Pipeline work happens outside the crew pane. A changing no-mistakes step-log
+# token is progress even when that pane stays static; the timer resets on that
+# stronger source. An unchanged token still escalates, preserving stuck-run
+# detection instead of treating any indefinitely-running validation as healthy.
+test_pipeline_progress_token_resets_stale_timer_but_stall_escalates() {
+  local dir state fakebin out capture_file window key pane_hash sig pid first_since
+  dir=$(make_case pipeline-progress); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-pipeline-progress"
+  printf 'idle while validation daemon works' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/pipeline-progress.meta"
+  printf 'working: validation under way\n' > "$state/pipeline-progress.status"
+  sig=$(seen_sig "$state/pipeline-progress.status"); printf '%s' "$sig" > "$state/.seen-pipeline-progress_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle while validation daemon works")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (fixing)'
+  export FM_FAKE_CREW_PROGRESS='run1-review-log-a'
+
+  watch_bg "$state" "$fakebin" "$out" FM_STALE_ESCALATE_SECS=999
+  pid=$!
+  wait_numeric_file "$state/.stale-since-$key" 40 || { reap "$pid"; fail "pipeline stale did not start its timer"; }
+  [ "$(cat "$state/.stale-progress-$key" 2>/dev/null || true)" = 'run1-review-log-a' ] \
+    || { reap "$pid"; fail "pipeline progress token was not recorded"; }
+  reap "$pid"
+
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  export FM_FAKE_CREW_PROGRESS='run1-review-log-b'
+  : > "$out"
+  watch_bg "$state" "$fakebin" "$out" FM_STALE_ESCALATE_SECS=240
+  pid=$!
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "changing pipeline progress still produced a stale wake: $(cat "$out")"
+  fi
+  first_since=$(cat "$state/.stale-since-$key")
+  [ "$first_since" -ge $(( $(date +%s) - 10 )) ] || { reap "$pid"; fail "pipeline progress did not reset stale timing"; }
+  [ "$(cat "$state/.stale-progress-$key")" = 'run1-review-log-b' ] || { reap "$pid"; fail "new pipeline progress token was not stored"; }
+  reap "$pid"
+
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  watch_bg "$state" "$fakebin" "$out" FM_STALE_ESCALATE_SECS=240
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "unchanged pipeline progress never escalated as stuck"
+  grep -F "possible wedge" "$out" >/dev/null || fail "unchanged pipeline progress lost stuck-worker escalation"
+  unset FM_FAKE_CREW_STATE FM_FAKE_CREW_PROGRESS
+  pass "pipeline log progress resets stale timing while an unchanged run still escalates"
+}
+
+# --- non-terminal stale, crew DECLARED a pause: internally rechecked on a long
+#     cadence, never captain-interrupting or wedge-escalated ------------------
 # The live 2026-07-09/10 case: a crew intentionally held awaiting an upstream tool
 # release (paused: ...) whose idle pane tripped repeated possible-wedge escalations
 # all day. With the paused verb, its stale is absorbed like a working crew but never
 # uses the wedge timer; it re-surfaces once past PAUSE_RESURFACE_SECS (anchored on
 # the pause's own status-file age, so a churny idle pane cannot reset the cadence)
 # for a recheck, so a forgotten pause cannot rot invisibly.
-test_nonterminal_stale_paused_absorbed_then_resurfaced() {
-  local dir state fakebin out drain_out capture_file window key pane_hash sig pid back statusf
+test_nonterminal_stale_paused_absorbed_then_rechecked_silently() {
+  local dir state fakebin out capture_file window key pane_hash sig pid back statusf before
   dir=$(make_case nonterminal-stale-paused); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
   window="test:fm-held"
   printf 'idle, holding for upstream' > "$capture_file"
   printf 'window=%s\nkind=ship\n' "$window" > "$state/held.meta"
@@ -652,13 +743,13 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
   [ ! -e "$state/.stale-since-$key" ] || fail "a paused absorb must not start the wedge timer"
   reap "$pid"
 
-  # Phase B: age the pause past the (now normal) threshold by backdating its
-  # status file, re-prime .seen-* to the new signature so the signal scan stays
-  # quiet, and confirm it re-surfaces as a paused recheck - never a wedge.
+  # Phase B: age the pause past the threshold and confirm the watcher records
+  # an internal recheck without queueing or printing a captain interruption.
   back=$(( $(date +%s) - 500 ))
   if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
   else touch -m -d "@$back" "$statusf"; fi
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
+  before=$(file_mtime "$state/.paused-resurfaced-$key" 2>/dev/null || printf '0')
   : > "$out"
   printf 'idle, holding for upstream (token 2)' > "$capture_file"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
@@ -666,15 +757,19 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 40 || fail "watcher did not re-surface a declared pause past the threshold"
-  grep -F "stale: $window" "$out" >/dev/null || fail "re-surface did not print a stale wake"
-  grep -F "awaiting external" "$out" >/dev/null || fail "re-surface was not labeled a paused/awaiting-external recheck"
-  grep -F "possible wedge" "$out" >/dev/null && fail "a declared pause was mislabeled a possible wedge"
-  [ -e "$state/.paused-resurfaced-$key" ] || fail "the paused re-surface throttle marker was not recorded"
-  [ ! -e "$state/.stale-since-$key" ] || fail "a paused re-surface must not use the wedge timer"
-  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the paused re-surface failed"
-  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "paused re-surface was not queued"
-  pass "a declared pause is absorbed on first sight, then re-surfaced as a recheck past the threshold, never wedge-escalated"
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "watcher exited for an unchanged declared pause: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || { reap "$pid"; fail "paused recheck printed a captain-facing wake: $(cat "$out")"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "paused recheck queued a captain-facing wake"; }
+  [ -e "$state/.paused-resurfaced-$key" ] || { reap "$pid"; fail "the paused recheck throttle marker was not recorded"; }
+  [ "$(file_mtime "$state/.paused-resurfaced-$key")" -ge "$before" ] \
+    || { reap "$pid"; fail "the paused recheck marker did not advance"; }
+  [ ! -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "a paused recheck must not use the wedge timer"; }
+  grep -F "rechecked stale (paused" "$state/.watch-triage.log" >/dev/null \
+    || { reap "$pid"; fail "the silent paused recheck was not recorded for diagnostics"; }
+  reap "$pid"
+  pass "a declared pause is absorbed and rechecked internally without repeated captain interruptions"
 }
 
 # A captain-held crew can leave a stable backend endpoint after its agent exits.
@@ -711,12 +806,16 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
     if wait_live "$pid" 15; then reap "$pid"; else wait "$pid" || fail "dead-agent watcher round $round failed"; fi
     round=$((round + 1))
   done
-  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.wake-queue")
-  bare=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w && $5 == "stale: " w { n++ } END { print n + 0 }' "$state/.wake-queue")
-  [ "$wakes" -le 1 ] || fail "dead-agent declared pause flooded $wakes stale wakes across six unchanged polls"
+  wakes=0
+  bare=0
+  if [ -f "$state/.wake-queue" ]; then
+    wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.wake-queue")
+    bare=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w && $5 == "stale: " w { n++ } END { print n + 0 }' "$state/.wake-queue")
+  fi
+  [ "$wakes" -eq 0 ] || fail "dead-agent declared pause emitted $wakes stale wakes across six unchanged polls"
   [ "$bare" -eq 0 ] || fail "dead-agent declared pause surfaced as $bare bare stopped-crew wakes"
-  grep -F "awaiting external" "$state/.wake-queue" >/dev/null \
-    || fail "dead-agent declared pause did not use the bounded paused recheck"
+  [ -e "$state/.paused-resurfaced-$key" ] \
+    || fail "dead-agent declared pause did not record its internal paused recheck"
 
   dir=$(make_case exited-captain-held); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/held.status"
@@ -737,9 +836,12 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 40 || fail "captain-held dead-agent pane did not re-surface on the bounded cadence"
-  grep -F "awaiting external" "$state/.wake-queue" >/dev/null \
-    || fail "captain-held dead-agent pane surfaced as a stopped crew"
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "captain-held dead-agent pane emitted a routine paused recheck: $(cat "$out")"
+  fi
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "captain-held dead-agent pane queued a routine paused recheck"; }
+  [ -e "$state/.paused-resurfaced-$key" ] || { reap "$pid"; fail "captain-held dead-agent pane did not record its internal recheck"; }
+  reap "$pid"
 
   dir=$(make_case alive-decision-gate); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/gate.status"
@@ -783,10 +885,10 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
   bare=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w && $5 == "stale: " w { n++ } END { print n + 0 }' "$state/.wake-queue")
   [ "$wakes" -eq 1 ] || fail "live external-decision gate should surface once, got $wakes wakes"
   [ "$bare" -eq 1 ] || fail "live external-decision gate lost its immediate bare stale surface"
-  pass "exited declared-pause and captain-held panes use bounded pause cadence while a live decision gate still surfaces once"
+  pass "exited declared-pause and captain-held panes recheck silently while a live decision gate still surfaces once"
 }
 
-test_secondmate_paused_resurfaces_in_normal_mode() {
+test_secondmate_paused_rechecks_silently_in_normal_mode() {
   local dir state fakebin out capture_file statusf window key pane_hash sig pid back
   dir=$(make_case secondmate-paused-resurface); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/secondmate-held.status"
@@ -807,12 +909,15 @@ test_secondmate_paused_resurfaces_in_normal_mode() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  wait_for_exit "$pid" 40 || fail "watcher did not re-surface a paused secondmate"
-  grep -F "stale: $window" "$out" >/dev/null || fail "paused secondmate did not emit a stale recheck"
-  grep -F "awaiting external" "$out" >/dev/null || fail "paused secondmate recheck omitted its external-wait reason"
-  grep -F "possible wedge" "$out" >/dev/null && fail "paused secondmate was mislabeled a wedge"
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "paused secondmate emitted a routine recheck: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || { reap "$pid"; fail "paused secondmate printed a routine recheck"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "paused secondmate queued a routine recheck"; }
+  [ -e "$state/.paused-resurfaced-$key" ] || { reap "$pid"; fail "paused secondmate did not record its internal recheck"; }
+  reap "$pid"
   unset FM_FAKE_CREW_STATE
-  pass "a declared paused secondmate re-surfaces on the bounded normal-mode cadence"
+  pass "a declared paused secondmate rechecks internally on the bounded normal-mode cadence"
 }
 
 test_secondmate_nonpaused_stale_remains_suppressed() {
@@ -1577,9 +1682,11 @@ test_busy_pane_turn_end_touch_resets_age
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_pane_default_turn_age_bound_is_3600s
 test_nonterminal_stale_not_working_surfaced
-test_nonterminal_stale_paused_absorbed_then_resurfaced
+test_recent_surfaced_signal_deduplicates_following_bare_stale
+test_pipeline_progress_token_resets_stale_timer_but_stall_escalates
+test_nonterminal_stale_paused_absorbed_then_rechecked_silently
 test_exited_declared_pause_is_bounded_but_live_gate_surfaces
-test_secondmate_paused_resurfaces_in_normal_mode
+test_secondmate_paused_rechecks_silently_in_normal_mode
 test_secondmate_nonpaused_stale_remains_suppressed
 test_secondmate_unpause_clears_pause_tracking
 test_nonterminal_stale_pause_transitions_reclassify_unchanged_hash

@@ -14,6 +14,43 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRAIN_TMP=
 DRAIN_LOCK_HELD=false
 RAW_ROWS=
+OPEN_DECISIONS_MODE=changed
+
+usage() {
+  cat <<'EOF'
+Usage: fm-wake-drain.sh [--open-decisions changed|all]
+
+Drain durable wakes and print decisions whose durable open record changed.
+Use --open-decisions all for session recovery, when every open decision must be shown.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --open-decisions)
+      [ "$#" -gt 1 ] || { echo "error: --open-decisions requires changed or all" >&2; exit 2; }
+      OPEN_DECISIONS_MODE=$2
+      shift 2
+      ;;
+    --open-decisions=*)
+      OPEN_DECISIONS_MODE=${1#--open-decisions=}
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+case "$OPEN_DECISIONS_MODE" in
+  changed|all) ;;
+  *) echo "error: --open-decisions requires changed or all" >&2; exit 2 ;;
+esac
 
 # Defense in depth for the supervision chain: this script runs at the top of
 # every wake-handling and recovery turn, so assert supervision health here too. A
@@ -30,24 +67,18 @@ assert_watcher_liveness() {
   "$SCRIPT_DIR/fm-guard.sh" || true
 }
 
-# Print the consolidated OPEN DECISIONS section: every still-open
-# needs-decision/blocked, fleet-wide, folded from the durable status logs by
-# fm-classify-lib.sh's status_open_decisions fold (via its cursor-backed
-# scan_open_decisions_incremental wrapper) rather than from the latest-line
-# annotations above, so a decision buried under later unrelated appends cannot
-# be silently missed. Runs on every drain - including the empty-queue fast path
-# - because the decision can still be open even when nothing new is queued for
-# its task this turn. The incremental wrapper bounds this scan's cost to bytes
-# appended to each task's status log since the LAST drain, not that log's whole
-# lifetime, while still never dropping an old buried decision (see
-# fm-classify-lib.sh's "incremental (cursor-backed) open-decisions fold").
-# Bounded and silent: prints nothing when no decision is open, which is the
-# common case.
+# Print the consolidated OPEN DECISIONS section from the fleet-wide durable
+# needs-decision/blocked fold rather than from latest-line annotations.
+# Routine drains print only newly opened, reopened, or materially changed
+# records, while --open-decisions all prints every still-open record for session
+# recovery. The cursor-backed wrapper still carries buried decisions until
+# explicit resolution and bounds each scan to bytes appended since the prior
+# drain. Bounded and silent when the selected mode has nothing to report.
 print_open_decisions_section() {
   local open task key verb note line global_bytes=4000
   local output='' used=0 shown=0 omitted=0 bytes misplaced=0
 
-  open=$(scan_open_decisions_incremental "$STATE") || return 0
+  open=$(scan_open_decisions_incremental "$STATE" "$OPEN_DECISIONS_MODE") || return 0
   [ -n "$open" ] || return 0
 
   while IFS=$(printf '\t') read -r task key verb note; do

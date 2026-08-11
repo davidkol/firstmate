@@ -12,7 +12,8 @@ Usage: fm-watch-checkpoint.sh [--seconds <n>]
 
 Run bin/fm-watch.sh in the foreground for a bounded checkpoint.
 On an actionable watcher wake, pass through the watcher output and exit 0.
-On a quiet checkpoint, print "checkpoint: no actionable wake within <n>s" and exit 124.
+When a durable wake is already queued, return immediately with a queue reason.
+On a quiet checkpoint, print nothing and exit 124.
 EOF
 }
 
@@ -43,6 +44,14 @@ case "$SECONDS_ARG" in
   ''|*[!0-9]*) echo "error: --seconds must be a positive integer" >&2; exit 2 ;;
   0) echo "error: --seconds must be greater than zero" >&2; exit 2 ;;
 esac
+
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+
+if [ -s "$FM_WAKE_QUEUE" ]; then
+  printf 'queue: durable wake pending\n'
+  exit 0
+fi
 
 OUT=$(mktemp "${TMPDIR:-/tmp}/fm-watch-checkpoint.out.XXXXXX") || exit 1
 ERR=$(mktemp "${TMPDIR:-/tmp}/fm-watch-checkpoint.err.XXXXXX") || {
@@ -92,6 +101,15 @@ if grep -E '^(signal:|stale:|check:|heartbeat($|:))' "$OUT" >/dev/null 2>&1; the
   exit 0
 fi
 
+# A producer may commit a durable wake as the bounded watcher is being stopped.
+# Prefer that durable fact over reporting a quiet expiry, so the caller drains it
+# immediately instead of waiting for another checkpoint.
+if [ -s "$FM_WAKE_QUEUE" ]; then
+  printf 'queue: durable wake pending\n'
+  [ ! -s "$ERR" ] || cat "$ERR" >&2
+  exit 0
+fi
+
 if grep -E '^watcher: already running' "$OUT" "$ERR" >/dev/null 2>&1; then
   [ ! -s "$OUT" ] || cat "$OUT"
   [ ! -s "$ERR" ] || cat "$ERR" >&2
@@ -100,7 +118,6 @@ if grep -E '^watcher: already running' "$OUT" "$ERR" >/dev/null 2>&1; then
 fi
 
 if [ "$RC" -eq 124 ]; then
-  printf 'checkpoint: no actionable wake within %ss\n' "$SECONDS_ARG"
   exit 124
 fi
 
