@@ -1181,6 +1181,147 @@ test_scout_and_secondmate_scaffold() {
   pass "fm-brief: scout and secondmate code paths still scaffold well-formed briefs"
 }
 
+# The opt-in design-intake variant is still an ordinary scout at runtime, but
+# its generated contract is read-only and has a deliberately different terminal
+# handoff from an ordinary scratch scout.
+test_design_intake_scaffold_is_read_only_and_bounded() {
+  local home id brief help
+  home="$TMP_ROOT/design-intake-home"
+  id="delivery-design-intake"
+  mkdir -p "$home/data" "$home/state"
+
+  help=$("$ROOT/bin/fm-brief.sh" --help)
+  assert_contains "$help" "--design-intake" "fm-brief.sh help omitted --design-intake"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-brief.sh" "$id" Delivery --design-intake >/dev/null 2>&1 \
+    || fail "fm-brief.sh --design-intake exited nonzero"
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "design-intake brief was not scaffolded"
+  assert_grep "This is a DESIGN-INTAKE SCOUT task" "$brief" \
+    "design-intake brief did not retain the existing scout runtime kind"
+  assert_grep "read-only discovery process" "$brief" \
+    "design-intake brief lost its read-only process boundary"
+  assert_grep "only \`$home/data/$id/report.md\`" "$brief" \
+    "design-intake brief did not limit durable report writes"
+  assert_grep "only \`$home/state/$id.status\`" "$brief" \
+    "design-intake brief did not limit status writes"
+  assert_grep "exactly four top-level sections" "$brief" \
+    "design-intake brief lost its bounded report shape"
+  assert_grep "at most 12 high-signal rows" "$brief" \
+    "design-intake brief lost its candidate-disposition bound"
+  assert_grep "at most three distinct new questions" "$brief" \
+    "design-intake brief lost its shortlist bound"
+  for value in shortlisted answered duplicate stale premature implementation-only; do
+    assert_grep "\`$value\`" "$brief" "design-intake brief omitted disposition $value"
+  done
+  for value in discussion play; do
+    assert_grep "\`$value\`" "$brief" "design-intake brief omitted answerability $value"
+  done
+  assert_grep "A possible choice with no honest nonblocking default" "$brief" \
+    "design-intake brief did not exclude questions that would block while waiting"
+  assert_grep "feed directly to \`bin/fm-decision-hold.sh hold\`" "$brief" \
+    "design-intake fields no longer feed the real hold command directly"
+  assert_grep "blocked [key=report-ready]: report ready for decision reconciliation" "$brief" \
+    "design-intake brief lost its keyed report-ready handoff"
+  assert_grep "first steer must resolve \`report-ready\`" "$brief" \
+    "design-intake brief lost the first-steer completion order"
+  assert_grep "second ordinary steer" "$brief" \
+    "design-intake brief lost the second-steer terminal authorization"
+  assert_no_grep "The worktree is your laboratory" "$brief" \
+    "design-intake inherited ordinary scout scratch-edit permission"
+  assert_no_grep "make scratch commits freely" "$brief" \
+    "design-intake permits scratch commits"
+  pass "fm-brief.sh: --design-intake renders a bounded read-only scout contract"
+}
+
+# DESIGN_INTAKE is tracked independently from KIND and HERDR_LAB so either flag
+# order rejects before a brief is written.
+test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order() {
+  local home id rc
+  home="$TMP_ROOT/design-intake-conflicts"
+  mkdir -p "$home/data" "$home/state"
+
+  id=design-intake-secondmate-first
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" --secondmate Delivery --design-intake \
+    >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "--secondmate before --design-intake must fail"
+  assert_absent "$home/data/$id/brief.md" "rejected secondmate/design-intake brief was written"
+
+  id=design-intake-secondmate-last
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Delivery --design-intake --secondmate \
+    >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "--secondmate after --design-intake must fail"
+  assert_absent "$home/data/$id/brief.md" "reverse-order secondmate/design-intake brief was written"
+
+  id=design-intake-herdr-first
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Delivery --herdr-lab --design-intake \
+    >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "--herdr-lab before --design-intake must fail"
+  assert_absent "$home/data/$id/brief.md" "rejected Herdr/design-intake brief was written"
+
+  id=design-intake-herdr-last
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Delivery --design-intake --herdr-lab \
+    >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "--herdr-lab after --design-intake must fail"
+  assert_absent "$home/data/$id/brief.md" "reverse-order Herdr/design-intake brief was written"
+  pass "fm-brief.sh: --design-intake rejects secondmate and Herdr combinations in both orders"
+}
+
+# Compare ordinary rendering against the exact approved Companion prerequisite.
+# The temporary baseline script shares the current helper scripts and root so the
+# only compared behavior is fm-brief.sh's ordinary ship/scout/secondmate output.
+test_design_intake_preserves_ordinary_brief_bytes() {
+  local approved base_root home kind id expected current
+  approved=6077d702e1d50a8e364dc77b0eb8a64f018545c2
+  base_root="$TMP_ROOT/design-intake-approved-base"
+  home="$TMP_ROOT/design-intake-byte-home"
+  mkdir -p "$base_root" "$home/data" "$home/state"
+  cp -R "$ROOT/bin" "$base_root/bin"
+  git -C "$ROOT" show "$approved:bin/fm-brief.sh" > "$base_root/bin/fm-brief.sh" \
+    || fail "could not read the approved Companion fm-brief.sh baseline"
+  chmod +x "$base_root/bin/fm-brief.sh"
+
+  for kind in ship scout secondmate; do
+    id="design-intake-byte-$kind"
+    case "$kind" in
+      ship)
+        FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+          "$base_root/bin/fm-brief.sh" "$id" Delivery >/dev/null 2>&1
+        ;;
+      scout)
+        FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+          "$base_root/bin/fm-brief.sh" "$id" Delivery --scout >/dev/null 2>&1
+        ;;
+      secondmate)
+        FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_SECONDMATE_CHARTER='Delivery design domain.' \
+          "$base_root/bin/fm-brief.sh" "$id" --secondmate Delivery >/dev/null 2>&1
+        ;;
+    esac
+    expected="$TMP_ROOT/design-intake-expected-$kind.md"
+    cp "$home/data/$id/brief.md" "$expected"
+    rm -rf "$home/data/$id"
+
+    case "$kind" in
+      ship)
+        FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+          "$ROOT/bin/fm-brief.sh" "$id" Delivery >/dev/null 2>&1
+        ;;
+      scout)
+        FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+          "$ROOT/bin/fm-brief.sh" "$id" Delivery --scout >/dev/null 2>&1
+        ;;
+      secondmate)
+        FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_SECONDMATE_CHARTER='Delivery design domain.' \
+          "$ROOT/bin/fm-brief.sh" "$id" --secondmate Delivery >/dev/null 2>&1
+        ;;
+    esac
+    current="$home/data/$id/brief.md"
+    cmp -s "$expected" "$current" \
+      || fail "ordinary $kind brief changed from the exact approved Companion bytes"
+  done
+  pass "fm-brief.sh: ordinary ship, scout, and secondmate briefs remain byte-compatible"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -1214,3 +1355,6 @@ test_project_memory_drops_a_candidate_with_no_recorded_cwd
 test_project_memory_says_nothing_when_absent
 test_scout_checklist_is_reduced
 test_scout_and_secondmate_scaffold
+test_design_intake_scaffold_is_read_only_and_bounded
+test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order
+test_design_intake_preserves_ordinary_brief_bytes

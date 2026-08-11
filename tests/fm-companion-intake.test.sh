@@ -16,6 +16,9 @@ AUTHORED_CONTEXT_CARD="$FIXTURE/context-card.md"
 PROJECT="$FIXTURE/project"
 ACCEPTANCE_CHECK="$PROJECT/check_grapple_release.py"
 MANUAL_ACCEPTANCE="$ROOT/docs/verification/companion-intake.md"
+DESIGN_ACCEPTANCE="$ROOT/docs/verification/companion-design-intake.md"
+DECISIONS="$ROOT/bin/fm-decision-hold.sh"
+SEND="$ROOT/bin/fm-send.sh"
 TMP_ROOT=$(fm_test_tmproot fm-companion-intake)
 
 test_root_contract_assigns_narrow_game_status_precedence() {
@@ -36,6 +39,10 @@ test_root_contract_assigns_narrow_game_status_precedence() {
     "Companion metadata does not preserve explicit and fleet-scoped Bearings ownership"
   assert_grep 'Purpose, doctrine, and design intent remain human-owned; never invent a missing value.' "$AGENTS" \
     "root Companion trigger lost the anti-invention boundary"
+  assert_grep 'When explicit design-question discovery is needed for a resolved registered game, launch the separate design-intake scout' "$AGENTS" \
+    "root intake contract does not launch separate design discovery"
+  assert_grep "loading \`companion-intake\` is not a substitute for that process" "$AGENTS" \
+    "root intake contract still permits regular Companion to substitute for separate discovery"
   assert_grep 'single owner of the Companion intake transformation' "$SKILL" \
     "Companion intake skill does not declare ownership"
   count=$(grep -Fc "load \`companion-intake\`" "$AGENTS")
@@ -50,7 +57,10 @@ test_skill_reuses_existing_owners() {
     'AGENTS.md` section 7' \
     '../ask-user-authority/SKILL.md' \
     '../decision-hold-lifecycle/SKILL.md' \
-    'do not create a separate intake agent now' \
+    'separate design-intake scout discovers and filters grounded candidate questions' \
+    'Regular Companion presents exactly one pertinent question' \
+    'preserves exact answers and corrections' \
+    'routes accepted answers into ordinary work through the existing owners' \
     "card's only writer" \
     'do not build a correction ledger or receipt protocol' \
     'mechanical checks to catch execution slips' \
@@ -59,6 +69,8 @@ test_skill_reuses_existing_owners() {
     'requests whose object is fleet, session, Firstmate, or work status remain Bearings-owned'; do
     assert_grep "$phrase" "$SKILL" "Companion intake lost existing-owner boundary: $phrase"
   done
+  assert_no_grep 'do not create a separate intake agent now' "$SKILL" \
+    "Companion intake retained the obsolete no-separate-agent instruction"
   assert_no_grep 'fm-spawn.sh --' "$SKILL" \
     "Companion intake duplicated dispatch mechanics instead of pointing to section 7"
   pass "Companion intake stays modular while reusing brief, authority, dispatch, and review owners"
@@ -441,9 +453,337 @@ PY
   pass "authored expected task block fits the real brief scaffold and preserves cited text"
 }
 
+make_design_home() {  # <name>
+  local home="$TMP_ROOT/$1" fakebin
+  mkdir -p "$home/data" "$home/state" "$home/config" "$home/projects"
+  cp "$ROOT/.tasks.toml" "$home/.tasks.toml"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  fakebin=$(fm_fakebin "$home")
+  fm_fake_exit0 "$fakebin" treehouse no-mistakes gh gh-axi
+  printf '%s\n' "$home"
+}
+
+tasks_in() {  # <home> <tasks-axi args...>
+  local home=$1
+  shift
+  (cd "$home" && tasks-axi "$@")
+}
+
+run_decisions() {  # <home> <command args...>
+  local home=$1
+  shift
+  PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" "$DECISIONS" "$@"
+}
+
+write_design_origin() {  # <home> <id>
+  local home=$1 id=$2
+  fm_write_meta "$home/state/$id.meta" \
+    "window=firstmate:fm-$id" \
+    "worktree=$home/projects/Delivery-$id" \
+    "project=$home/projects/Delivery" \
+    "harness=codex" \
+    "backend=tmux" \
+    "kind=scout" \
+    "mode=scout"
+}
+
+assert_hold_rejected_before_identity() {  # <home> <key> <hold args...>
+  local home=$1 key=$2 before after out
+  shift 2
+  before=$(grep -cE '^- \[ \] .*decision-' "$home/data/backlog.md" || true)
+  out="$home/rejected-$RANDOM"
+  if run_decisions "$home" hold sample-intake "$key" "$@" > "$out.out" 2> "$out.err"; then
+    fail "malformed hold input unexpectedly succeeded for key '$key'"
+  fi
+  after=$(grep -cE '^- \[ \] .*decision-' "$home/data/backlog.md" || true)
+  [ "$before" = "$after" ] \
+    || fail "malformed hold input created a backlog identity for key '$key'"
+}
+
+make_design_send_stubs() {  # <home>
+  local fakebin=$1/fakebin
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  send-keys)
+    shift
+    literal=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) literal=1; shift ;;
+        *) break ;;
+      esac
+    done
+    if [ "$literal" = 1 ]; then
+      printf '%s' "${1:-}" >> "$FM_SEND_LOG"
+    fi
+    exit 0
+    ;;
+  display-message)
+    for arg in "$@"; do
+      case "$arg" in
+        *cursor_y*) printf '1\n'; exit 0 ;;
+      esac
+    done
+    printf 'fakepane\n'
+    exit 0
+    ;;
+  capture-pane)
+    printf '╭────╮\n│    │\n╰────╯\n'
+    exit 0
+    ;;
+  list-windows) exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/tmux"
+  cat > "$fakebin/sleep" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$fakebin/sleep"
+}
+
+run_design_send() {  # <home> <log> <fm-send args...>
+  local home=$1 log=$2
+  shift 2
+  env PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$home" FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" "$@" 2>/dev/null
+}
+
+terminal_order_valid() {  # <event-log>
+  awk '
+    $0 == "first-steer" && !first { first = NR }
+    $0 == "complete" && !complete { complete = NR }
+    $0 == "second-steer" && !second { second = NR }
+    $0 == "done" && !done { done = NR }
+    END { exit !(first && complete && second && done && first < complete && complete < second && second < done) }
+  ' "$1"
+}
+
+test_design_intake_contract_routes_without_new_machinery() {
+  local home brief
+  home="$TMP_ROOT/design-contract"
+  mkdir -p "$home/data" "$home/state"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-brief.sh" design-contract Delivery --design-intake >/dev/null 2>&1 \
+    || fail "could not generate the design-intake routing contract"
+  brief="$home/data/design-contract/brief.md"
+
+  for phrase in \
+    'Classify the answerability axis before the disposition' \
+    "\`discussion\` maps only to \`--answerable desk\`" \
+    "\`play\` maps only to \`--answerable play\`" \
+    'independently verify semantic equivalence' \
+    'do not create a second hold' \
+    'Do not add a dependency edge to any affected task while the answer is pending' \
+    "add the decision-hold dependency immediately before the existing \`resolve\` command" \
+    'first still-valid new shortlist item' \
+    'one pertinent independently matched existing question' \
+    'Shortlist rank is used only for that immediate handoff and is never persisted' \
+    'Later retrieval presents exactly one pertinent context-appropriate question'; do
+    assert_grep "$phrase" "$brief" "design-intake routing contract lost: $phrase"
+  done
+  assert_absent "$ROOT/.agents/skills/design-intake" \
+    "implementation added a prohibited design-intake skill"
+  assert_absent "$ROOT/.agents/skills/companion-design-intake" \
+    "implementation added a prohibited companion-design-intake skill"
+  pass "design-intake static contract routes duplicate, axis, dependency, and handoff behavior through existing owners"
+}
+
+test_report_fields_execute_directly_and_answer_routing_is_nonblocking() {
+  local home origin hold row existing_origin existing_hold show decision_file
+  command -v tasks-axi >/dev/null 2>&1 || fail "tasks-axi is required for Companion intake routing evidence"
+  home=$(make_design_home direct-hold)
+  origin=sample-intake
+  write_design_origin "$home" "$origin"
+  printf 'working: inspecting Delivery sources\n' > "$home/state/$origin.status"
+
+  hold=$(run_decisions "$home" hold "$origin" gravity-driver-contention \
+    --title "Should competing gravity drivers remain as current chaos?" \
+    --reason "Two live gravity drivers can restore the same room during one veer" \
+    --default "Keep current contention until the next playtest" \
+    --answerable play \
+    --repo Delivery) || fail "schema-valid generated fields did not pass directly to the real hold command"
+  [ "$hold" = 'sample-intake-decision-gravity-driver-contention' ] \
+    || fail "direct hold command returned an unexpected identity: $hold"
+  row=$(run_decisions "$home" list --answerable play) || fail "play hold listing failed"
+  [ "$row" = "$(printf 'play\t%s\t%s\t%s' "$hold" \
+    'Keep current contention until the next playtest' \
+    'Should competing gravity drivers remain as current chaos?')" ] \
+    || fail "play fields changed between the report-compatible command and the real list: $row"
+
+  existing_origin=earlier-intake
+  write_design_origin "$home" "$existing_origin"
+  existing_hold=$(run_decisions "$home" hold "$existing_origin" bridge-role-order \
+    --title "Should the bridge role order remain fixed?" \
+    --reason "Current role churn leaves bridge order open for discussion" \
+    --default "Keep the current bridge order" \
+    --answerable desk \
+    --repo Delivery) || fail "could not create the independently matched desk hold"
+  row=$(run_decisions "$home" list --answerable desk) || fail "desk hold listing failed"
+  assert_contains "$row" "$(printf 'desk\t%s\tKeep the current bridge order' "$existing_hold")" \
+    "discussion-to-desk routing did not survive the real list command"
+  [ "$(grep -cE '^- \[ \] sample-intake-decision-bridge-role-order ' "$home/data/backlog.md" || true)" = 0 ] \
+    || fail "the independently matched existing hold was duplicated under the new intake origin"
+
+  assert_hold_rejected_before_identity "$home" 'bad key' \
+    --title "Malformed key" --reason "Malformed key must fail" \
+    --default "Keep current behavior" --answerable desk --repo Delivery
+  assert_hold_rejected_before_identity "$home" multiline-title \
+    --title $'First line\nSecond line' --reason "Multiline title must fail" \
+    --default "Keep current behavior" --answerable desk --repo Delivery
+  assert_hold_rejected_before_identity "$home" parenthesized-reason \
+    --title "Parenthesized reason" --reason "Current behavior has two options (today)" \
+    --default "Keep current behavior" --answerable desk --repo Delivery
+  assert_hold_rejected_before_identity "$home" parenthesized-default \
+    --title "Parenthesized default" --reason "Current behavior needs a safe default" \
+    --default "Keep current behavior (today)" --answerable desk --repo Delivery
+  assert_hold_rejected_before_identity "$home" reserved-reason \
+    --title "Reserved reason" --reason "Reason | default if unanswered: hidden" \
+    --default "Keep current behavior" --answerable desk --repo Delivery
+  assert_hold_rejected_before_identity "$home" reserved-default \
+    --title "Reserved default" --reason "Default must not carry markers" \
+    --default "Keep current behavior | answerable: desk" --answerable desk --repo Delivery
+  assert_hold_rejected_before_identity "$home" comma-default \
+    --title "Comma default" --reason "Default must survive the real reader" \
+    --default "Keep current behavior, then retest" --answerable desk --repo Delivery
+
+  tasks_in "$home" add sample-gravity-work "Apply the chosen gravity behavior" \
+    --kind ship --repo Delivery >/dev/null || fail "could not create ordinary affected work"
+  show=$(tasks_in "$home" show sample-gravity-work --full)
+  assert_contains "$show" "blocked: no" "a waiting question pre-blocked affected ordinary work"
+  mkdir -p "$home/data/$origin"
+  decision_file="$home/data/$origin/decision-gravity-driver-contention.md"
+  printf '2026-08-11: Keep current contention until the next playtest.\n' > "$decision_file"
+  if run_decisions "$home" resolve "$origin" gravity-driver-contention \
+    --decision-file "$decision_file" --routed-to sample-gravity-work \
+    > "$home/early-resolve.out" 2> "$home/early-resolve.err"; then
+    fail "real resolve succeeded before answer-time dependency routing"
+  fi
+  show=$(tasks_in "$home" show sample-gravity-work --full)
+  assert_contains "$show" "blocked: no" "failed early resolution blocked ordinary work"
+  tasks_in "$home" block sample-gravity-work --by "$hold" >/dev/null \
+    || fail "could not add the answer-time decision dependency"
+  show=$(tasks_in "$home" show sample-gravity-work --full)
+  assert_contains "$show" "blocked: yes" "answer-time dependency was not observed before resolve"
+  run_decisions "$home" resolve "$origin" gravity-driver-contention \
+    --decision-file "$decision_file" --routed-to sample-gravity-work >/dev/null \
+    || fail "real resolve did not clear the immediately preceding answer-time dependency"
+  show=$(tasks_in "$home" show sample-gravity-work --full)
+  assert_contains "$show" "blocked: no" "real resolve left ordinary work blocked"
+  show=$(tasks_in "$home" show "$hold" --full)
+  assert_contains "$show" "state: done" "real resolve did not close the routed captain hold"
+  pass "report fields feed the real hold command and only answer-time routing briefly blocks ordinary work"
+}
+
+test_report_ready_requires_first_steer_then_completion_then_second_steer() {
+  local home origin send_log events bad_complete bad_done
+  home=$(make_design_home report-ready-order)
+  make_design_send_stubs "$home"
+  origin=sample-report-ready
+  write_design_origin "$home" "$origin"
+  printf 'blocked [key=report-ready]: report ready for decision reconciliation\n' \
+    > "$home/state/$origin.status"
+  send_log="$home/send.log"
+  events="$home/events.log"
+  : > "$send_log"
+  : > "$events"
+
+  if run_decisions "$home" complete "$origin" --none \
+    > "$home/early-complete.out" 2> "$home/early-complete.err"; then
+    fail "complete --none succeeded while report-ready was open"
+  fi
+  run_design_send "$home" "$send_log" "$origin" --resolve-key report-ready \
+    "Decision reconciliation is complete. Stay stopped and do not report done until a second message says the completion check passed." \
+    || fail "the real first steer did not resolve report-ready"
+  printf 'first-steer\n' >> "$events"
+  assert_grep 'resolved [key=report-ready]:' "$home/state/$origin.status" \
+    "the first steer did not close report-ready through the real status fold"
+  assert_no_grep 'done:' "$home/state/$origin.status" \
+    "the first steer permitted terminal done before completion"
+  assert_contains "$(cat "$send_log")" "do not report done" \
+    "the first steer did not explicitly withhold terminal completion"
+
+  run_decisions "$home" complete "$origin" --none >/dev/null \
+    || fail "complete --none did not succeed after report-ready resolution"
+  printf 'complete\n' >> "$events"
+  : > "$send_log"
+  run_design_send "$home" "$send_log" "$origin" \
+    "The completion check passed. Append the terminal done line now." \
+    || fail "the real second ordinary steer failed"
+  printf 'second-steer\n' >> "$events"
+  assert_contains "$(cat "$send_log")" "Append the terminal done line now" \
+    "the second steer did not authorize terminal completion"
+  [ "$(grep -cF 'resolved [key=report-ready]:' "$home/state/$origin.status")" = 1 ] \
+    || fail "the ordinary second steer unexpectedly resolved a key"
+  printf 'done: design-intake report reconciled\n' >> "$home/state/$origin.status"
+  printf 'done\n' >> "$events"
+  terminal_order_valid "$events" || fail "the observed real lifecycle was not terminally ordered"
+
+  bad_complete="$home/bad-complete-order.log"
+  printf 'complete\nfirst-steer\nsecond-steer\ndone\n' > "$bad_complete"
+  if terminal_order_valid "$bad_complete"; then
+    fail "ordering assertion accepted completion before the first steer"
+  fi
+  bad_done="$home/bad-done-order.log"
+  printf 'first-steer\ncomplete\ndone\nsecond-steer\n' > "$bad_done"
+  if terminal_order_valid "$bad_done"; then
+    fail "ordering assertion accepted terminal done before the second steer"
+  fi
+  pass "report-ready closes through the real first steer before completion and done waits for the ordinary second steer"
+}
+
+test_design_intake_verification_owner_reserves_model_discovery_for_cold_delivery() {
+  local phrase
+  assert_present "$DESIGN_ACCEPTANCE" "separate design-intake verification owner is missing"
+  for phrase in \
+    'genuinely cold Delivery acceptance' \
+    'Static tests prove format and routing only' \
+    'must not be run in the implementation writer lane' \
+    'SPACEGAME.md' \
+    'docs/execution.md' \
+    'docs/findings.md' \
+    'docs/reviews/z5-playtest-kit.md' \
+    'data/delivery-game-status-report/decision-fl5c-helm-view.md' \
+    'newly started bare Codex process' \
+    'Zero new holds is a valid result' \
+    'first steer' \
+    'second ordinary steer' \
+    'Static fixtures did not prove model generation'; do
+    assert_grep "$phrase" "$DESIGN_ACCEPTANCE" \
+      "separate design-intake verification owner lost: $phrase"
+  done
+  python3 - "$ROOT/docs/documentation-audiences.json" <<'PY' \
+    || fail "separate design-intake verification owner is not classified"
+import json
+import sys
+
+inventory = json.load(open(sys.argv[1], encoding="utf-8"))
+matches = [
+    item for item in inventory["surfaces"]
+    if item.get("path") == "docs/verification/companion-design-intake.md"
+]
+assert matches == [{
+    "path": "docs/verification/companion-design-intake.md",
+    "audience": "maintainer-verification",
+}]
+PY
+  pass "separate design-intake verification owner reserves model discovery for the later cold Delivery process"
+}
+
 test_root_contract_assigns_narrow_game_status_precedence
 test_skill_reuses_existing_owners
 test_manual_fresh_codex_acceptance_defines_causal_evidence
 test_fixture_has_structured_intake_and_real_project_evidence
 test_authored_context_card_copy_is_byte_stable
 test_authored_expected_block_fits_existing_brief_format
+test_design_intake_contract_routes_without_new_machinery
+test_report_fields_execute_directly_and_answer_routing_is_nonblocking
+test_report_ready_requires_first_steer_then_completion_then_second_steer
+test_design_intake_verification_owner_reserves_model_discovery_for_cold_delivery

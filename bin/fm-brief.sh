@@ -19,10 +19,13 @@
 # result and bin/fm-spawn.sh runs it before launch. A secondmate charter is
 # standing scope rather than a task built from rulings, so it carries neither
 # section.
-# Usage: fm-brief.sh <task-id> <repo-name> [--scout] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> [--scout|--design-intake] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
+#   --design-intake writes a read-only design-question discovery contract using
+#   the existing scout kind and report path. Launch it through the existing
+#   fm-spawn.sh --scout path. It is incompatible with --secondmate and --herdr-lab.
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
@@ -112,6 +115,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 KIND=ship
 HERDR_LAB=0
+DESIGN_INTAKE=0
 NO_PROJECTS=0
 POS=()
 for a in "$@"; do
@@ -119,11 +123,26 @@ for a in "$@"; do
     --scout) KIND=scout ;;
     --secondmate) KIND=secondmate ;;
     --herdr-lab) HERDR_LAB=1 ;;
+    --design-intake) DESIGN_INTAKE=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
     *) POS+=("$a") ;;
   esac
 done
 ID=${POS[0]}
+
+if [ "$DESIGN_INTAKE" -eq 1 ] && [ "$KIND" = secondmate ]; then
+  echo "error: --design-intake cannot be combined with --secondmate" >&2
+  exit 1
+fi
+
+if [ "$DESIGN_INTAKE" -eq 1 ] && [ "$HERDR_LAB" -eq 1 ]; then
+  echo "error: --design-intake is read-only and cannot be combined with --herdr-lab" >&2
+  exit 1
+fi
+
+if [ "$DESIGN_INTAKE" -eq 1 ]; then
+  KIND=scout
+fi
 
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2
@@ -403,6 +422,146 @@ If the task will start, stop, delete, restart, profile, or otherwise drive Herdr
 Do not add Herdr lifecycle commands to this unguarded brief by hand.
 EOF
 HERDR_SECTION=${HERDR_SECTION%$'\n'}
+fi
+
+if [ "$DESIGN_INTAKE" -eq 1 ]; then
+cat > "$BRIEF" <<EOF
+You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
+
+# Task
+{TASK}
+
+$PROVENANCE
+
+# Process boundary
+This is a DESIGN-INTAKE SCOUT task using Firstmate's existing scout kind and existing \`fm-spawn.sh\` process boundary.
+You are a separate cold read-only discovery process, not the regular Companion and not an implementation worker.
+Discover and filter grounded design questions from the resolved project's real sources, write one bounded report, and stop.
+Do not load a discovery skill, resume an earlier transcript, or delegate discovery back to regular Companion.
+Do not start, stop, delete, restart, profile, or otherwise drive Herdr lifecycle behavior.
+
+# Setup
+You are in the exact isolated project worktree supplied by \`fm-spawn.sh\` for $REPO.
+The project worktree is read-only for this task and must remain byte-for-byte and file-for-file unchanged.
+Run \`pwd -P\` and \`git rev-parse --show-toplevel\` first and confirm both resolve to that isolated task worktree rather than Firstmate or the project's primary checkout.
+If isolation is absent or ambiguous, append \`blocked: design-intake scout lacks an isolated project worktree\` to $STATUS_FILE and stop.
+Run \`git status --short --branch\`, \`git rev-parse HEAD\`, and \`git log --oneline -15\` before trusting status prose or a handoff.
+Record the exact HEAD and the before cleanliness and untracked-file observations for the report.
+
+# Source procedure
+1. Confirm $REPO is the project resolved through the existing \`$FM_HOME/data/projects.md\` registry contract and do not infer a different project.
+2. Read the project's complete \`AGENTS.md\` first and follow its source router.
+3. Inspect pertinent recent commits and diffs before trusting status prose.
+4. Read the project-owned design, execution, findings, decision, acceptance, and playtest sources identified by that router and by the task-specific section above.
+5. Read implementation and tests only far enough to distinguish built behavior, proposed behavior, stale claims, and implementation-only mechanics.
+6. Read only the task-specific Firstmate context card, reports, verbatim decision files, current tasks-axi items, and current decision holds explicitly named in the task-specific section above.
+7. Treat dated verbatim captain decisions as design authority and current project code and history as implementation-state authority.
+8. Treat prior reports as evidence leads that must be checked against their primary sources rather than as final authority.
+9. Inspect the full current record for every possible semantic hold or decision match before calling a candidate answered or duplicate.
+
+# Write boundary
+You may write outside the project worktree only \`$DATA/$ID/report.md\` and only \`$STATE/$ID.status\` through the status protocol below.
+Do not write any file in the project worktree.
+Do not edit Firstmate truth, context cards, tasks-axi state, decision holds, tasks, prior reports, registry data, runtime metadata, or runtime schemas.
+Do not commit, push, open a PR, implement a game change, create an implementation task or plan, choose a captain answer, or manufacture a human play verdict.
+Before report-ready, repeat the exact HEAD, tracked-diff, and untracked-file observations and fail the task if they differ from the before observations.
+
+# Report schema
+Write the report with exactly four top-level sections in this order: \`Run identity\`, \`Sources inspected\`, \`Candidate dispositions\`, and \`Prioritized shortlist\`.
+
+## Run identity fields
+Record the project, exact HEAD, inspection date, intake origin id, worktree path, and before and after cleanliness observations.
+
+## Sources inspected fields
+Record project-relative or Firstmate-relative pointers with one-line pertinence and authority classifications.
+
+## Candidate dispositions fields
+Record at most 12 high-signal rows.
+Include every shortlisted item and every answered, duplicate, stale, premature, or implementation-only item needed to audit a consequential exclusion.
+Each askable row contains exactly these named fields: \`key\`, \`question\`, \`answerable\`, \`disposition\`, \`why it matters now\`, \`default if unanswered\`, \`evidence\`, \`existing answer or hold\`, and \`affected existing work\`.
+The \`answerable\` value is exactly \`discussion\` or \`play\`.
+The \`disposition\` value is exactly \`shortlisted\`, \`answered\`, \`duplicate\`, \`stale\`, \`premature\`, or \`implementation-only\`.
+Classify the answerability axis before the disposition.
+A play-derived duplicate remains \`play\` even when it reuses an existing hold.
+Do not downgrade a play question because code, tests, or an agent recommendation suggests an answer.
+
+Every askable question, including one later found duplicate, has an honest concrete default that lets work continue while no answer arrives.
+Normal defaults preserve current shipped behavior, omit an optional change, or continue accepted implementation under the current setting.
+\`Keep dependent work parked\`, \`block the task\`, \`wait for the captain\`, and equivalent waiting actions are not defaults.
+A possible choice with no honest nonblocking default is not askable or shortlisted and is recorded only as \`premature\` with that reason.
+
+Use these disposition meanings.
+\`answered\` means a dated authoritative decision settles the question even when project prose still calls it open.
+\`duplicate\` means the same semantic choice is already represented by a current hold or decision record.
+\`stale\` means current history, implementation, or authority supersedes the premise.
+\`premature\` means there is no observable current decision surface, no concrete affected work, or no honest nonblocking default.
+\`implementation-only\` means a worker can choose the mechanic inside an accepted product contract.
+\`shortlisted\` means a still-open, nonduplicate, timely product choice has concrete affected work, command-safe fields, and an honest nonblocking default.
+
+## Prioritized shortlist fields
+Record at most three distinct new questions in this intake run's leverage order.
+An empty shortlist is valid when every grounded candidate is answered, duplicate, stale, premature, or implementation-only.
+Each shortlist item repeats its exact key, question, answerability, why, default, evidence, and affected existing task ids.
+Shortlist rank is used only for that immediate handoff and is never persisted.
+
+# Direct hold-command compatibility
+Every askable candidate's fields must feed directly to \`bin/fm-decision-hold.sh hold\` without normalization, rewriting, hashing, or translation.
+\`key\` is nonempty and matches \`[A-Za-z0-9._-]+\`.
+\`question\` is one nonempty line and maps directly to \`--title\`.
+\`why it matters now\` is one nonempty line and maps directly to \`--reason\`.
+\`default if unanswered\` is one nonempty line and maps directly to \`--default\`.
+Reason and default contain no \`(\` or \`)\` and contain neither exact reserved marker \` | default if unanswered: \` nor \` | answerable: \`.
+Default contains no comma.
+\`discussion\` maps only to \`--answerable desk\`.
+\`play\` maps only to \`--answerable play\`.
+
+# Reconciliation contract
+Firstmate reads the complete report and rechecks every candidate against the real hold list, full tasks-axi records, current decision files, current project tasks, and current project authority sources.
+Firstmate must independently verify semantic equivalence across the question, axis, default, evidence, and affected work before treating a candidate as a duplicate.
+After that independent match, do not create a second hold for the same choice.
+Firstmate drops answered, duplicate, stale, premature, and implementation-only candidates from the new-hold inventory.
+Firstmate registers each remaining distinct new item by feeding the report's fields directly to the existing hold command.
+Do not add a dependency edge to any affected task while the answer is pending.
+Duplicate-only discovery and zero new holds are valid when Firstmate independently reconciles every candidate.
+\`complete <origin> --none\` attests only that this intake origin created no distinct unresolved question and never proves an external duplicate by itself.
+
+After registration, the first steer must resolve \`report-ready\` through the existing \`fm-send.sh --resolve-key report-ready\` path and explicitly tell you to remain stopped without terminal \`done\`.
+Firstmate confirms the key is closed and you have not appended \`done\` before running the existing completion gate with every new same-origin key or with \`--none\` for a valid zero-new inventory.
+After completion succeeds, regular Companion immediately presents exactly the first still-valid new shortlist item and its recorded default.
+When no new item remains but a grounded candidate independently matches an existing hold, regular Companion immediately presents exactly one pertinent independently matched existing question and reads its default from the real hold list.
+When no pertinent open question remains, regular Companion asks nothing.
+Later retrieval presents exactly one pertinent context-appropriate question, using desk for a discussion context and play for a play session, without promising the intake's original leverage rank.
+Only a second ordinary steer after successful completion may tell you to append terminal \`done\`.
+
+# Answer-time routing and corrections
+The intake scout is never resumed to interpret, implement, or route a captain answer.
+Regular Companion preserves the exact answer and date in \`data/<origin>/decision-<key>.md\`.
+Regular Companion updates existing affected ordinary work or creates concrete ordinary work only when the answer authorizes it.
+For every routed task, add the decision-hold dependency immediately before the existing \`resolve\` command clears it.
+Regular Companion preserves exact corrections, updates the current interpretation and affected ordinary work through existing owners, and creates no correction ledger.
+A genuinely new unresolved fork receives a new stable key through the same existing lifecycle.
+
+# Status protocol and terminal handoff
+Append status lines only to $STATUS_FILE.
+Use \`working:\` sparingly for a supervisor-actionable phase change and use \`blocked:\` only for a real blocker that needs Firstmate.
+When the report and before-and-after read-only checks are complete, append exactly one line:
+
+\`blocked [key=report-ready]: report ready for decision reconciliation\`
+
+Stop without appending \`done\`.
+After the first steer resolves \`report-ready\`, remain stopped and do not append a terminal line.
+After and only after the second ordinary steer says the completion check passed, append \`done: design-intake report reconciled\` and stop.
+
+# Definition of done
+The report stands alone and satisfies the exact bounded schema and command grammar above.
+Every owner decision relied on is quoted verbatim with its date rather than inherited from a summary.
+Every exclusion and semantic duplicate match carries enough primary-source evidence for Firstmate to recheck it independently.
+The project worktree's exact HEAD, tracked diff, and untracked-file observations are identical before and after.
+Static authored examples are format and routing evidence only and are never described as model-generation evidence.
+The terminal \`done\` line occurs only after report-ready resolution, successful completion, and the second ordinary steer.
+EOF
+echo "scaffolded: $BRIEF (design-intake scout; replace {TASK}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE})"
+exit 0
 fi
 
 if [ "$KIND" = scout ]; then

@@ -12,7 +12,13 @@ metadata:
 # Companion intake
 
 This skill is the single owner of the Companion intake transformation.
-Keep the boundary modular as inputs plus output so a later captain decision could move it to another agent, but run it in the current intake path and do not create a separate intake agent now.
+Keep the boundary modular as inputs plus output so existing dispatch and decision owners can consume it without a second protocol.
+
+## Design-question responsibility split
+
+The separate design-intake scout discovers and filters grounded candidate questions from project-owned sources.
+Loading this skill does not perform explicit design-question discovery and is not a substitute for that separate process.
+Regular Companion presents exactly one pertinent question, preserves exact answers and corrections, and routes accepted answers into ordinary work through the existing owners.
 
 ## Game status precedence
 
@@ -38,9 +44,9 @@ Treat project-owned files as game truth and point to them instead of copying the
 5. Let the Companion intake that resolved the request be the card's only writer; workers read it through source pointers.
 6. Identify only ambiguity whose answer could change the pertinent behavior or implementation boundary.
 7. Take the fast path when no pertinent ambiguity remains.
-8. When one remains, ask exactly one concise question, route it through the existing [`decision-hold-lifecycle`](../decision-hold-lifecycle/SKILL.md), and park only work that depends on its answer.
-9. Let unrelated work continue when it remains decision-free and independently safe.
-10. After an answer, rewrite the cleaned reading and task content to the corrected intent while leaving the verbatim request unchanged.
+8. When one remains, present exactly one concise pertinent question through the existing [`decision-hold-lifecycle`](../decision-hold-lifecycle/SKILL.md) with an honest default that lets work continue and no pre-answer task dependency.
+9. After an answer, preserve it exactly with its date, update or create authorized ordinary work, add the decision dependency immediately before the existing resolve command clears it, and leave unrelated work unblocked.
+10. Rewrite the cleaned reading and task content to the corrected intent while leaving the verbatim request unchanged.
 11. Record one plain current correction with its date and source in the context card so a cold worker can receive it; do not build a correction ledger or receipt protocol.
 
 The captain may reject every offered option.
