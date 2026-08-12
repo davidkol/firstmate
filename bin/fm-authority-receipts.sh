@@ -248,17 +248,16 @@ awk '
     action = ENVIRON["FM_AUTHORITY_ACTION"]
     pointer = tolower(trim(ENVIRON["FM_AUTHORITY_POINTER"]))
     if (action == "match") {
-      if (repository_pointer(pointer)) {
-        match_kind = "repository"
-      } else if (canonical_captain_pointer(pointer)) {
+      if (canonical_captain_pointer(pointer)) {
         match_kind = "captain"
+      } else if (authority_pointer_shaped(pointer)) {
+        match_invalid = 1
+        print "error: captain authority source pointer must use captain decision <complete-id>" > "/dev/stderr"
+      } else if (repository_pointer(pointer)) {
+        match_kind = "repository"
       } else {
         match_invalid = 1
-        if (authority_pointer_shaped(pointer)) {
-          print "error: captain authority source pointer must use captain decision <complete-id>" > "/dev/stderr"
-        } else {
-          print "error: outcome source pointer must use an explicit repository path or captain decision <complete-id>" > "/dev/stderr"
-        }
+        print "error: outcome source pointer must use an explicit repository path or captain decision <complete-id>" > "/dev/stderr"
       }
     }
   }

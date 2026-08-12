@@ -246,6 +246,60 @@ test_promoted_setup_refuses_an_unrelated_existing_branch() {
   pass "fm-promote.sh: promoted setup rejects unrelated existing task branches"
 }
 
+test_promoted_import_refuses_residue_on_a_valid_task_branch() {
+  local dir brief worktree command snapshot rc
+  dir=$(make_scout branch-residue)
+  brief="$dir/home/data/scout-a/brief.md"
+  worktree="$dir/worktree"
+  git -C "$worktree" init -q -b main
+  git -C "$worktree" config user.name 'Promotion Test'
+  git -C "$worktree" config user.email 'promotion@example.invalid'
+  printf '%s\n' base > "$worktree/intended.txt"
+  git -C "$worktree" add intended.txt
+  git -C "$worktree" commit -q -m base
+  git -C "$worktree" switch -q -c scout-scratch
+  printf '%s\n' 'preserved scout work' > "$worktree/intended.txt"
+
+  run_promote "$dir" --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X through the bounded path.' \
+    > "$dir/promote.out" 2> "$dir/promote.err" \
+    || fail "promotion should generate the complete branch-scope proof"
+
+  for prefix in \
+    '2. Preserve the complete scout state recoverably before cleaning it:' \
+    '3. Return to the proven clean default-branch base:' \
+    '4. Prove and record the base before carrying work:' \
+    '5. Only after that proof, create or reuse the ship branch:'; do
+    command=$(prompt_command "$brief" "$prefix")
+    (cd "$worktree" && bash -c "$command") \
+      || fail "the promoted setup command failed before the residue reproduction: $prefix"
+  done
+  snapshot=$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)
+  printf '%s\n' 'committed debug residue' > "$worktree/debug.txt"
+  git -C "$worktree" add debug.txt
+  git -C "$worktree" commit -q -m 'unrelated debug residue'
+
+  command=$(prompt_command "$brief" '6. Import only the intended implementation and regression-test paths transactionally:')
+  command=${command//'<paths>'/intended.txt}
+  set +e
+  (cd "$worktree" && bash -c "$command")
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "an ancestry-valid task branch with unrelated committed residue must fail closed"
+  [ "$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)" = "$snapshot" ] \
+    || fail "refusing committed residue lost the immutable scout snapshot"
+  git -C "$worktree" show-ref --verify --quiet refs/fm-promote/scout-a/base \
+    || fail "refusing committed residue deleted the recorded promotion base"
+  git -C "$worktree" show-ref --verify --quiet refs/fm-promote/scout-a/import \
+    || fail "refusing committed residue deleted the selected import proof"
+  git -C "$worktree" merge-base --is-ancestor refs/fm-promote/scout-a/import HEAD \
+    || fail "the selected import commit is not reachable from the refused branch"
+  [ "$(cat "$worktree/debug.txt")" = 'committed debug residue' ] \
+    || fail "refusing committed residue discarded the unrelated work"
+  pass "fm-promote.sh: promoted import preserves recovery refs around branch residue"
+}
+
 test_promotion_requires_explicit_authority_instead_of_scout_prose() {
   local dir brief original rc
   dir=$(make_scout report-only)
@@ -300,5 +354,6 @@ test_promotion_refuses_a_generic_decision_pointer() {
 test_promotion_builds_a_validated_ship_prompt_before_changing_kind
 test_promoted_setup_recovers_across_separate_shells
 test_promoted_setup_refuses_an_unrelated_existing_branch
+test_promoted_import_refuses_residue_on_a_valid_task_branch
 test_promotion_requires_explicit_authority_instead_of_scout_prose
 test_promotion_refuses_a_generic_decision_pointer
