@@ -30,7 +30,8 @@ BRIEF=${2:-}
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 2; }
 
 check_contract() {
-  awk '
+  output_mode=${1:-check}
+  awk -v output_mode="$output_mode" '
     function trim(value) {
       sub(/^[ \t]+/, "", value)
       sub(/[ \t]+$/, "", value)
@@ -194,7 +195,10 @@ check_contract() {
             captain_matches = 0
             if (has_authority_receipt(source)) {
               for (captain_item = 1; captain_item <= captain_count; captain_item++) {
-                if (bounded_receipt_match(captain_entry[captain_item], source)) captain_matches++
+                if (bounded_receipt_match(captain_entry[captain_item], source)) {
+                  captain_matches++
+                  captain_match_index = captain_item
+                }
               }
             }
             if (captain_matches != 1) {
@@ -223,6 +227,9 @@ check_contract() {
       if (!correction && count["correct"] > 0) finding("correct evidence requires the T4 correction overlay")
       if (base != "T3" && count["parts"] > 0) finding("parts evidence requires a T3 runtime tier")
 
+      if (findings == 0 && output_mode == "matched-receipt" && captain_match_index > 0) {
+        print captain_entry[captain_match_index]
+      }
       exit findings > 0 ? 1 : 0
     }
   ' "$BRIEF"
@@ -276,13 +283,17 @@ field_value() {
 }
 
 render_review_intent() {
-  check_contract
+  matched_receipt=$(check_contract matched-receipt)
   tier=$(field_value task-tier)
   outcome=$(field_value outcome)
 
   printf '%s\n' 'Firstmate Designer -> Runtime -> Player selected review.'
   printf 'task-tier: %s\n' "$tier"
   printf 'outcome: %s\n' "$outcome"
+  if [ -n "$matched_receipt" ]; then
+    printf '%s\n' 'matched captain authority receipt:'
+    printf '%s\n' "$matched_receipt"
+  fi
   for evidence_name in prove player parts platform correct; do
     evidence_value=$(field_value "$evidence_name")
     [ -z "$evidence_value" ] || printf '%s: %s\n' "$evidence_name" "$evidence_value"

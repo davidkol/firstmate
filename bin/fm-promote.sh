@@ -1,29 +1,202 @@
 #!/usr/bin/env bash
 # Promote a scout task to a ship task in place: the crewmate keeps its window,
-# worktree, and loaded context; only the contract changes. Flips kind= to ship in
-# state/<task-id>.meta so fm-teardown.sh applies the full ship-task teardown protection
-# again. After promoting, send the crewmate its ship instructions via fm-send.sh
-# (inventory scratch state, reset to a clean default-branch base, carry over only
-# intended fix changes, create branch fm/<task-id>, implement, then report done
-# according to the project's delivery mode).
-# Usage: fm-promote.sh <task-id>
+# worktree, and loaded context while its brief becomes the canonical ship prompt.
+# The outcome result must occur verbatim in the accepted scout report, and its
+# source must pass the existing authority/provenance check.
+# Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<source> => <accepted scout finding>' [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 "$FM_ROOT/bin/fm-guard.sh" || true
-ID=$1
+ID=${1:-}
+[ -n "$ID" ] || { echo "error: task id is required" >&2; exit 1; }
+shift
+
+TASK_TIER=
+OUTCOME=
+PROVE=
+PLAYER=
+PARTS=
+PLATFORM=
+CORRECT=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --task-tier)
+      [ "$#" -ge 2 ] || { echo "error: --task-tier needs a value" >&2; exit 1; }
+      TASK_TIER=$2
+      shift 2
+      ;;
+    --task-tier=*) TASK_TIER=${1#--task-tier=}; shift ;;
+    --outcome)
+      [ "$#" -ge 2 ] || { echo "error: --outcome needs a value" >&2; exit 1; }
+      OUTCOME=$2
+      shift 2
+      ;;
+    --outcome=*) OUTCOME=${1#--outcome=}; shift ;;
+    --prove|--player|--parts|--platform|--correct)
+      [ "$#" -ge 2 ] || { echo "error: $1 needs a value" >&2; exit 1; }
+      case "$1" in
+        --prove) PROVE=$2 ;;
+        --player) PLAYER=$2 ;;
+        --parts) PARTS=$2 ;;
+        --platform) PLATFORM=$2 ;;
+        --correct) CORRECT=$2 ;;
+      esac
+      shift 2
+      ;;
+    --prove=*) PROVE=${1#--prove=}; shift ;;
+    --player=*) PLAYER=${1#--player=}; shift ;;
+    --parts=*) PARTS=${1#--parts=}; shift ;;
+    --platform=*) PLATFORM=${1#--platform=}; shift ;;
+    --correct=*) CORRECT=${1#--correct=}; shift ;;
+    *) echo "error: unknown promotion argument: $1" >&2; exit 1 ;;
+  esac
+done
+
+[ -n "$TASK_TIER" ] && [ -n "$OUTCOME" ] || {
+  echo "error: promotion needs --task-tier and --outcome from the accepted scout finding; task $ID remains a scout" >&2
+  exit 1
+}
+
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
 grep -qx 'kind=scout' "$META" || { echo "error: task $ID is not a scout task (kind=scout not in meta)" >&2; exit 1; }
 
-TMP="$META.tmp"
-grep -v '^kind=' "$META" > "$TMP"
-echo "kind=ship" >> "$TMP"
-mv "$TMP" "$META"
+BRIEF="$DATA/$ID/brief.md"
+REPORT="$DATA/$ID/report.md"
+[ -f "$BRIEF" ] || { echo "error: no scout brief for task $ID at $BRIEF" >&2; exit 1; }
+[ -s "$REPORT" ] || { echo "error: no accepted scout report for task $ID at $REPORT" >&2; exit 1; }
+
+case "$OUTCOME" in
+  *'=>'*) ;;
+  *) echo "error: --outcome must be <authoritative source pointer> => <accepted scout finding>" >&2; exit 1 ;;
+esac
+OUTCOME_RESULT=${OUTCOME#*=>}
+OUTCOME_RESULT=$(printf '%s\n' "$OUTCOME_RESULT" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+[ -n "$OUTCOME_RESULT" ] || { echo "error: --outcome has no observable result" >&2; exit 1; }
+grep -F -- "$OUTCOME_RESULT" "$REPORT" >/dev/null || {
+  echo "error: outcome result is not an exact accepted finding in $REPORT; task $ID remains a scout pending design resolution" >&2
+  exit 1
+}
+
+PROJECT=$(sed -n 's/^project=//p' "$META" | sed -n '1p')
+[ -n "$PROJECT" ] || { echo "error: task $ID has no project in $META" >&2; exit 1; }
+REPO=$(basename "$PROJECT")
+
+STAGE=$(mktemp -d "$DATA/$ID/.promote.XXXXXX")
+TASK_BODY="$STAGE/task"
+PROVENANCE="$STAGE/provenance"
+CONTRACT="$STAGE/contract"
+TEMPLATE="$STAGE/template.md"
+CANDIDATE="$STAGE/brief.md"
+META_NEXT="$STAGE/meta"
+cleanup() {
+  rm -f "$TASK_BODY" "$PROVENANCE" "$CONTRACT" "$TEMPLATE" "$CANDIDATE" "$META_NEXT"
+  rmdir "$STAGE" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+awk '
+  $0 == "# Task" { active = 1; next }
+  active && $0 == "# What the captain decided" { exit }
+  active { print }
+' "$BRIEF" > "$TASK_BODY"
+grep -q '[^[:space:]]' "$TASK_BODY" || { echo "error: scout brief has no task body to promote" >&2; exit 1; }
+grep -Fx '{TASK}' "$TASK_BODY" >/dev/null && { echo "error: scout brief still has an unresolved task placeholder" >&2; exit 1; }
+
+awk '
+  $0 == "# What the captain decided" { active = 1 }
+  active && $0 ~ /^# / && $0 != "# What the captain decided" && $0 != "# What firstmate worked out" { exit }
+  active { print }
+' "$BRIEF" > "$PROVENANCE"
+grep -Fx '# What firstmate worked out' "$PROVENANCE" >/dev/null || {
+  echo "error: scout brief has no complete captain/firstmate provenance split" >&2
+  exit 1
+}
+"$FM_ROOT/bin/fm-authority-receipts.sh" "$BRIEF" >/dev/null || {
+  echo "error: scout brief has invalid captain provenance; task $ID remains a scout" >&2
+  exit 1
+}
+
+{
+  printf '%s\n' "- task-tier: $TASK_TIER" "- outcome: $OUTCOME"
+  [ -z "$PROVE" ] || printf '%s\n' "- prove: $PROVE"
+  [ -z "$PLAYER" ] || printf '%s\n' "- player: $PLAYER"
+  [ -z "$PARTS" ] || printf '%s\n' "- parts: $PARTS"
+  [ -z "$PLATFORM" ] || printf '%s\n' "- platform: $PLATFORM"
+  [ -z "$CORRECT" ] || printf '%s\n' "- correct: $CORRECT"
+} > "$CONTRACT"
+
+HERDR_ARG=
+if grep -Fx '# Herdr isolation - HARD SAFETY CONTRACT' "$BRIEF" >/dev/null; then
+  HERDR_ARG=--herdr-lab
+fi
+if [ -n "$HERDR_ARG" ]; then
+  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" "$HERDR_ARG" >/dev/null
+else
+  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" >/dev/null
+fi
+
+awk -v task_file="$TASK_BODY" -v provenance_file="$PROVENANCE" -v contract_file="$CONTRACT" '
+  function emit(file, line) {
+    while ((getline line < file) > 0) print line
+    close(file)
+  }
+  skip_task {
+    if ($0 == "# Delivery contract") {
+      skip_task = 0
+      print
+      emit(contract_file)
+      skip_contract = 1
+    }
+    next
+  }
+  skip_contract {
+    if ($0 ~ /^# /) {
+      skip_contract = 0
+      print
+    }
+    next
+  }
+  skip_provenance {
+    if ($0 ~ /^# / && $0 != "# What the captain decided" && $0 != "# What firstmate worked out") {
+      skip_provenance = 0
+      print
+    }
+    next
+  }
+  $0 == "# Task" {
+    print
+    emit(task_file)
+    skip_task = 1
+    next
+  }
+  $0 == "# What the captain decided" {
+    emit(provenance_file)
+    skip_provenance = 1
+    next
+  }
+  { print }
+' "$TEMPLATE" > "$CANDIDATE"
+
+"$FM_ROOT/bin/fm-doctrine-contract.sh" check "$CANDIDATE" || {
+  echo "error: promoted ship contract is invalid; task $ID remains a scout" >&2
+  exit 1
+}
+"$FM_ROOT/bin/fm-authority-receipts.sh" "$CANDIDATE" >/dev/null || {
+  echo "error: promoted ship prompt does not preserve valid captain provenance; task $ID remains a scout" >&2
+  exit 1
+}
+
+grep -v '^kind=' "$META" > "$META_NEXT"
+echo "kind=ship" >> "$META_NEXT"
+mv "$CANDIDATE" "$BRIEF"
+mv "$META_NEXT" "$META"
 
 HOME_Q=$(printf '%q' "$FM_HOME")
 echo "promoted $ID to ship (teardown protection restored)"
-echo "next: FM_HOME=$HOME_Q bin/fm-send.sh fm-$ID '<ship instructions: review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch fm/$ID; implement; report done>'"
+echo "next: FM_HOME=$HOME_Q bin/fm-send.sh fm-$ID '<ship instructions: re-read the updated brief; review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch fm/$ID; implement; report done>'"

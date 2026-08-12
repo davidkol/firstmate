@@ -159,9 +159,9 @@ if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then
   exit 1
 fi
 
-BRIEF="$DATA/$ID/brief.md"
+BRIEF="${FM_BRIEF_PATH_OVERRIDE:-$DATA/$ID/brief.md}"
 [ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
-mkdir -p "$DATA/$ID"
+mkdir -p "$(dirname "$BRIEF")"
 
 shell_quote() {
   printf "'"
