@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # fm-authority-receipts.sh - find claims made under the captain's authority that
-# carry no receipt.
+# carry no receipt, or bind one delivery outcome source pointer to its receipt.
 # Usage: fm-authority-receipts.sh <path>...
 #        fm-authority-receipts.sh match <brief.md> <source-pointer>
 #   Each path is a Markdown file, or a directory scanned for *.md.
@@ -61,13 +61,18 @@
 #   5. "captain" is the whole vocabulary. It also read "owner" once, which
 #      flagged 18 rows across one project whose docs simply talk about an owner,
 #      and nothing true anywhere.
+#   6. `match` accepts a syntactically explicit project-relative repository
+#      pointer without promoting it into a captain claim. A `captain decision
+#      <complete-id>` pointer instead must identify exactly one receipted bullet
+#      in `# What the captain decided`, and the matching bullet is printed for
+#      the selected reviewer.
 #
 # What it does NOT check, stated plainly because overclaimed provenance is the
 # defect this exists to catch: it does not verify that a cited receipt is real,
-# says what the row says it says, or belongs to that claim. Reading the record
-# is still a person's job. This finds claims with nothing behind them at all,
-# which is exactly the shape of the failure above and is worth catching on its
-# own.
+# says what the row says it says, or semantically supports that claim or outcome.
+# Reading the record is still a person's job. The default check finds claims
+# with nothing behind them at all, while `match` proves only the bounded source
+# binding described above.
 #
 # Measured on 3,693 Markdown files across five real project clones on
 # 2026-08-03: 10 findings, all inside the two documents that recorded the

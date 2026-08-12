@@ -20,7 +20,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into a secondmate home               |
 | `fm-decision-hold.sh`    | Create, list, verify, complete, and resolve durable captain-held decisions           |
 | `fm-brief.sh`            | Scaffold ship, scout, secondmate-charter, and Herdr-lab briefs                       |
-| `fm-authority-receipts.sh` | Find claims made under the captain's authority that carry no dated quote, ruling, or record behind them |
+| `fm-authority-receipts.sh` | Check captain claims for receipts and bind delivery outcomes to bounded authority sources |
+| `fm-doctrine-contract.sh` | Validate ship delivery contracts and render their selected-review intent             |
 | `fm-learning-promote.sh` | Record a home-local learning's promotion into tracked material and gate its retirement on the change actually landing |
 | `fm-startup-memory-budget.sh` | Read the effective startup-memory budget and report the local estimate for the startup-memory files |
 | `fm-startup-memory-budget-lib.sh` | Single owner of startup-memory budget parsing, default publication, and the portable token estimate |
@@ -58,7 +59,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-project-mode.sh`     | Resolve a project's delivery mode and `+yolo` flag from `data/projects.md`           |
 | `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
 | `fm-merge-main.sh`       | Land a `validated-main` task on the default branch and push it, with no PR           |
-| `fm-validate.sh`         | Start a task's pipeline run with the skip set its delivery mode requires             |
+| `fm-validate.sh`         | Start a topology-derived pipeline run with canonical intent and published final-change evidence |
 | `fm-review-diff.sh`      | Review a crewmate branch, published head, or PR head against the authoritative base  |
 | `fm-marker-lib.sh`       | Compatibility entry point for the from-firstmate carrier owned by `fm-operational-input.sh` |
 | `fm-pending-reply-lib.sh` | Parent-owned secondmate pending-reply expectations, recovery, and one-shot escalation |
@@ -96,7 +97,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
 | `fm-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `fm-pr-merge.sh`         | Record PR metadata, then merge a task's canonical full GitHub URL                    |
-| `fm-promote.sh`          | Promote a scout task in place to a protected ship task                               |
+| `fm-promote.sh`          | Transactionally promote scout evidence into an explicitly authorized ship contract  |
 | `fm-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed scout deliverables, retire secondmate homes, conclude a parked run and reap leaked task processes first |
 | `fm-nm-run-lib.sh`       | Single owner of the branch and code-identity rule attributing a no-mistakes run to a worktree |
 | `fm-harness.sh`          | Detect the running harness and resolve crew or secondmate harness, model, and effort |

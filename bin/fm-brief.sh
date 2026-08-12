@@ -49,7 +49,7 @@
 # For ship tasks, the delivery path inside the definition of done is shaped by the
 # project's delivery mode (data/projects.md via fm-project-mode.sh; see the
 # project-management skill and AGENTS.md task lifecycle):
-#   no-mistakes    implement -> /no-mistakes pipeline -> PR -> captain merge (default)
+#   no-mistakes    implement -> fm-validate.sh -> full pipeline -> PR -> captain merge
 #   validated-main implement -> same pipeline with its PR and CI steps skipped ->
 #                  firstmate merges to main and pushes; no PR is ever opened
 #   direct-PR      implement -> review-only pipeline run (the fresh-context reviewer,

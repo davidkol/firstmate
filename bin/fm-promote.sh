@@ -3,6 +3,8 @@
 # worktree, and loaded context while its brief becomes the canonical ship prompt.
 # The explicit outcome is the authoritative promotion input; the scout report
 # remains evidence, and captain-sourced outcomes bind to existing provenance.
+# Promotion refuses without a non-empty scout report and publishes the rebuilt
+# brief plus ship metadata through a recoverable transaction.
 # Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<authoritative source> => <observable result>' [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
 set -eu
 
