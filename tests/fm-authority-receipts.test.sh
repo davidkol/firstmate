@@ -514,6 +514,42 @@ test_spawn_refuses_invalid_core_delivery_fields_before_launch() {
   pass "fm-spawn.sh: missing, duplicate, placeholder, and illegal core fields fail before launch"
 }
 
+test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
+  local home brief out
+  home="$TMP_ROOT/spawn-doctrine-authority"
+  mkdir -p "$home/data/unbound" "$home/state" "$home/proj"
+  brief="$home/data/unbound/brief.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: captain decision 2026-08-03 => the requested behavior is delivered' \
+    '' \
+    '# What the captain decided' \
+    '- None recorded for this task.' \
+    > "$brief"
+
+  out=$(run_spawn_gate "$home" unbound "$home/proj")
+  expect_code 1 "$?" "spawn must refuse a captain-sourced outcome absent from captain provenance"
+  assert_contains "$out" 'invalid delivery contract' \
+    "the unbound outcome did not reach the delivery-contract gate"
+  assert_contains "$out" 'must also appear in # What the captain decided' \
+    "the refusal did not name the provenance binding"
+
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: captain decision 2026-08-03 => the requested behavior is delivered' \
+    '' \
+    '# What the captain decided' \
+    '- captain decision 2026-08-03: "Deliver the requested behavior."' \
+    > "$brief"
+  "$ROOT/bin/fm-authority-receipts.sh" "$brief" \
+    || fail "the bound captain source should pass the existing receipt check"
+  "$ROOT/bin/fm-doctrine-contract.sh" check "$brief" \
+    || fail "the outcome source repeated in receipted captain provenance should pass"
+  pass "fm-spawn.sh: captain outcomes are bound to receipted provenance"
+}
+
 # Driven against a real scaffold rather than a fixture, because the trap is in
 # the scaffold's own text: a generated brief explains that it "cannot inspect the
 # task text that replaces `{TASK}` later", so a substring match would refuse every
@@ -594,5 +630,6 @@ test_a_sub_bullet_is_judged_on_its_own_text
 test_spawn_refuses_a_brief_that_claims_the_captain_without_a_receipt
 test_spawn_refuses_a_brief_with_an_unreplaced_placeholder
 test_spawn_refuses_invalid_core_delivery_fields_before_launch
+test_spawn_binds_captain_outcome_to_the_receipted_provenance_block
 test_spawn_lets_a_filled_generated_brief_past_the_placeholder_gate
 test_help_includes_entire_header

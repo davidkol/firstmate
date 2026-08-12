@@ -50,8 +50,10 @@
 # `no-mistakes axi respond` as usual; this script only starts the run.
 # The selected review intent comes from the validated delivery contract in the
 # task brief. A legacy caller-supplied --intent is accepted but ignored so a
-# paraphrase cannot weaken or replace the canonical outcome.
-# Usage: fm-validate.sh <task-id> [extra axi run args...]
+# paraphrase cannot weaken or replace the canonical outcome. At least one
+# --evidence path must name a non-empty executed result or capture inside the
+# task worktree; those paths are forwarded to the selected reviewer.
+# Usage: fm-validate.sh <task-id> --evidence <path> [--evidence <path>...] [extra axi run args...]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -61,7 +63,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
 usage() {
-  echo 'usage: fm-validate.sh <task-id> [extra axi run args...]' >&2
+  echo 'usage: fm-validate.sh <task-id> --evidence <path> [--evidence <path>...] [extra axi run args...]' >&2
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -75,10 +77,6 @@ shift
 
 BRIEF="$DATA/$ID/brief.md"
 [ -f "$BRIEF" ] || { echo "error: no brief for task $ID at $BRIEF" >&2; exit 1; }
-REVIEW_INTENT=$("$SCRIPT_DIR/fm-doctrine-contract.sh" review-intent "$BRIEF") || {
-  echo "error: task $ID has no valid canonical delivery contract; validation did not start" >&2
-  exit 1
-}
 
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
@@ -91,18 +89,17 @@ MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 # another project's pipeline. The meta already records where the task lives, so the
 # binding is checked here rather than left to a worker remembering to cd first.
 WORKTREE=$(grep '^worktree=' "$META" | cut -d= -f2- || true)
-if [ -n "$WORKTREE" ]; then
-  HERE=$(pwd -P)
-  THERE=$(cd "$WORKTREE" 2>/dev/null && pwd -P) || THERE=$WORKTREE
-  case "$HERE" in
-    "$THERE"|"$THERE"/*) ;;
-    *)
-      echo "error: task $ID's worktree is $WORKTREE, but this is $HERE" >&2
-      echo "Run fm-validate.sh from inside the task worktree; a mode-derived skip set must never be applied to another repository's pipeline." >&2
-      exit 1
-      ;;
-  esac
-fi
+[ -n "$WORKTREE" ] || { echo "error: task $ID has no recorded worktree, so final-change evidence cannot be bound to it" >&2; exit 1; }
+HERE=$(pwd -P)
+THERE=$(cd "$WORKTREE" 2>/dev/null && pwd -P) || THERE=$WORKTREE
+case "$HERE" in
+  "$THERE"|"$THERE"/*) ;;
+  *)
+    echo "error: task $ID's worktree is $WORKTREE, but this is $HERE" >&2
+    echo "Run fm-validate.sh from inside the task worktree; a mode-derived skip set must never be applied to another repository's pipeline." >&2
+    exit 1
+    ;;
+esac
 
 # Steps this delivery mode must always omit. review never appears here for any
 # mode; it is the one step every mode keeps.
@@ -116,6 +113,7 @@ esac
 # cannot override the mode's. The two sets are merged below.
 CALLER_SKIP=""
 CALLER_INTENT=""
+EVIDENCE_PATHS=()
 ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -137,12 +135,58 @@ while [ $# -gt 0 ]; do
       CALLER_INTENT=${1#--intent=}
       shift
       ;;
+    --evidence)
+      [ $# -ge 2 ] || { echo "error: --evidence needs a path" >&2; exit 1; }
+      EVIDENCE_PATHS+=("$2")
+      shift 2
+      ;;
+    --evidence=*)
+      EVIDENCE_PATHS+=("${1#--evidence=}")
+      shift
+      ;;
     *)
       ARGS+=("$1")
       shift
       ;;
   esac
 done
+
+[ "${#EVIDENCE_PATHS[@]}" -gt 0 ] || {
+  echo "error: at least one --evidence path is required; save the executed final-change result or capture inside $THERE" >&2
+  exit 1
+}
+
+EVIDENCE_INTENT=""
+for evidence_path in "${EVIDENCE_PATHS[@]}"; do
+  [ -n "$evidence_path" ] || { echo "error: --evidence path cannot be empty" >&2; exit 1; }
+  [ -f "$evidence_path" ] && [ ! -L "$evidence_path" ] && [ -s "$evidence_path" ] || {
+    echo "error: evidence must be a non-empty regular file, not a symlink: $evidence_path" >&2
+    exit 1
+  }
+  evidence_dir=$(cd "$(dirname "$evidence_path")" 2>/dev/null && pwd -P) || {
+    echo "error: evidence directory cannot be resolved: $evidence_path" >&2
+    exit 1
+  }
+  evidence_real="$evidence_dir/$(basename "$evidence_path")"
+  case "$evidence_real" in
+    "$THERE"/*) ;;
+    *)
+      echo "error: evidence must stay inside the task worktree $THERE: $evidence_path" >&2
+      exit 1
+      ;;
+  esac
+  evidence_relative=${evidence_real#"$THERE"/}
+  EVIDENCE_INTENT="${EVIDENCE_INTENT}${EVIDENCE_INTENT:+
+}$evidence_relative"
+done
+
+REVIEW_INTENT=$("$SCRIPT_DIR/fm-doctrine-contract.sh" review-intent "$BRIEF") || {
+  echo "error: task $ID has no valid canonical delivery contract; validation did not start" >&2
+  exit 1
+}
+REVIEW_INTENT="$REVIEW_INTENT
+Executed final-change evidence (inspect each saved result or capture directly):
+$EVIDENCE_INTENT"
 
 if [ -n "$CALLER_INTENT" ]; then
   echo "fm-validate: ignored caller --intent; using the canonical outcome and selected-review contract from $BRIEF." >&2

@@ -643,6 +643,13 @@ read -r MODE _ <<EOF
 $("$FM_ROOT/bin/fm-project-mode.sh" "$REPO")
 EOF
 
+VALIDATE_COMMAND="\`$FM_ROOT/bin/fm-validate.sh $ID --evidence <project-relative-result-or-capture>\`"
+IFS= read -r -d '' VALIDATE_EVIDENCE <<'EOF' || true
+Run each applicable oracle once after the final change and save its executed output or capture inside this worktree.
+Pass every saved result or capture with `--evidence`; one saved execution may satisfy multiple delivery-contract evidence lines when it is genuinely the same oracle.
+EOF
+VALIDATE_EVIDENCE=${VALIDATE_EVIDENCE%$'\n'}
+
 case "$MODE" in
   direct-PR)
     SETUP2="
@@ -655,7 +662,8 @@ Review is the ONLY pipeline step that runs on this path; the other eight are ski
 
 The task is complete only when committed on your branch.
 When it is implemented and committed, start the review with this exact command, from inside your worktree:
-\`$FM_ROOT/bin/fm-validate.sh $ID\`
+$VALIDATE_EVIDENCE
+$VALIDATE_COMMAND
 Do NOT call \`no-mistakes axi run\` directly. Which steps this path skips is derived from the task's recorded delivery mode inside that command rather than typed by you, so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart the review.
 It never skips the review step itself, for any mode.
 You drive the review by responding to its gate: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
@@ -684,7 +692,8 @@ When you believe it is complete, append \`done: {summary}\` to the status file a
 Firstmate will then instruct you to run /no-mistakes to validate the branch.
 
 Start the run with this exact command, from inside your worktree:
-\`$FM_ROOT/bin/fm-validate.sh $ID\`
+$VALIDATE_EVIDENCE
+$VALIDATE_COMMAND
 Do NOT call \`no-mistakes axi run\` directly. This project's delivery path omits the PR and CI steps, and that omission is derived from the task's recorded delivery mode inside that command rather than typed by you - so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart validation.
 It never omits review, test, document or lint for any mode.
 You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
@@ -711,7 +720,8 @@ Review is the ONLY pipeline step that runs on this path; the other eight are ski
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
 When it is implemented and committed, start the review with this exact command, from inside your worktree:
-\`$FM_ROOT/bin/fm-validate.sh $ID\`
+$VALIDATE_EVIDENCE
+$VALIDATE_COMMAND
 Do NOT call \`no-mistakes axi run\` directly. Which steps this path skips is derived from the task's recorded delivery mode inside that command rather than typed by you, so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart the review.
 It never skips the review step itself, for any mode.
 You drive the review by responding to its gate: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
@@ -736,7 +746,8 @@ When you believe it is complete, append \`done: {summary}\` to the status file a
 Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
 
 Start the run with this exact command, from inside your worktree:
-\`$FM_ROOT/bin/fm-validate.sh $ID\`
+$VALIDATE_EVIDENCE
+$VALIDATE_COMMAND
 The wrapper reads the canonical outcome and selected-review contract from this brief; do not replace it with a caller-authored intent paraphrase.
 
 You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.

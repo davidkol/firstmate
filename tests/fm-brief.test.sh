@@ -306,6 +306,27 @@ test_doctrine_contract_is_proportional_and_allows_one_shared_oracle() {
   pass "fm-doctrine-contract.sh: T0/T1 stay light and T2 accepts one shared proof/player oracle"
 }
 
+test_doctrine_contract_ignores_fenced_examples() {
+  local contract out
+  contract="$TMP_ROOT/doctrine-contract-fenced.md"
+  printf '%s\n' \
+    '```md' \
+    '# Delivery contract' \
+    '- task-tier: T3' \
+    '- outcome: sample => sample' \
+    '```' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: tests/fm-brief.test.sh#fenced => the real contract is selected' \
+    > "$contract"
+
+  "$ROOT/bin/fm-doctrine-contract.sh" check "$contract" \
+    || fail "a fenced delivery-contract example must not count as a real section"
+  out=$("$ROOT/bin/fm-doctrine-contract.sh" field "$contract" task-tier)
+  [ "$out" = T0 ] || fail "field extraction selected the fenced example instead of the real contract"
+  pass "fm-doctrine-contract.sh: fenced examples are ignored by checks and field extraction"
+}
+
 # validated-main drops the PR but NOT the automated review: the pipeline's review,
 # test, document and lint steps are exactly what makes landing straight on main
 # safe. A brief that let a worker read "no PR" as "no pipeline" would remove the
@@ -1419,6 +1440,7 @@ test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_ship_brief_scaffolds_only_two_core_doctrine_fields
 test_doctrine_contract_is_proportional_and_allows_one_shared_oracle
+test_doctrine_contract_ignores_fenced_examples
 test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci
 test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr
 test_local_only_brief_runs_a_review_that_publishes_nothing

@@ -24,7 +24,7 @@
 #   (f) a caller's own --skip review is stripped, for every mode
 #   (g) direct-PR and local-only derive the review-only skip set
 #   (h) the full-pipeline modes never skip test, document, or lint
-#   (i) a missing --intent refuses before starting a run
+#   (i) missing executed evidence refuses before starting a run
 #   (j) missing task meta refuses before starting a run
 #   (k) a mode with no recorded value falls back to the full pipeline
 #   (l) running outside the task's recorded worktree refuses before starting a run
@@ -46,6 +46,8 @@ make_case() {
   mkdir -p "$case_dir/state" "$case_dir/wt" "$case_dir/data/task-v1" "$fakebin"
   fm_write_ship_brief "$case_dir/data/task-v1/brief.md" T0 \
     "tests/fm-validate.test.sh:$name => validation starts with the recorded delivery topology"
+  printf '%s\n' 'command: focused-final-change-check' 'exit: 0' 'result: observable behavior passed' \
+    > "$case_dir/wt/final-change-evidence.txt"
   if [ "$mode" != "__none__" ]; then
     fm_write_meta "$case_dir/state/task-v1.meta" \
       "window=fm-task-v1" \
@@ -87,7 +89,8 @@ run_validate_from() {
 
 run_validate() {
   local case_dir=$1; shift
-  run_validate_from "$case_dir" "$case_dir/wt" "$@"
+  run_validate_from "$case_dir" "$case_dir/wt" "$@" \
+    --evidence "$case_dir/wt/final-change-evidence.txt"
 }
 
 invoked() {
@@ -248,6 +251,10 @@ test_t3_review_depth_does_not_change_direct_pr_topology() {
     "t3-direct-pr: the selected reviewer did not receive the applicable parts evidence"
   assert_contains "$out" 'whether the task was under-tiered' \
     "t3-direct-pr: the selected reviewer did not receive the tier-check duty"
+  assert_contains "$out" 'Executed final-change evidence' \
+    "t3-direct-pr: the selected reviewer did not receive the executed evidence"
+  assert_contains "$out" 'final-change-evidence.txt' \
+    "t3-direct-pr: the selected reviewer cannot inspect the saved result"
   assert_contains "$out" 'do not invent a new product target' \
     "t3-direct-pr: the selected reviewer can still manufacture a new target"
   pass "fm-validate keeps T3 evidence depth independent from direct-PR topology"
@@ -292,6 +299,31 @@ test_canonical_intent_comes_from_brief() {
   assert_grep 'ignored caller --intent' "$case_dir/stderr" \
     "caller-intent-ignored: the ignored paraphrase was not disclosed"
   pass "fm-validate derives canonical selected-review intent from the task brief"
+}
+
+test_executed_evidence_is_required_and_forwarded() {
+  local case_dir out rc
+  case_dir=$(make_case required-evidence direct-PR)
+  set +e
+  run_validate_from "$case_dir" "$case_dir/wt" task-v1 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "validation must refuse without an executed evidence capture"
+  assert_grep 'at least one --evidence path is required' "$case_dir/stderr" \
+    "the refusal did not name the missing final-change evidence"
+  [ ! -s "$case_dir/nm.log" ] || fail "the review started without inspectable executed evidence"
+
+  run_validate "$case_dir" task-v1 >/dev/null 2>&1 \
+    || fail "validation should start when a non-empty evidence capture is supplied"
+  out=$(invoked "$case_dir")
+  assert_contains "$out" 'Executed final-change evidence' \
+    "the executed evidence was not forwarded to the selected reviewer"
+  assert_contains "$out" 'final-change-evidence.txt' \
+    "the selected reviewer did not receive the inspectable capture path"
+  assert_not_contains "$out" '--evidence' \
+    "the wrapper leaked its evidence option to no-mistakes instead of consuming it"
+  pass "fm-validate requires and forwards inspectable executed evidence"
 }
 
 test_missing_meta_refuses() {
@@ -349,7 +381,8 @@ test_subdirectory_of_worktree_is_accepted() {
   local case_dir
   case_dir=$(make_case worktree-subdir validated-main)
   mkdir -p "$case_dir/wt/src"
-  run_validate_from "$case_dir" "$case_dir/wt/src" task-v1 --intent "add a thing" >/dev/null 2>&1 \
+  run_validate_from "$case_dir" "$case_dir/wt/src" task-v1 --intent "add a thing" \
+    --evidence "$case_dir/wt/final-change-evidence.txt" >/dev/null 2>&1 \
     || fail "worktree-subdir: fm-validate should accept a subdirectory of the task's worktree"
   assert_contains "$(invoked "$case_dir")" 'axi run --skip pr,ci' \
     "worktree-subdir: the run should start normally from inside the worktree"
@@ -365,6 +398,7 @@ test_caller_cannot_skip_review
 test_light_paths_derive_the_review_only_skip_set
 test_full_pipeline_modes_keep_test_document_and_lint
 test_canonical_intent_comes_from_brief
+test_executed_evidence_is_required_and_forwarded
 test_missing_meta_refuses
 test_absent_mode_falls_back_to_full_pipeline
 test_wrong_worktree_refuses

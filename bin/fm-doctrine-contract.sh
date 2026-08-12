@@ -53,23 +53,49 @@ check_contract() {
       findings++
     }
 
+    function is_fence(line) {
+      return line ~ /^[ \t]*(```|~~~)/
+    }
+
     BEGIN {
       section_count = 0
       in_contract = 0
+      in_captain = 0
+      in_fence = 0
       findings = 0
     }
 
-    /^# Delivery contract[ \t]*$/ {
-      section_count++
-      in_contract = 1
-      next
-    }
+    {
+      if (is_fence($0)) {
+        in_fence = !in_fence
+        next
+      }
+      if (in_fence) next
 
-    in_contract && /^#/ {
-      in_contract = 0
-    }
+      if ($0 ~ /^# Delivery contract[ \t]*$/) {
+        section_count++
+        in_contract = 1
+        in_captain = 0
+        next
+      }
+      if ($0 ~ /^# What the captain decided[ \t]*$/) {
+        in_contract = 0
+        in_captain = 1
+        next
+      }
+      if ($0 ~ /^#/) {
+        in_contract = 0
+        in_captain = 0
+      }
 
-    in_contract {
+      if (in_captain) {
+        if ($0 ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+/) {
+          captain_provenance = captain_provenance "\n" $0
+        }
+        next
+      }
+      if (!in_contract) next
+
       if ($0 ~ /^[ \t]*$/) next
       if ($0 !~ /^- (task-tier|outcome|prove|player|parts|platform|correct):/) {
         finding("unknown delivery-contract line: " $0)
@@ -116,6 +142,9 @@ check_contract() {
           if (placeholder(source) || placeholder(result)) {
             finding("outcome must contain a non-placeholder source pointer and observable result")
           }
+          if (tolower(source) ~ /captain/ && index(tolower(captain_provenance), tolower(source)) == 0) {
+            finding("captain-sourced outcome pointer must also appear in # What the captain decided")
+          }
         }
       }
 
@@ -150,6 +179,16 @@ field_value() {
       sub(/^[ \t]+/, "", value)
       sub(/[ \t]+$/, "", value)
       return value
+    }
+    function is_fence(line) {
+      return line ~ /^[ \t]*(```|~~~)/
+    }
+    {
+      if (is_fence($0)) {
+        in_fence = !in_fence
+        next
+      }
+      if (in_fence) next
     }
     /^# Delivery contract[ \t]*$/ { in_contract = 1; next }
     in_contract && /^#/ { exit }

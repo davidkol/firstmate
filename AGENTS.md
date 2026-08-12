@@ -324,8 +324,8 @@ After an autonomous merge or landing, give the captain a one-line outcome: the f
 
 For a no-mistakes or validated-main ship, firstmate triggers validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
 For a direct-PR or local-only ship, the worker starts its own review from its brief as soon as it commits, so firstmate triggers nothing for those two and never sends a second `axi run` for a light path already under way.
-Every mode starts through `bin/fm-validate.sh <id>`, which reads the canonical tier, outcome, and applicable evidence from the task brief and derives the pipeline's skip set from the task's recorded delivery mode: validated-main omits the PR and CI steps, direct-PR and local-only keep review alone and omit the other eight, and no-mistakes omits nothing.
-The wrapper gives the selected reviewer only its role-specific doctrine contract and ignores a caller-authored intent paraphrase.
+Every mode starts through `bin/fm-validate.sh <id> --evidence <project-relative-result-or-capture>`, which reads the canonical tier, outcome, and applicable evidence from the task brief and derives the pipeline's skip set from the task's recorded delivery mode: validated-main omits the PR and CI steps, direct-PR and local-only keep review alone and omit the other eight, and no-mistakes omits nothing.
+The wrapper requires inspectable executed final-change evidence inside the task's isolated copy, gives the selected reviewer that evidence plus its role-specific doctrine contract, and ignores a caller-authored intent paraphrase.
 That skip set never includes review for any mode, and never drops test, document, or lint from a full-pipeline mode.
 The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.
