@@ -517,7 +517,7 @@ test_spawn_refuses_invalid_core_delivery_fields_before_launch() {
 test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   local home brief out
   home="$TMP_ROOT/spawn-doctrine-authority"
-  mkdir -p "$home/data/unbound" "$home/data/vague" "$home/data/ambiguous" "$home/data/prefix" "$home/state" "$home/proj"
+  mkdir -p "$home/data/unbound" "$home/data/vague" "$home/data/generic" "$home/data/ambiguous" "$home/data/prefix" "$home/state" "$home/proj"
   brief="$home/data/unbound/brief.md"
   printf '%s\n' \
     '# Delivery contract' \
@@ -548,8 +548,24 @@ test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
     || fail "the misleading case must clear the existing receipt check to reproduce the boundary failure"
   out=$(run_spawn_gate "$home" vague "$home/proj")
   expect_code 1 "$?" "spawn must not bind a generic captain word to an unrelated receipted decision"
-  assert_contains "$out" 'must identify exactly one receipted entry' \
-    "the vague captain source was not refused at the delivery-contract gate"
+  assert_contains "$out" 'must use captain decision <complete-id>' \
+    "the vague captain source was not refused as a noncanonical receipt pointer"
+
+  brief="$home/data/generic/brief.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: decision 1 => enable X' \
+    '' \
+    '# What the captain decided' \
+    '- Captain decision 1: "Do not enable X."' \
+    > "$brief"
+  "$ROOT/bin/fm-authority-receipts.sh" "$brief" \
+    || fail "the generic-pointer case must clear the existing receipt check to reproduce the boundary failure"
+  out=$(run_spawn_gate "$home" generic "$home/proj")
+  expect_code 1 "$?" "spawn must reject an ambiguous generic decision pointer"
+  assert_contains "$out" 'must use captain decision <complete-id>' \
+    "the generic decision pointer was not refused at the delivery-contract gate"
 
   brief="$home/data/ambiguous/brief.md"
   printf '%s\n' \

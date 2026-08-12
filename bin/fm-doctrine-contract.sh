@@ -68,31 +68,25 @@ check_contract() {
       return 1
     }
 
-    function bounded_receipt_match(entry, source, lower_entry, lower_source, offset, relative, start, finish, before, after) {
-      lower_entry = tolower(entry)
-      lower_source = tolower(source)
-      offset = 1
-      while (offset <= length(lower_entry)) {
-        relative = index(substr(lower_entry, offset), lower_source)
-        if (relative == 0) return 0
-        start = offset + relative - 1
-        finish = start + length(lower_source) - 1
-        before = start > 1 ? substr(lower_entry, start - 1, 1) : ""
-        after = finish < length(lower_entry) ? substr(lower_entry, finish + 1, 1) : ""
-        if (before !~ /[[:alnum:]_.#\/-]/ && after !~ /[[:alnum:]_.#\/-]/) return 1
-        offset = start + 1
-      }
+    function canonical_captain_pointer(value, normalized) {
+      normalized = tolower(trim(value))
+      if (normalized ~ /^captain decision [[:alnum:]_.#\/-]+$/) return normalized
+      return ""
+    }
+
+    function captain_pointer_like(value, normalized) {
+      normalized = tolower(trim(value))
+      if (normalized ~ /(^|[^[:alnum:]_])captain([^[:alnum:]_]|$)/) return 1
+      if (normalized ~ /^(decision|ruling)([ 	]|$)/) return 1
       return 0
     }
 
-    function has_authority_receipt(line, lower) {
-      lower = tolower(line)
-      if (lower ~ /[12][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) return 1
-      if (lower ~ /(ruling|rulings|decision|decisions)[ ]*#?[ ]*[0-9]/) return 1
-      if (lower ~ /"[^"]+"/) return 1
-      if (index(lower, "\342\200\234") > 0) return 1
-      if (lower ~ /captain-decisions/) return 1
-      return 0
+    function captain_entry_matches(entry, pointer, normalized, following) {
+      normalized = tolower(entry)
+      sub(/^[ 	]*([-*+]|[0-9]+\.)[ 	]+/, "", normalized)
+      if (index(normalized, pointer) != 1) return 0
+      following = substr(normalized, length(pointer) + 1, 1)
+      return following == "" || following !~ /[[:alnum:]_.#\/-]/
     }
 
     BEGIN {
@@ -191,14 +185,15 @@ check_contract() {
           if (placeholder(source) || placeholder(result)) {
             finding("outcome must contain a non-placeholder source pointer and observable result")
           }
-          if (tolower(source) ~ /captain/) {
+          captain_pointer = canonical_captain_pointer(source)
+          if (captain_pointer_like(source) && captain_pointer == "") {
+            finding("captain authority source pointer must use captain decision <complete-id>")
+          } else if (captain_pointer != "") {
             captain_matches = 0
-            if (has_authority_receipt(source)) {
-              for (captain_item = 1; captain_item <= captain_count; captain_item++) {
-                if (bounded_receipt_match(captain_entry[captain_item], source)) {
-                  captain_matches++
-                  captain_match_index = captain_item
-                }
+            for (captain_item = 1; captain_item <= captain_count; captain_item++) {
+              if (captain_entry_matches(captain_entry[captain_item], captain_pointer)) {
+                captain_matches++
+                captain_match_index = captain_item
               }
             }
             if (captain_matches != 1) {

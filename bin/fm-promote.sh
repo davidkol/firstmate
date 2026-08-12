@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Promote a scout task to a ship task in place: the crewmate keeps its window,
 # worktree, and loaded context while its brief becomes the canonical ship prompt.
-# The outcome result must occur verbatim in the accepted scout report, and its
-# source must pass the existing authority/provenance check.
-# Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<source> => <accepted scout finding>' [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
+# The explicit outcome is the authoritative promotion input; the scout report
+# remains evidence, and captain-sourced outcomes bind to existing provenance.
+# Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<authoritative source> => <observable result>' [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,7 +58,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "$TASK_TIER" ] && [ -n "$OUTCOME" ] || {
-  echo "error: promotion needs --task-tier and --outcome from the accepted scout finding; task $ID remains a scout" >&2
+  echo "error: promotion needs --task-tier and explicit authoritative --outcome; the scout report is evidence only and task $ID remains a scout" >&2
   exit 1
 }
 
@@ -69,7 +69,7 @@ grep -qx 'kind=scout' "$META" || { echo "error: task $ID is not a scout task (ki
 BRIEF="$DATA/$ID/brief.md"
 REPORT="$DATA/$ID/report.md"
 [ -f "$BRIEF" ] || { echo "error: no scout brief for task $ID at $BRIEF" >&2; exit 1; }
-[ -s "$REPORT" ] || { echo "error: no accepted scout report for task $ID at $REPORT" >&2; exit 1; }
+[ -s "$REPORT" ] || { echo "error: no scout evidence report for task $ID at $REPORT" >&2; exit 1; }
 
 case "$OUTCOME" in
   *'=>'*) ;;
@@ -78,14 +78,13 @@ esac
 OUTCOME_RESULT=${OUTCOME#*=>}
 OUTCOME_RESULT=$(printf '%s\n' "$OUTCOME_RESULT" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
 [ -n "$OUTCOME_RESULT" ] || { echo "error: --outcome has no observable result" >&2; exit 1; }
-grep -F -- "$OUTCOME_RESULT" "$REPORT" >/dev/null || {
-  echo "error: outcome result is not an exact accepted finding in $REPORT; task $ID remains a scout pending design resolution" >&2
-  exit 1
-}
 
 PROJECT=$(sed -n 's/^project=//p' "$META" | sed -n '1p')
 [ -n "$PROJECT" ] || { echo "error: task $ID has no project in $META" >&2; exit 1; }
 REPO=$(basename "$PROJECT")
+read -r PROMOTION_MODE _ <<EOF
+$("$FM_ROOT/bin/fm-project-mode.sh" "$REPO")
+EOF
 
 STAGE=$(mktemp -d "$DATA/$ID/.promote.XXXXXX")
 TASK_BODY="$STAGE/task"
@@ -136,9 +135,11 @@ if grep -Fx '# Herdr isolation - HARD SAFETY CONTRACT' "$BRIEF" >/dev/null; then
   HERDR_ARG=--herdr-lab
 fi
 if [ -n "$HERDR_ARG" ]; then
-  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" "$HERDR_ARG" >/dev/null
+  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_PROMOTED_SCOUT=1 \
+    "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" "$HERDR_ARG" >/dev/null
 else
-  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" >/dev/null
+  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_PROMOTED_SCOUT=1 \
+    "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" >/dev/null
 fi
 
 awk -v task_file="$TASK_BODY" -v provenance_file="$PROVENANCE" -v contract_file="$CONTRACT" '
@@ -192,11 +193,12 @@ awk -v task_file="$TASK_BODY" -v provenance_file="$PROVENANCE" -v contract_file=
   exit 1
 }
 
-grep -v '^kind=' "$META" > "$META_NEXT"
+grep -vE '^(kind|mode)=' "$META" > "$META_NEXT"
 echo "kind=ship" >> "$META_NEXT"
+echo "mode=$PROMOTION_MODE" >> "$META_NEXT"
 mv "$CANDIDATE" "$BRIEF"
 mv "$META_NEXT" "$META"
 
 HOME_Q=$(printf '%q' "$FM_HOME")
 echo "promoted $ID to ship (teardown protection restored)"
-echo "next: FM_HOME=$HOME_Q bin/fm-send.sh fm-$ID '<ship instructions: re-read the updated brief; review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch fm/$ID; implement; report done>'"
+echo "next: FM_HOME=$HOME_Q bin/fm-send.sh fm-$ID '<ship instructions: re-read the updated brief; preserve the scout snapshot; prove a clean default-branch base; create branch fm/$ID; carry only intended fix and regression changes; implement; report done>'"
