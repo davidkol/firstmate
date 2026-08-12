@@ -349,6 +349,61 @@ test_promoted_setup_refuses_non_firstmate_ignored_state() {
   pass "fm-promote.sh: promoted setup refuses non-Firstmate ignored state"
 }
 
+test_promotion_resumes_after_brief_publication() {
+  local dir brief journal original_ship_hash resumed_ship_hash fakebin real_mv rc
+  dir=$(make_scout partial-publication)
+  brief="$dir/home/data/scout-a/brief.md"
+  journal="$dir/home/data/scout-a/.promotion"
+  fakebin="$dir/fail-mv-bin"
+  mkdir -p "$fakebin"
+  real_mv=$(command -v mv)
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+set -u
+last=${!#}
+if [ "$last" = "${FM_TEST_META_DEST:-}" ] && [ ! -e "${FM_TEST_FAIL_ONCE:-}" ]; then
+  : > "${FM_TEST_FAIL_ONCE:?}"
+  exit 1
+fi
+exec "${FM_TEST_REAL_MV:?}" "$@"
+SH
+  chmod +x "$fakebin/mv"
+
+  set +e
+  PATH="$fakebin:$PATH" FM_TEST_REAL_MV="$real_mv" FM_TEST_META_DEST="$dir/home/state/scout-a.meta" \
+    FM_TEST_FAIL_ONCE="$dir/meta-move-failed" run_promote "$dir" \
+      --task-tier T1 \
+      --outcome 'captain decision 1 => Ship X through the bounded path.' \
+      > "$dir/promote.out" 2> "$dir/promote.err"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "promotion must surface an interrupted metadata publication"
+  [ "$(sed -n 's/^kind=//p' "$dir/home/state/scout-a.meta")" = scout ] \
+    || fail "the interrupted publication unexpectedly changed scout metadata"
+  "$ROOT/bin/fm-doctrine-contract.sh" check "$brief" \
+    || fail "the interrupted publication did not leave the validated ship brief in place"
+  [ -d "$journal" ] || fail "the interrupted publication did not preserve its promotion journal"
+  cmp "$brief" "$journal/brief.md" >/dev/null \
+    || fail "the published ship brief does not match the saved promotion candidate"
+  original_ship_hash=$(git hash-object "$brief")
+
+  run_promote "$dir" \
+    --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X through the bounded path.' \
+    > "$dir/retry.out" 2> "$dir/retry.err" \
+    || fail "promotion retry did not resume the saved publication: $(cat "$dir/retry.err")"
+
+  resumed_ship_hash=$(git hash-object "$brief")
+  [ "$resumed_ship_hash" = "$original_ship_hash" ] \
+    || fail "promotion retry reparsed or rewrote the published ship brief"
+  [ "$(sed -n 's/^kind=//p' "$dir/home/state/scout-a.meta")" = ship ] \
+    || fail "promotion retry did not finish metadata publication"
+  [ ! -e "$journal" ] && [ ! -e "$dir/home/data/scout-a/.promotion.done" ] \
+    || fail "promotion retry retained a completed publication journal"
+  pass "fm-promote.sh: promotion resumes after brief publication"
+}
+
 test_promotion_requires_explicit_authority_instead_of_scout_prose() {
   local dir brief original rc
   dir=$(make_scout report-only)
@@ -405,5 +460,6 @@ test_promoted_setup_recovers_across_separate_shells
 test_promoted_setup_refuses_an_unrelated_existing_branch
 test_promoted_import_refuses_residue_on_a_valid_task_branch
 test_promoted_setup_refuses_non_firstmate_ignored_state
+test_promotion_resumes_after_brief_publication
 test_promotion_requires_explicit_authority_instead_of_scout_prose
 test_promotion_refuses_a_generic_decision_pointer

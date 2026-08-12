@@ -248,6 +248,8 @@ SPAWN_TASK_LOCK=
 SPAWN_TASK_LOCK_HELD=0
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
+DISPATCH_TEMPLATE=
+DISPATCH_BRIEF_NEXT=
 
 parse_orca_worktree_result() {
   local raw=$1 rest
@@ -268,6 +270,8 @@ parse_orca_worktree_result() {
 
 spawn_abort_cleanup() {
   local status=$?
+  [ -z "$DISPATCH_TEMPLATE" ] || rm -f "$DISPATCH_TEMPLATE"
+  [ -z "$DISPATCH_BRIEF_NEXT" ] || rm -f "$DISPATCH_BRIEF_NEXT"
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ] \
      && [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
     if ! spawn_herdr_presentation_order_lock_acquire "${HERDR_PROJECTION_ABORT_SESSION:-}"; then
@@ -826,6 +830,100 @@ else
   BRIEF="$DATA/$ID/brief.md"
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
+
+if [ "$KIND" != secondmate ]; then
+  PROJ_NAME=$(basename "$PROJ_ABS")
+  read -r MODE YOLO <<EOF
+$("$FM_ROOT/bin/fm-project-mode.sh" "$PROJ_NAME")
+EOF
+fi
+
+if [ "$KIND" = ship ]; then
+  DELIVERY_MARKERS=$(grep -c '^<!-- firstmate-delivery-.*:\(start\|end\) -->$' "$BRIEF" || true)
+  if [ "$DELIVERY_MARKERS" -eq 8 ]; then
+    DISPATCH_TEMPLATE=$(mktemp "$DATA/$ID/.dispatch-template.XXXXXX")
+    rm -f "$DISPATCH_TEMPLATE"
+    BRIEF_ARGS=()
+    if grep -Fxq '# Herdr isolation - HARD SAFETY CONTRACT' "$BRIEF"; then
+      BRIEF_ARGS+=(--herdr-lab)
+    fi
+    PROMOTED_SCOUT=0
+    if grep -Fxq '# Promotion evidence and scout context' "$BRIEF"; then
+      PROMOTED_SCOUT=1
+    fi
+    FM_BRIEF_PATH_OVERRIDE="$DISPATCH_TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$MODE" \
+      FM_BRIEF_YOLO_OVERRIDE="$YOLO" FM_PROMOTED_SCOUT="$PROMOTED_SCOUT" \
+      "$FM_ROOT/bin/fm-brief.sh" "$ID" "$PROJ_NAME" "${BRIEF_ARGS[@]+"${BRIEF_ARGS[@]}"}" >/dev/null
+    DISPATCH_BRIEF_NEXT=$(mktemp "$DATA/$ID/.brief.next.XXXXXX")
+    awk '
+      function start_key(line) {
+        if (line == "<!-- firstmate-delivery-state:start -->") return "state"
+        if (line == "<!-- firstmate-delivery-setup:start -->") return "setup"
+        if (line == "<!-- firstmate-delivery-rule:start -->") return "rule"
+        if (line == "<!-- firstmate-delivery-done:start -->") return "done"
+        return ""
+      }
+      function end_line(key) { return "<!-- firstmate-delivery-" key ":end -->" }
+      FNR == NR {
+        key = start_key($0)
+        if (key != "") {
+          capture = key
+          blocks[key] = $0 ORS
+          captured[key]++
+          next
+        }
+        if (capture != "") {
+          blocks[capture] = blocks[capture] $0 ORS
+          if ($0 == end_line(capture)) capture = ""
+        }
+        next
+      }
+      {
+        key = start_key($0)
+        if (key != "") {
+          printf "%s", blocks[key]
+          skip = key
+          replaced[key]++
+          next
+        }
+        if (skip != "") {
+          if ($0 == end_line(skip)) skip = ""
+          next
+        }
+        print
+      }
+      END {
+        if (capture != "" || skip != "") bad = 1
+        for (i = 1; i <= 4; i++) {
+          key = (i == 1 ? "state" : i == 2 ? "setup" : i == 3 ? "rule" : "done")
+          if (captured[key] != 1 || replaced[key] != 1) bad = 1
+        }
+        if (bad) exit 1
+      }
+    ' "$DISPATCH_TEMPLATE" "$BRIEF" > "$DISPATCH_BRIEF_NEXT" || {
+      echo "error: brief delivery sections are not a complete canonical set; re-scaffold $BRIEF" >&2
+      exit 1
+    }
+    mv "$DISPATCH_BRIEF_NEXT" "$BRIEF"
+    DISPATCH_BRIEF_NEXT=
+    rm -f "$DISPATCH_TEMPLATE"
+    DISPATCH_TEMPLATE=
+  elif [ "$DELIVERY_MARKERS" -ne 0 ]; then
+    echo "error: brief delivery sections are incomplete; re-scaffold $BRIEF" >&2
+    exit 1
+  else
+    if grep -qF 'This project ships **' "$BRIEF" \
+       && ! grep -qF "This project ships **$MODE**" "$BRIEF"; then
+      echo "error: $BRIEF records a stale delivery mode; re-scaffold it before dispatch" >&2
+      exit 1
+    fi
+    if grep -qF 'promotion delivery state is **mode=' "$BRIEF" \
+       && ! grep -qF "promotion delivery state is **mode=$MODE, yolo=$YOLO**" "$BRIEF"; then
+      echo "error: $BRIEF records stale promotion delivery state; regenerate it before dispatch" >&2
+      exit 1
+    fi
+  fi
+fi
 
 # fm-brief.sh emits {TASK}, on ship briefs {TASK_TIER} and {OUTCOME}, and on
 # ship and scout briefs {CAPTAIN_RULINGS} and {FIRSTMATE_INFERENCE}, with the
@@ -1640,11 +1738,6 @@ if [ "$KIND" = secondmate ]; then
   MODE=secondmate
   YOLO=off
   SECONDMATE_PROJECTS=$(secondmate_registry_value "$ID" projects || true)
-else
-  PROJ_NAME=$(basename "$PROJ_ABS")
-  read -r MODE YOLO <<EOF
-$("$FM_ROOT/bin/fm-project-mode.sh" "$PROJ_NAME")
-EOF
 fi
 
 META_WINDOW=$T

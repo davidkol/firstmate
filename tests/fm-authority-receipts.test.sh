@@ -639,6 +639,12 @@ test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   assert_contains "$out" 'must use captain decision <complete-id>' \
     "an authority-shaped path bypassed exact receipt resolution"
 
+  sed 's#notes/captain-decision-1#notes/captain_decision_1.md#' "$brief" > "$brief.underscore"
+  out=$("$ROOT/bin/fm-doctrine-contract.sh" check "$brief.underscore" 2>&1)
+  expect_code 1 "$?" "the doctrine gate must reject an underscore-separated authority pointer"
+  assert_contains "$out" 'must use captain decision <complete-id>' \
+    "an underscore-separated authority path bypassed canonical receipt resolution"
+
   brief="$home/data/ambiguous/brief.md"
   printf '%s\n' \
     '# Delivery contract' \

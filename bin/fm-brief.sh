@@ -815,7 +815,9 @@ if [ "${FM_PROMOTED_SCOUT:-0}" = 1 ]; then
   IFS= read -r -d '' SHIP_SETUP <<EOF || true
 # Setup
 You are in the existing disposable scout worktree of $REPO. Its current HEAD and dirty state are recoverable scout evidence, not the ship base.
+<!-- firstmate-delivery-state:start -->
 The promotion delivery state is **mode=$MODE, yolo=$YOLO**. This records Firstmate authority and grants the worker no approval authority.
+<!-- firstmate-delivery-state:end -->
 
 **Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a treehouse pool path or an Orca-managed worktree, not the primary checkout firstmate operates from.
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
@@ -827,12 +829,16 @@ If the top-level path is the primary checkout or not the worktree you were launc
 4. Prove and record the base before carrying work: \`source "$FM_ROOT/bin/fm-tangle-lib.sh" && DEFAULT_BRANCH=\$(fm_default_branch .) && BASE_REF=refs/fm-promote/$ID/base && IGNORED_STATE_OK=1 && while IFS= read -r -d '' IGNORED_PATH; do case "\$IGNORED_PATH" in .claude/settings.local.json|.opencode/plugins/fm-busy-state.js|.opencode/plugins/fm-turn-end.js|.fm-grok-turnend|.fm-kimi-turnend) : ;; *) printf 'blocked: promoted scout contains ignored path %s; preserve this scout and start a fresh ship instead\n' "\$IGNORED_PATH" >&2; IGNORED_STATE_OK=0 ;; esac; done < <(git ls-files --others --ignored --exclude-standard -z) && test "\$IGNORED_STATE_OK" = 1 && test -z "\$(git status --porcelain)" && if git show-ref --verify --quiet "\$BASE_REF"; then test "\$(git rev-parse HEAD)" = "\$(git rev-parse "\$BASE_REF")"; else test "\$(git rev-parse HEAD)" = "\$(git rev-parse "refs/heads/\$DEFAULT_BRANCH")" && git update-ref "\$BASE_REF" HEAD ""; fi\`. If it fails, preserve every recovery ref and append \`blocked: promoted scout could not establish its clean promotion base; start a fresh ship instead\` and stop.
 5. Only after that proof, create or reuse the ship branch: \`BASE_REF=refs/fm-promote/$ID/base && if git show-ref --verify --quiet refs/heads/fm/$ID; then git merge-base --is-ancestor "\$BASE_REF" refs/heads/fm/$ID && git switch fm/$ID; else git checkout -b fm/$ID && git merge-base --is-ancestor "\$BASE_REF" HEAD; fi\`.
 6. Import only the intended implementation and regression-test paths transactionally: \`REF=refs/fm-promote/$ID/scout-snapshot && IMPORT_REF=refs/fm-promote/$ID/import && BASE_REF=refs/fm-promote/$ID/base && test -z "\$(git status --porcelain)" && set -- <paths> && test "\$#" -gt 0 && OUTSIDE_PATHS=(":(top,glob)**") && for SELECTED_PATH in "\$@"; do OUTSIDE_PATHS+=(":(top,literal,exclude)\$SELECTED_PATH"); done && if git show-ref --verify --quiet "\$IMPORT_REF"; then :; elif git diff --quiet "\$REF" HEAD -- "\$@"; then git update-ref "\$IMPORT_REF" HEAD ""; else git restore --source "\$REF" -- "\$@" && git add -A -- "\$@" && git commit -m "import promoted scout work" && git update-ref "\$IMPORT_REF" HEAD ""; fi && git merge-base --is-ancestor "\$IMPORT_REF" HEAD && git diff --quiet "\$REF" "\$IMPORT_REF" -- "\$@" && test -z "\$(git status --porcelain)" && git diff --quiet "\$BASE_REF"...HEAD -- "\${OUTSIDE_PATHS[@]}" && git update-ref -d "\$IMPORT_REF" && git update-ref -d "\$REF" && git update-ref -d "\$BASE_REF"\`. This applies and commits only the selected paths, proves the import is reachable and the complete branch diff contains no other paths, and leaves the recovery refs intact on any earlier failure. Leave scratch commits and debug residue behind, then orient against the promoted task. $ORIENT_1
-   $ORIENT_2$PROMOTION_SETUP2$MEMORY_SECTION
+   $ORIENT_2
+<!-- firstmate-delivery-setup:start -->$PROMOTION_SETUP2
+<!-- firstmate-delivery-setup:end -->$MEMORY_SECTION
 EOF
 else
   IFS= read -r -d '' SHIP_SETUP <<EOF || true
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
+<!-- firstmate-delivery-state:start -->
+<!-- firstmate-delivery-state:end -->
 
 **Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a treehouse pool path or an Orca-managed worktree, not the primary checkout firstmate operates from.
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
@@ -840,7 +846,9 @@ If the top-level path is the primary checkout or not the worktree you were launc
 
 1. First action: create your branch: \`git checkout -b fm/$ID\`
 2. Then orient, before you build anything. $ORIENT_1
-   $ORIENT_2$SETUP2$MEMORY_SECTION
+   $ORIENT_2
+<!-- firstmate-delivery-setup:start -->$SETUP2
+<!-- firstmate-delivery-setup:end -->$MEMORY_SECTION
 EOF
 fi
 SHIP_SETUP=${SHIP_SETUP%$'\n'}
@@ -864,7 +872,9 @@ $HERDR_SECTION
 $SHIP_SETUP
 
 # Rules
+<!-- firstmate-delivery-rule:start -->
 $RULE1
+<!-- firstmate-delivery-rule:end -->
 2. Stay inside this worktree; modify nothing outside it.
 3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
 4. Report status by appending one line:
@@ -904,6 +914,8 @@ If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, ad
 # Definition of done
 $CHECKLIST
 
+<!-- firstmate-delivery-done:start -->
 $DOD
+<!-- firstmate-delivery-done:end -->
 EOF
 echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK}, {TASK_TIER}, {OUTCOME}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE}; add only applicable evidence lines)"

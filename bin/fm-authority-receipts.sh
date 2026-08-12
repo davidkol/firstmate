@@ -220,9 +220,12 @@ awk '
     return l ~ /^captain decision [[:alnum:]_.#\/-]+$/
   }
 
-  function authority_pointer_shaped(l) {
-    if (l ~ /(^|[^[:alnum:]_])captain([^[:alnum:]_]|$)/) return 1
-    if (l ~ /(^|[^[:alnum:]_])(decision|decisions|ruling|rulings)([^[:alnum:]_]|$)/) return 1
+  function authority_pointer_shaped(l, words) {
+    words = tolower(l)
+    gsub(/[^[:alnum:]]+/, " ", words)
+    words = " " trim(words) " "
+    if (index(words, " captain ") > 0) return 1
+    if (words ~ / (decision|decisions|ruling|rulings) /) return 1
     return 0
   }
 

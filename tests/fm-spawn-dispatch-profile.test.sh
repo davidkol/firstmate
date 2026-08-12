@@ -466,6 +466,43 @@ test_active_dispatch_profile_does_not_block_secondmate_launch() {
   pass "active crew-dispatch profile does not block secondmate launches"
 }
 
+test_spawn_freezes_delivery_posture_across_prompt_and_metadata() {
+  local rec id out status brief
+  id=profile-posture-z17
+  rec=$(make_spawn_case profile-posture claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  rm -f "$brief"
+  printf '%s\n' '- project [direct-PR +yolo] - dispatch posture fixture (added 2026-08-12)' \
+    > "$HOME_DIR/data/projects.md"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    "$ROOT/bin/fm-brief.sh" "$id" project >/dev/null \
+    || fail "could not scaffold the dispatch-posture brief"
+  awk '
+    $0 == "{TASK}" { print "Document the frozen dispatch posture."; next }
+    $0 == "- task-tier: {TASK_TIER}" { print "- task-tier: T0"; next }
+    $0 == "- outcome: {OUTCOME}" { print "- outcome: tests/fm-spawn-dispatch-profile.test.sh#posture => dispatch prompt and metadata agree"; next }
+    $0 == "{CAPTAIN_RULINGS}" { print "- None recorded for this task."; next }
+    $0 == "{FIRSTMATE_INFERENCE}" { print "- The dispatch posture is resolved at launch."; next }
+    { print }
+  ' "$brief" > "$brief.filled" && mv "$brief.filled" "$brief"
+  printf '%s\n' '- project [local-only] - dispatch posture fixture (added 2026-08-12)' \
+    > "$HOME_DIR/data/projects.md"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "spawn should re-render the final prompt from its frozen dispatch posture: $out"
+  assert_grep 'mode=local-only' "$HOME_DIR/state/$id.meta" \
+    "dispatch metadata did not use the frozen current mode"
+  assert_grep 'yolo=off' "$HOME_DIR/state/$id.meta" \
+    "dispatch metadata did not use the frozen current yolo posture"
+  assert_grep 'This project ships **local-only**' "$brief" \
+    "the final worker prompt did not use the same frozen mode as metadata"
+  assert_no_grep 'This project ships **direct-PR**' "$brief" \
+    "the final worker prompt retained its stale scaffold-time mode"
+  pass "fm-spawn.sh: dispatch freezes prompt and metadata posture together"
+}
+
 test_no_profile_keeps_claude_profile_defaults
 test_active_dispatch_profile_requires_explicit_harness_for_ship
 test_active_dispatch_profile_requires_explicit_harness_for_scout
@@ -485,5 +522,6 @@ test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags
 test_active_dispatch_profile_does_not_block_secondmate_launch
+test_spawn_freezes_delivery_posture_across_prompt_and_metadata
 
 echo "# all fm-spawn-dispatch-profile tests passed"

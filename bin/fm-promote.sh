@@ -64,11 +64,106 @@ done
 
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
-grep -qx 'kind=scout' "$META" || { echo "error: task $ID is not a scout task (kind=scout not in meta)" >&2; exit 1; }
-
 BRIEF="$DATA/$ID/brief.md"
 REPORT="$DATA/$ID/report.md"
 [ -f "$BRIEF" ] || { echo "error: no scout brief for task $ID at $BRIEF" >&2; exit 1; }
+JOURNAL="$DATA/$ID/.promotion"
+JOURNAL_DONE="$DATA/$ID/.promotion.done"
+JOURNAL_BRIEF="$JOURNAL/brief.md"
+JOURNAL_META="$JOURNAL/meta"
+JOURNAL_ORIGINAL_BRIEF="$JOURNAL/original-brief.md"
+JOURNAL_ORIGINAL_META="$JOURNAL/original-meta"
+STAGE=
+PUBLISH_TMP=
+
+cleanup() {
+  [ -z "$PUBLISH_TMP" ] || rm -f "$PUBLISH_TMP"
+  if [ -n "$STAGE" ] && [ -d "$STAGE" ]; then
+    rm -f "$STAGE/scout-task" "$STAGE/ship-task" "$STAGE/promotion-context" \
+      "$STAGE/provenance" "$STAGE/contract" "$STAGE/template.md" \
+      "$STAGE/brief.md" "$STAGE/meta"
+    rmdir "$STAGE" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+publish_journal_file() {
+  local source=$1 destination=$2
+  PUBLISH_TMP=$(mktemp "$(dirname "$destination")/.$(basename "$destination").promote.XXXXXX")
+  cp "$source" "$PUBLISH_TMP"
+  mv "$PUBLISH_TMP" "$destination"
+  PUBLISH_TMP=
+}
+
+promotion_result() {
+  local home_q
+  home_q=$(printf '%q' "$FM_HOME")
+  echo "promoted $ID to ship (teardown protection restored)"
+  echo "next: FM_HOME=$home_q bin/fm-send.sh fm-$ID '<ship instructions: re-read the updated brief; preserve the scout snapshot; prove a clean default-branch base; create branch fm/$ID; carry only intended fix and regression changes; implement; report done>'"
+}
+
+if [ -d "$JOURNAL_DONE" ]; then
+  grep -qx 'kind=ship' "$META" || {
+    echo "error: completed promotion journal for $ID disagrees with metadata" >&2
+    exit 1
+  }
+  rm -f "$JOURNAL_DONE/ready" "$JOURNAL_DONE/brief.md" "$JOURNAL_DONE/meta" \
+    "$JOURNAL_DONE/original-brief.md" "$JOURNAL_DONE/original-meta"
+  rmdir "$JOURNAL_DONE"
+  promotion_result
+  exit 0
+fi
+
+if [ -d "$JOURNAL" ]; then
+  if [ ! -f "$JOURNAL/ready" ]; then
+    if grep -qx 'kind=scout' "$META" && ! grep -Fxq '# Delivery contract' "$BRIEF"; then
+      rm -f "$JOURNAL_BRIEF" "$JOURNAL_META" "$JOURNAL_ORIGINAL_BRIEF" \
+        "$JOURNAL_ORIGINAL_META" "$JOURNAL/ready"
+      rmdir "$JOURNAL" 2>/dev/null || {
+        echo "error: incomplete promotion journal for $ID cannot be recovered safely" >&2
+        exit 1
+      }
+    else
+      echo "error: incomplete promotion journal for $ID does not match current task state" >&2
+      exit 1
+    fi
+  else
+    [ -f "$JOURNAL_BRIEF" ] && [ -f "$JOURNAL_META" ] \
+      && [ -f "$JOURNAL_ORIGINAL_BRIEF" ] && [ -f "$JOURNAL_ORIGINAL_META" ] || {
+        echo "error: promotion journal for $ID is incomplete" >&2
+        exit 1
+      }
+    if cmp "$BRIEF" "$JOURNAL_ORIGINAL_BRIEF" >/dev/null \
+       && cmp "$META" "$JOURNAL_ORIGINAL_META" >/dev/null; then
+      publish_journal_file "$JOURNAL_BRIEF" "$BRIEF"
+    elif ! cmp "$BRIEF" "$JOURNAL_BRIEF" >/dev/null \
+         || ! cmp "$META" "$JOURNAL_ORIGINAL_META" >/dev/null; then
+      if cmp "$BRIEF" "$JOURNAL_BRIEF" >/dev/null \
+         && cmp "$META" "$JOURNAL_META" >/dev/null; then
+        :
+      else
+        echo "error: promotion journal for $ID does not match current brief and metadata" >&2
+        exit 1
+      fi
+    fi
+    if cmp "$META" "$JOURNAL_ORIGINAL_META" >/dev/null; then
+      publish_journal_file "$JOURNAL_META" "$META"
+    fi
+    cmp "$BRIEF" "$JOURNAL_BRIEF" >/dev/null \
+      && cmp "$META" "$JOURNAL_META" >/dev/null || {
+        echo "error: promotion publication for $ID did not converge" >&2
+        exit 1
+      }
+    mv "$JOURNAL" "$JOURNAL_DONE"
+    rm -f "$JOURNAL_DONE/ready" "$JOURNAL_DONE/brief.md" "$JOURNAL_DONE/meta" \
+      "$JOURNAL_DONE/original-brief.md" "$JOURNAL_DONE/original-meta"
+    rmdir "$JOURNAL_DONE"
+    promotion_result
+    exit 0
+  fi
+fi
+
+grep -qx 'kind=scout' "$META" || { echo "error: task $ID is not a scout task (kind=scout not in meta)" >&2; exit 1; }
 [ -s "$REPORT" ] || { echo "error: no scout evidence report for task $ID at $REPORT" >&2; exit 1; }
 
 case "$OUTCOME" in
@@ -95,11 +190,6 @@ CONTRACT="$STAGE/contract"
 TEMPLATE="$STAGE/template.md"
 CANDIDATE="$STAGE/brief.md"
 META_NEXT="$STAGE/meta"
-cleanup() {
-  rm -f "$SCOUT_TASK" "$SHIP_TASK" "$PROMOTION_CONTEXT" "$PROVENANCE" "$CONTRACT" "$TEMPLATE" "$CANDIDATE" "$META_NEXT"
-  rmdir "$STAGE" 2>/dev/null || true
-}
-trap cleanup EXIT
 
 awk '
   $0 == "# Task" { active = 1; next }
@@ -212,9 +302,20 @@ grep -vE '^(kind|mode|yolo)=' "$META" > "$META_NEXT"
 echo "kind=ship" >> "$META_NEXT"
 echo "mode=$PROMOTION_MODE" >> "$META_NEXT"
 echo "yolo=$PROMOTION_YOLO" >> "$META_NEXT"
-mv "$CANDIDATE" "$BRIEF"
-mv "$META_NEXT" "$META"
-
-HOME_Q=$(printf '%q' "$FM_HOME")
-echo "promoted $ID to ship (teardown protection restored)"
-echo "next: FM_HOME=$HOME_Q bin/fm-send.sh fm-$ID '<ship instructions: re-read the updated brief; preserve the scout snapshot; prove a clean default-branch base; create branch fm/$ID; carry only intended fix and regression changes; implement; report done>'"
+mkdir "$JOURNAL" || { echo "error: promotion journal already exists for $ID" >&2; exit 1; }
+cp "$BRIEF" "$JOURNAL_ORIGINAL_BRIEF"
+cp "$META" "$JOURNAL_ORIGINAL_META"
+cp "$CANDIDATE" "$JOURNAL_BRIEF"
+cp "$META_NEXT" "$JOURNAL_META"
+: > "$JOURNAL/ready"
+publish_journal_file "$JOURNAL_BRIEF" "$BRIEF"
+publish_journal_file "$JOURNAL_META" "$META"
+cmp "$BRIEF" "$JOURNAL_BRIEF" >/dev/null && cmp "$META" "$JOURNAL_META" >/dev/null || {
+  echo "error: promotion publication for $ID did not converge" >&2
+  exit 1
+}
+mv "$JOURNAL" "$JOURNAL_DONE"
+rm -f "$JOURNAL_DONE/ready" "$JOURNAL_DONE/brief.md" "$JOURNAL_DONE/meta" \
+  "$JOURNAL_DONE/original-brief.md" "$JOURNAL_DONE/original-meta"
+rmdir "$JOURNAL_DONE"
+promotion_result
