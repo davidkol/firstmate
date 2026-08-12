@@ -151,11 +151,11 @@ if [ -d "$JOURNAL" ]; then
     if cmp "$META" "$JOURNAL_ORIGINAL_META" >/dev/null; then
       publish_journal_file "$JOURNAL_META" "$META"
     fi
-    cmp "$BRIEF" "$JOURNAL_BRIEF" >/dev/null \
-      && cmp "$META" "$JOURNAL_META" >/dev/null || {
-        echo "error: promotion publication for $ID did not converge" >&2
-        exit 1
-      }
+    if ! cmp "$BRIEF" "$JOURNAL_BRIEF" >/dev/null \
+       || ! cmp "$META" "$JOURNAL_META" >/dev/null; then
+      echo "error: promotion publication for $ID did not converge" >&2
+      exit 1
+    fi
     mv "$JOURNAL" "$JOURNAL_DONE"
     rm -f "$JOURNAL_DONE/ready" "$JOURNAL_DONE/brief.md" "$JOURNAL_DONE/meta" \
       "$JOURNAL_DONE/original-brief.md" "$JOURNAL_DONE/original-meta"
@@ -301,9 +301,11 @@ awk -v task_file="$SHIP_TASK" -v context_file="$PROMOTION_CONTEXT" -v provenance
 }
 
 grep -vE '^(kind|mode|yolo)=' "$META" > "$META_NEXT"
-echo "kind=ship" >> "$META_NEXT"
-echo "mode=$PROMOTION_MODE" >> "$META_NEXT"
-echo "yolo=$PROMOTION_YOLO" >> "$META_NEXT"
+{
+  echo "kind=ship"
+  echo "mode=$PROMOTION_MODE"
+  echo "yolo=$PROMOTION_YOLO"
+} >> "$META_NEXT"
 mkdir "$JOURNAL" || { echo "error: promotion journal already exists for $ID" >&2; exit 1; }
 cp "$BRIEF" "$JOURNAL_ORIGINAL_BRIEF"
 cp "$META" "$JOURNAL_ORIGINAL_META"
@@ -312,10 +314,11 @@ cp "$META_NEXT" "$JOURNAL_META"
 : > "$JOURNAL/ready"
 publish_journal_file "$JOURNAL_BRIEF" "$BRIEF"
 publish_journal_file "$JOURNAL_META" "$META"
-cmp "$BRIEF" "$JOURNAL_BRIEF" >/dev/null && cmp "$META" "$JOURNAL_META" >/dev/null || {
+if ! cmp "$BRIEF" "$JOURNAL_BRIEF" >/dev/null \
+   || ! cmp "$META" "$JOURNAL_META" >/dev/null; then
   echo "error: promotion publication for $ID did not converge" >&2
   exit 1
-}
+fi
 mv "$JOURNAL" "$JOURNAL_DONE"
 rm -f "$JOURNAL_DONE/ready" "$JOURNAL_DONE/brief.md" "$JOURNAL_DONE/meta" \
   "$JOURNAL_DONE/original-brief.md" "$JOURNAL_DONE/original-meta"

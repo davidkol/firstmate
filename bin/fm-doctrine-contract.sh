@@ -12,7 +12,7 @@
 # reviewer judge whether the cited evidence establishes the claimed outcome.
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 
 usage() {
   awk '
