@@ -310,21 +310,28 @@ test_doctrine_contract_ignores_fenced_examples() {
   local contract out
   contract="$TMP_ROOT/doctrine-contract-fenced.md"
   printf '%s\n' \
+    '````markdown' \
     '```md' \
     '# Delivery contract' \
     '- task-tier: T3' \
     '- outcome: sample => sample' \
     '```' \
+    '~~~~' \
+    '# Delivery contract' \
+    '- task-tier: T4' \
+    '- outcome: another sample => another sample' \
+    '~~~~' \
+    '`````' \
     '# Delivery contract' \
     '- task-tier: T0' \
     '- outcome: tests/fm-brief.test.sh#fenced => the real contract is selected' \
     > "$contract"
 
   "$ROOT/bin/fm-doctrine-contract.sh" check "$contract" \
-    || fail "a fenced delivery-contract example must not count as a real section"
+    || fail "shorter and alternate fence markers inside a long fence must not expose example contracts"
   out=$("$ROOT/bin/fm-doctrine-contract.sh" field "$contract" task-tier)
-  [ "$out" = T0 ] || fail "field extraction selected the fenced example instead of the real contract"
-  pass "fm-doctrine-contract.sh: fenced examples are ignored by checks and field extraction"
+  [ "$out" = T0 ] || fail "field extraction closed a long fence on a shorter or alternate marker"
+  pass "fm-doctrine-contract.sh: fence character and length protect checks and field extraction"
 }
 
 # validated-main drops the PR but NOT the automated review: the pipeline's review,

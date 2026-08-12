@@ -517,7 +517,7 @@ test_spawn_refuses_invalid_core_delivery_fields_before_launch() {
 test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   local home brief out
   home="$TMP_ROOT/spawn-doctrine-authority"
-  mkdir -p "$home/data/unbound" "$home/data/vague" "$home/data/ambiguous" "$home/state" "$home/proj"
+  mkdir -p "$home/data/unbound" "$home/data/vague" "$home/data/ambiguous" "$home/data/prefix" "$home/state" "$home/proj"
   brief="$home/data/unbound/brief.md"
   printf '%s\n' \
     '# Delivery contract' \
@@ -565,6 +565,26 @@ test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   expect_code 1 "$?" "an outcome source shared by two provenance entries does not identify a specific receipt"
   assert_contains "$out" 'must identify exactly one receipted entry' \
     "the ambiguous receipt pointer was not refused"
+
+  brief="$home/data/prefix/brief.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: captain decision 1 => dispatch uses decision one' \
+    '' \
+    '# What the captain decided' \
+    '- Captain decision 10: "A different decision."' \
+    > "$brief"
+  "$ROOT/bin/fm-authority-receipts.sh" "$brief" \
+    || fail "the prefix case must clear the existing receipt check to reproduce the binding defect"
+  out=$(run_spawn_gate "$home" prefix "$home/proj")
+  expect_code 1 "$?" "spawn must not bind captain decision 1 to captain decision 10"
+  assert_contains "$out" 'must identify exactly one receipted entry' \
+    "the receipt-prefix mismatch was not refused at the delivery-contract gate"
+
+  sed 's/captain decision 1 =>/captain decision 10 =>/' "$brief" > "$brief.exact"
+  "$ROOT/bin/fm-doctrine-contract.sh" check "$brief.exact" \
+    || fail "the complete matching numbered receipt should remain accepted"
 
   brief="$home/data/unbound/brief.md"
   printf '%s\n' \

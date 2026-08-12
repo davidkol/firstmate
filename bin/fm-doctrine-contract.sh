@@ -53,8 +53,35 @@ check_contract() {
       findings++
     }
 
-    function is_fence(line) {
-      return line ~ /^[ \t]*(```|~~~)/
+    function parse_fence(line, text, char, run) {
+      text = line
+      sub(/^[ \t]*/, "", text)
+      char = substr(text, 1, 1)
+      if (char != "`" && char != "~") return 0
+      run = 0
+      while (substr(text, run + 1, 1) == char) run++
+      if (run < 3) return 0
+      parsed_fence_char = char
+      parsed_fence_length = run
+      parsed_fence_tail = substr(text, run + 1)
+      return 1
+    }
+
+    function bounded_receipt_match(entry, source, lower_entry, lower_source, offset, relative, start, finish, before, after) {
+      lower_entry = tolower(entry)
+      lower_source = tolower(source)
+      offset = 1
+      while (offset <= length(lower_entry)) {
+        relative = index(substr(lower_entry, offset), lower_source)
+        if (relative == 0) return 0
+        start = offset + relative - 1
+        finish = start + length(lower_source) - 1
+        before = start > 1 ? substr(lower_entry, start - 1, 1) : ""
+        after = finish < length(lower_entry) ? substr(lower_entry, finish + 1, 1) : ""
+        if (before !~ /[[:alnum:]_.#\/-]/ && after !~ /[[:alnum:]_.#\/-]/) return 1
+        offset = start + 1
+      }
+      return 0
     }
 
     function has_authority_receipt(line, lower) {
@@ -76,11 +103,19 @@ check_contract() {
     }
 
     {
-      if (is_fence($0)) {
-        in_fence = !in_fence
+      if (!in_fence) {
+        if (parse_fence($0)) {
+          in_fence = 1
+          open_fence_char = parsed_fence_char
+          open_fence_length = parsed_fence_length
+          next
+        }
+      } else {
+        if (parse_fence($0) && parsed_fence_char == open_fence_char && parsed_fence_length >= open_fence_length && parsed_fence_tail ~ /^[ \t]*$/) {
+          in_fence = 0
+        }
         next
       }
-      if (in_fence) next
 
       if ($0 ~ /^# Delivery contract[ \t]*$/) {
         section_count++
@@ -159,7 +194,7 @@ check_contract() {
             captain_matches = 0
             if (has_authority_receipt(source)) {
               for (captain_item = 1; captain_item <= captain_count; captain_item++) {
-                if (index(tolower(captain_entry[captain_item]), tolower(source)) > 0) captain_matches++
+                if (bounded_receipt_match(captain_entry[captain_item], source)) captain_matches++
               }
             }
             if (captain_matches != 1) {
@@ -201,15 +236,33 @@ field_value() {
       sub(/[ \t]+$/, "", value)
       return value
     }
-    function is_fence(line) {
-      return line ~ /^[ \t]*(```|~~~)/
+    function parse_fence(line, text, char, run) {
+      text = line
+      sub(/^[ \t]*/, "", text)
+      char = substr(text, 1, 1)
+      if (char != "`" && char != "~") return 0
+      run = 0
+      while (substr(text, run + 1, 1) == char) run++
+      if (run < 3) return 0
+      parsed_fence_char = char
+      parsed_fence_length = run
+      parsed_fence_tail = substr(text, run + 1)
+      return 1
     }
     {
-      if (is_fence($0)) {
-        in_fence = !in_fence
+      if (!in_fence) {
+        if (parse_fence($0)) {
+          in_fence = 1
+          open_fence_char = parsed_fence_char
+          open_fence_length = parsed_fence_length
+          next
+        }
+      } else {
+        if (parse_fence($0) && parsed_fence_char == open_fence_char && parsed_fence_length >= open_fence_length && parsed_fence_tail ~ /^[ \t]*$/) {
+          in_fence = 0
+        }
         next
       }
-      if (in_fence) next
     }
     /^# Delivery contract[ \t]*$/ { in_contract = 1; next }
     in_contract && /^#/ { exit }
