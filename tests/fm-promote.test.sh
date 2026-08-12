@@ -104,7 +104,7 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
   inventory_line=$(grep -nF '1. Inventory the scout state before changing refs:' "$brief" | cut -d: -f1)
   preserve_line=$(grep -nF '2. Preserve the complete scout state recoverably before cleaning it:' "$brief" | cut -d: -f1)
   base_line=$(grep -nF '3. Return to the proven clean default-branch base:' "$brief" | cut -d: -f1)
-  branch_line=$(grep -nF '5. Only after that proof, create the ship branch:' "$brief" | cut -d: -f1)
+  branch_line=$(grep -nF '5. Only after that proof, create or reuse the ship branch:' "$brief" | cut -d: -f1)
   [ -n "$inventory_line" ] && [ -n "$preserve_line" ] && [ -n "$base_line" ] && [ -n "$branch_line" ] \
     || fail "the promoted prompt omitted its promotion-specific setup stages"
   [ "$inventory_line" -lt "$preserve_line" ] && [ "$preserve_line" -lt "$base_line" ] && [ "$base_line" -lt "$branch_line" ] \
@@ -163,12 +163,23 @@ test_promoted_setup_recovers_across_separate_shells() {
     || fail "retrying preservation after an interruption failed"
   [ "$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)" = "$snapshot" ] \
     || fail "retrying preservation replaced the original scout snapshot with the clean base"
-  command=$(prompt_command "$brief" '4. Prove the base before carrying work:')
+  command=$(prompt_command "$brief" '4. Prove and record the base before carrying work:')
   (cd "$worktree" && bash -c "$command") \
     || fail "the base-proof command depended on variables from an earlier worker shell"
-  command=$(prompt_command "$brief" '5. Only after that proof, create the ship branch:')
+  command=$(prompt_command "$brief" '5. Only after that proof, create or reuse the ship branch:')
   (cd "$worktree" && bash -c "$command") \
     || fail "the branch command failed after the separate-shell base proof"
+  command=$(prompt_command "$brief" '3. Return to the proven clean default-branch base:')
+  (cd "$worktree" && bash -c "$command") \
+    || fail "retrying setup after branch creation could not recover the recorded promotion base"
+  command=$(prompt_command "$brief" '4. Prove and record the base before carrying work:')
+  (cd "$worktree" && bash -c "$command") \
+    || fail "retrying setup after branch creation lost the proven promotion base"
+  command=$(prompt_command "$brief" '5. Only after that proof, create or reuse the ship branch:')
+  (cd "$worktree" && bash -c "$command") \
+    || fail "retrying setup after branch creation did not reuse the valid task branch"
+  [ "$(git -C "$worktree" branch --show-current)" = fm/scout-a ] \
+    || fail "retrying setup did not return to the existing task branch"
   command=$(prompt_command "$brief" '6. Import only the intended implementation and regression-test paths transactionally:')
   command=${command//'<paths>'/intended.txt}
   (cd "$worktree" && bash -c "$command") \
@@ -187,7 +198,52 @@ test_promoted_setup_recovers_across_separate_shells() {
   if git -C "$worktree" show-ref --verify --quiet refs/fm-promote/scout-a/import; then
     fail "the proven selective import retained its transaction ref"
   fi
+  if git -C "$worktree" show-ref --verify --quiet refs/fm-promote/scout-a/base; then
+    fail "the proven selective import retained its promotion-base ref"
+  fi
   pass "fm-promote.sh: promoted setup retries and commits selective recovery safely"
+}
+
+test_promoted_setup_refuses_an_unrelated_existing_branch() {
+  local dir brief worktree command snapshot tree unrelated rc
+  dir=$(make_scout unrelated-branch)
+  brief="$dir/home/data/scout-a/brief.md"
+  worktree="$dir/worktree"
+  git -C "$worktree" init -q -b main
+  git -C "$worktree" config user.name 'Promotion Test'
+  git -C "$worktree" config user.email 'promotion@example.invalid'
+  printf '%s\n' base > "$worktree/intended.txt"
+  git -C "$worktree" add intended.txt
+  git -C "$worktree" commit -q -m base
+  git -C "$worktree" switch -q -c scout-scratch
+  printf '%s\n' 'preserved scout work' > "$worktree/intended.txt"
+
+  run_promote "$dir" --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X through the bounded path.' \
+    > "$dir/promote.out" 2> "$dir/promote.err" \
+    || fail "promotion should generate the ancestry-checked branch setup"
+
+  command=$(prompt_command "$brief" '2. Preserve the complete scout state recoverably before cleaning it:')
+  (cd "$worktree" && bash -c "$command") || fail "the preservation command failed"
+  snapshot=$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)
+  command=$(prompt_command "$brief" '3. Return to the proven clean default-branch base:')
+  (cd "$worktree" && bash -c "$command") || fail "the base command failed"
+  command=$(prompt_command "$brief" '4. Prove and record the base before carrying work:')
+  (cd "$worktree" && bash -c "$command") || fail "the base proof failed"
+
+  tree=$(git -C "$worktree" mktree </dev/null)
+  unrelated=$(printf '%s\n' unrelated | git -C "$worktree" commit-tree "$tree")
+  git -C "$worktree" branch fm/scout-a "$unrelated"
+  command=$(prompt_command "$brief" '5. Only after that proof, create or reuse the ship branch:')
+  set +e
+  (cd "$worktree" && bash -c "$command")
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "an existing task branch unrelated to the recorded base must fail closed"
+  [ "$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)" = "$snapshot" ] \
+    || fail "refusing the unrelated branch lost the immutable scout snapshot"
+  pass "fm-promote.sh: promoted setup rejects unrelated existing task branches"
 }
 
 test_promotion_requires_explicit_authority_instead_of_scout_prose() {
@@ -243,5 +299,6 @@ test_promotion_refuses_a_generic_decision_pointer() {
 
 test_promotion_builds_a_validated_ship_prompt_before_changing_kind
 test_promoted_setup_recovers_across_separate_shells
+test_promoted_setup_refuses_an_unrelated_existing_branch
 test_promotion_requires_explicit_authority_instead_of_scout_prose
 test_promotion_refuses_a_generic_decision_pointer

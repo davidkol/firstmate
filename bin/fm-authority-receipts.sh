@@ -167,7 +167,6 @@ awk '
 
   function is_heading(l)      { return l ~ /^ *#+ +/ }
   function is_blank(l)        { return l ~ /^[ \t]*$/ }
-  function is_fence(l)        { return l ~ /^[ \t]*(```|~~~)/ }
   function is_table_row(l)    { return l ~ /^[ \t]*\|/ }
   function is_table_rule(l)   { return l ~ /^[ \t]*\|[-:| \t]+\|?[ \t]*$/ }
   function is_list_item(l)    { return l ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+/ }
@@ -184,6 +183,20 @@ awk '
   function trim(l) {
     sub(/^[ \t]+/, "", l); sub(/[ \t]+$/, "", l)
     return l
+  }
+
+  function parse_fence(l, text, char, run) {
+    text = l
+    sub(/^[ \t]*/, "", text)
+    char = substr(text, 1, 1)
+    if (char != "`" && char != "~") return 0
+    run = 0
+    while (substr(text, run + 1, 1) == char) run++
+    if (run < 3) return 0
+    parsed_fence_char = char
+    parsed_fence_length = run
+    parsed_fence_tail = substr(text, run + 1)
+    return 1
   }
 
   function repository_pointer(l) {
@@ -263,8 +276,19 @@ awk '
     # A fenced block is a sample, not structure. Skipping it whole stops a shell
     # comment inside one from closing an authority block, and stops a literal
     # bullet or table row inside one from being read as a claim.
-    if (is_fence(line)) { in_fence = !in_fence; next }
-    if (in_fence) next
+    if (!in_fence) {
+      if (parse_fence(line)) {
+        in_fence = 1
+        open_fence_char = parsed_fence_char
+        open_fence_length = parsed_fence_length
+        next
+      }
+    } else {
+      if (parse_fence(line) && parsed_fence_char == open_fence_char && parsed_fence_length >= open_fence_length && parsed_fence_tail ~ /^[ \t]*$/) {
+        in_fence = 0
+      }
+      next
+    }
 
     if (is_heading(line)) {
       flush_item()

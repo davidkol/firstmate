@@ -341,6 +341,32 @@ EOF
   pass "fm-authority-receipts.sh: a fenced block neither closes a block nor makes a claim"
 }
 
+test_match_mode_honors_long_markdown_fences() {
+  local brief out
+  brief="$TMP_ROOT/long-fence-match.md"
+  cat > "$brief" <<'EOF'
+````markdown
+```md
+# What the captain decided
+- Captain decision 1: "Enable the sample behavior."
+```
+````
+
+# Delivery contract
+- task-tier: T0
+- outcome: captain decision 1 => enable the real behavior
+
+# What the captain decided
+- Captain decision 2: "Keep the real behavior disabled."
+EOF
+
+  out=$("$ROOT/bin/fm-doctrine-contract.sh" check "$brief" 2>&1)
+  expect_code 1 "$?" "a receipt inside a still-open longer fence must not satisfy authority matching"
+  assert_contains "$out" 'must identify exactly one receipted entry' \
+    "match mode exposed a receipt inside a longer Markdown fence"
+  pass "fm-authority-receipts.sh: match mode preserves long Markdown fence boundaries"
+}
+
 # Evidence attaches. A bullet keeps the lines below it that are not themselves
 # list items, so the quote that receipts it may sit in an indented blockquote,
 # with or without the blank line that conventionally precedes one. Refusing
@@ -752,6 +778,7 @@ test_generated_briefs_pass_the_check
 test_the_scaffold_blessed_absence_entry_passes
 test_an_unpunctuated_claim_is_not_an_absence_entry
 test_a_fenced_code_block_is_not_read_as_structure
+test_match_mode_honors_long_markdown_fences
 test_a_bullet_keeps_its_indented_evidence
 test_a_sub_bullet_is_judged_on_its_own_text
 test_spawn_refuses_a_brief_that_claims_the_captain_without_a_receipt

@@ -702,7 +702,7 @@ Skipping the PR does NOT skip the review - the pipeline's review, test, document
 
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate will then instruct you to run /no-mistakes to validate the branch.
+Firstmate will then instruct you to start validation with the exact wrapper command below.
 
 Start the run with this exact command, from inside your worktree:
 $VALIDATE_EVIDENCE
@@ -710,7 +710,7 @@ $VALIDATE_COMMAND
 Do NOT call \`no-mistakes axi run\` directly. This project's delivery path omits the PR and CI steps, and that omission is derived from the task's recorded delivery mode inside that command rather than typed by you - so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart validation.
 It never omits review, test, document or lint for any mode.
 You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
-Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+Follow the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 Two firstmate-specific rules layer on top of it:
 - ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
@@ -756,7 +756,7 @@ EOF
     IFS= read -r -d '' DOD <<EOF || true
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
+Firstmate will then instruct you to start validation and PR delivery with the exact wrapper command below.
 
 Start the run with this exact command, from inside your worktree:
 $VALIDATE_EVIDENCE
@@ -764,13 +764,13 @@ $VALIDATE_COMMAND
 The wrapper reads the canonical outcome and selected-review contract from this brief; do not replace it with a caller-authored intent paraphrase.
 
 You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
-Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+Follow the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 Two firstmate-specific rules layer on top of it:
 - ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
 
-After /no-mistakes reaches its CI-ready return point, append \`done: PR {url} checks green\` and stop. You are finished.
+After the wrapper-driven no-mistakes run reaches its CI-ready return point, append \`done: PR {url} checks green\` and stop. You are finished.
 Two things satisfy that return point: checks passed, or the PR registered no checks at all once the pipeline's registration grace elapsed.
 A repository with no checks configured is normal here and reports as ready; it is not a failure, and it is never a reason to wait for a green signal by hand.
 In both cases do not wait for the step to keep monitoring in the background until merge.
@@ -823,10 +823,10 @@ If the top-level path is the primary checkout or not the worktree you were launc
 
 1. Inventory the scout state before changing refs: run \`git status --short --branch\`, \`git log --oneline -15\`, and \`git diff --stat\`; identify the intended implementation and regression-test paths separately from debug residue.
 2. Preserve the complete scout state recoverably before cleaning it: \`if git show-ref --verify --quiet refs/fm-promote/$ID/scout-snapshot; then :; else if test -n "\$(git status --porcelain)"; then git add -A && git commit -m "scout snapshot before promotion"; fi && git update-ref refs/fm-promote/$ID/scout-snapshot HEAD ""; fi\`. Never push that task-scoped ref.
-3. Return to the proven clean default-branch base: \`source "$FM_ROOT/bin/fm-tangle-lib.sh" && DEFAULT_BRANCH=\$(fm_default_branch .) && git switch --detach "\$DEFAULT_BRANCH"\`.
-4. Prove the base before carrying work: \`source "$FM_ROOT/bin/fm-tangle-lib.sh" && DEFAULT_BRANCH=\$(fm_default_branch .) && test -z "\$(git status --porcelain)" && test "\$(git rev-parse HEAD)" = "\$(git rev-parse "refs/heads/\$DEFAULT_BRANCH")"\`. If it fails, append \`blocked: promoted scout could not establish a clean default-branch base\` and stop.
-5. Only after that proof, create the ship branch: \`git checkout -b fm/$ID\`.
-6. Import only the intended implementation and regression-test paths transactionally: \`REF=refs/fm-promote/$ID/scout-snapshot && IMPORT_REF=refs/fm-promote/$ID/import && if git show-ref --verify --quiet "\$IMPORT_REF"; then :; elif git diff --quiet "\$REF" HEAD -- <paths>; then git update-ref "\$IMPORT_REF" HEAD ""; else git restore --source "\$REF" -- <paths> && git add -A -- <paths> && git commit -m "import promoted scout work" && git update-ref "\$IMPORT_REF" HEAD ""; fi && git merge-base --is-ancestor "\$IMPORT_REF" HEAD && git diff --quiet "\$REF" "\$IMPORT_REF" -- <paths> && git update-ref -d "\$IMPORT_REF" && git update-ref -d "\$REF"\`. This applies and commits only the selected paths, proves that import reachable, and leaves both refs intact on any earlier failure. Leave scratch commits and debug residue behind, then orient against the promoted task. $ORIENT_1
+3. Return to the proven clean default-branch base: \`source "$FM_ROOT/bin/fm-tangle-lib.sh" && DEFAULT_BRANCH=\$(fm_default_branch .) && BASE_REF=refs/fm-promote/$ID/base && if git show-ref --verify --quiet "\$BASE_REF"; then git switch --detach "\$BASE_REF"; else git switch --detach "\$DEFAULT_BRANCH"; fi\`.
+4. Prove and record the base before carrying work: \`source "$FM_ROOT/bin/fm-tangle-lib.sh" && DEFAULT_BRANCH=\$(fm_default_branch .) && BASE_REF=refs/fm-promote/$ID/base && test -z "\$(git status --porcelain)" && if git show-ref --verify --quiet "\$BASE_REF"; then test "\$(git rev-parse HEAD)" = "\$(git rev-parse "\$BASE_REF")"; else test "\$(git rev-parse HEAD)" = "\$(git rev-parse "refs/heads/\$DEFAULT_BRANCH")" && git update-ref "\$BASE_REF" HEAD ""; fi\`. If it fails, append \`blocked: promoted scout could not establish its clean promotion base\` and stop.
+5. Only after that proof, create or reuse the ship branch: \`BASE_REF=refs/fm-promote/$ID/base && if git show-ref --verify --quiet refs/heads/fm/$ID; then git merge-base --is-ancestor "\$BASE_REF" refs/heads/fm/$ID && git switch fm/$ID; else git checkout -b fm/$ID && git merge-base --is-ancestor "\$BASE_REF" HEAD; fi\`.
+6. Import only the intended implementation and regression-test paths transactionally: \`REF=refs/fm-promote/$ID/scout-snapshot && IMPORT_REF=refs/fm-promote/$ID/import && BASE_REF=refs/fm-promote/$ID/base && if git show-ref --verify --quiet "\$IMPORT_REF"; then :; elif git diff --quiet "\$REF" HEAD -- <paths>; then git update-ref "\$IMPORT_REF" HEAD ""; else git restore --source "\$REF" -- <paths> && git add -A -- <paths> && git commit -m "import promoted scout work" && git update-ref "\$IMPORT_REF" HEAD ""; fi && git merge-base --is-ancestor "\$IMPORT_REF" HEAD && git diff --quiet "\$REF" "\$IMPORT_REF" -- <paths> && git update-ref -d "\$IMPORT_REF" && git update-ref -d "\$REF" && git update-ref -d "\$BASE_REF"\`. This applies and commits only the selected paths, proves that import reachable, and leaves the recovery refs intact on any earlier failure. Leave scratch commits and debug residue behind, then orient against the promoted task. $ORIENT_1
    $ORIENT_2$PROMOTION_SETUP2$MEMORY_SECTION
 EOF
 else

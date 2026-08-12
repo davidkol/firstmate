@@ -45,7 +45,7 @@ make_case() {
   fakebin="$case_dir/fakebin"
   mkdir -p "$case_dir/state" "$case_dir/wt" "$case_dir/data/task-v1" "$case_dir/pipeline-tmp" "$fakebin"
   fm_write_ship_brief "$case_dir/data/task-v1/brief.md" T0 \
-    "tests/fm-validate.test.sh:$name => validation starts with the recorded delivery topology"
+    "tests/fm-validate.test.sh#$name => validation starts with the recorded delivery topology"
   printf '%s\n' 'command: focused-final-change-check' 'exit: 0' 'result: observable behavior passed' \
     > "$case_dir/wt/final-change-evidence.txt"
   if [ "$mode" != "__none__" ]; then
@@ -291,7 +291,7 @@ test_canonical_intent_comes_from_brief() {
   out=$(invoked "$case_dir")
   assert_contains "$out" 'Firstmate Designer -> Runtime -> Player selected review.' \
     "canonical-intent: the selected-review role contract did not reach no-mistakes"
-  assert_contains "$out" 'tests/fm-validate.test.sh:canonical-intent => validation starts with the recorded delivery topology' \
+  assert_contains "$out" 'tests/fm-validate.test.sh#canonical-intent => validation starts with the recorded delivery topology' \
     "canonical-intent: the canonical outcome did not reach no-mistakes"
 
   case_dir=$(make_case caller-intent-ignored validated-main)

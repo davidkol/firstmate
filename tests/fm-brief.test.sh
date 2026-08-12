@@ -366,6 +366,26 @@ test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci() {
   pass "fm-brief.sh: validated-main brief keeps the automated review and skips only the PR and CI steps"
 }
 
+test_full_mode_briefs_trigger_only_the_validation_wrapper() {
+  local home id proj brief
+  home="$TMP_ROOT/full-mode-wrapper-home"
+  write_registry "$home"
+
+  for id in full-nomistakes full-validated-main; do
+    case "$id" in
+      full-nomistakes) proj=no-registry-proj ;;
+      *) proj=main-proj ;;
+    esac
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_grep "bin/fm-validate.sh $id --evidence" "$brief" \
+      "$id: the full-mode trigger did not invoke the topology-independent wrapper"
+    assert_no_grep '/no-mistakes' "$brief" \
+      "$id: the full-mode trigger still offers a skill path that bypasses the wrapper"
+  done
+  pass "fm-brief.sh: full modes trigger validation only through fm-validate"
+}
+
 # The light path's whole safeguard is one review by an agent that did not write the
 # change. Before 2026-07-30 this brief said "Do NOT run /no-mistakes" and nothing
 # read the change before the PR opened. Pin the four halves that make the safeguard
@@ -1449,6 +1469,7 @@ test_ship_brief_scaffolds_only_two_core_doctrine_fields
 test_doctrine_contract_is_proportional_and_allows_one_shared_oracle
 test_doctrine_contract_ignores_fenced_examples
 test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci
+test_full_mode_briefs_trigger_only_the_validation_wrapper
 test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr
 test_local_only_brief_runs_a_review_that_publishes_nothing
 test_faster_paths_use_configured_authority_without_stacked_review
