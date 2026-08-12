@@ -141,6 +141,8 @@ test_promoted_setup_recovers_across_separate_shells() {
   git -C "$worktree" switch -q -c scout-scratch
   printf '%s\n' 'preserved scout work' > "$worktree/intended.txt"
   printf '%s\n' 'debug residue' > "$worktree/debug.txt"
+  printf '%s\n' '.fm-grok-turnend' >> "$worktree/.git/info/exclude"
+  printf '%s\n' 'token=fm.123456789012' > "$worktree/.fm-grok-turnend"
 
   run_promote "$dir" \
     --task-tier T1 \
@@ -188,6 +190,8 @@ test_promoted_setup_recovers_across_separate_shells() {
     || fail "the import transaction did not recover the selected scout work"
   [ ! -e "$worktree/debug.txt" ] \
     || fail "the import transaction carried unselected debug residue"
+  [ "$(cat "$worktree/.fm-grok-turnend")" = 'token=fm.123456789012' ] \
+    || fail "promotion deleted or changed Firstmate's ignored worktree control artifact"
   git -C "$worktree" diff --quiet "$snapshot" HEAD -- intended.txt \
     || fail "the committed ship history does not preserve the selected snapshot path"
   [ "$(git -C "$worktree" log -1 --format=%s)" = 'import promoted scout work' ] \
@@ -300,6 +304,51 @@ test_promoted_import_refuses_residue_on_a_valid_task_branch() {
   pass "fm-promote.sh: promoted import preserves recovery refs around branch residue"
 }
 
+test_promoted_setup_refuses_non_firstmate_ignored_state() {
+  local dir brief worktree command snapshot rc out
+  dir=$(make_scout ignored-state)
+  brief="$dir/home/data/scout-a/brief.md"
+  worktree="$dir/worktree"
+  git -C "$worktree" init -q -b main
+  git -C "$worktree" config user.name 'Promotion Test'
+  git -C "$worktree" config user.email 'promotion@example.invalid'
+  printf '%s\n' '.env' > "$worktree/.gitignore"
+  printf '%s\n' base > "$worktree/intended.txt"
+  git -C "$worktree" add .gitignore intended.txt
+  git -C "$worktree" commit -q -m base
+  git -C "$worktree" switch -q -c scout-scratch
+  printf '%s\n' 'preserved scout work' > "$worktree/intended.txt"
+  printf '%s\n' 'SCOUT_ONLY=1' > "$worktree/.env"
+
+  run_promote "$dir" --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X through the bounded path.' \
+    > "$dir/promote.out" 2> "$dir/promote.err" \
+    || fail "promotion should generate the ignored-state base proof"
+
+  command=$(prompt_command "$brief" '2. Preserve the complete scout state recoverably before cleaning it:')
+  (cd "$worktree" && bash -c "$command") || fail "the preservation command failed"
+  snapshot=$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)
+  command=$(prompt_command "$brief" '3. Return to the proven clean default-branch base:')
+  (cd "$worktree" && bash -c "$command") || fail "the base command failed"
+  command=$(prompt_command "$brief" '4. Prove and record the base before carrying work:')
+  set +e
+  out=$(cd "$worktree" && bash -c "$command" 2>&1)
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "a promoted scout with non-Firstmate ignored state must fail closed"
+  assert_contains "$out" 'start a fresh ship instead' \
+    "the ignored-state refusal did not direct the caller to the safe delivery path"
+  [ "$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)" = "$snapshot" ] \
+    || fail "refusing ignored state lost the immutable scout snapshot"
+  [ "$(cat "$worktree/.env")" = 'SCOUT_ONLY=1' ] \
+    || fail "refusing ignored state deleted or changed the scout-owned file"
+  if git -C "$worktree" show-ref --verify --quiet refs/fm-promote/scout-a/base; then
+    fail "the ignored-state refusal recorded an unproven promotion base"
+  fi
+  pass "fm-promote.sh: promoted setup refuses non-Firstmate ignored state"
+}
+
 test_promotion_requires_explicit_authority_instead_of_scout_prose() {
   local dir brief original rc
   dir=$(make_scout report-only)
@@ -355,5 +404,6 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind
 test_promoted_setup_recovers_across_separate_shells
 test_promoted_setup_refuses_an_unrelated_existing_branch
 test_promoted_import_refuses_residue_on_a_valid_task_branch
+test_promoted_setup_refuses_non_firstmate_ignored_state
 test_promotion_requires_explicit_authority_instead_of_scout_prose
 test_promotion_refuses_a_generic_decision_pointer

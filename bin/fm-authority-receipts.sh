@@ -199,8 +199,21 @@ awk '
     return 1
   }
 
-  function repository_pointer(l) {
-    return l ~ /^[[:alnum:]_.-]+(\/[[:alnum:]_.#-]+)+$/
+  function repository_pointer(l, path, anchor_at, anchor, count, segments, i) {
+    if (l == "" || substr(l, 1, 1) == "/") return 0
+    path = l
+    anchor_at = index(path, "#")
+    if (anchor_at > 0) {
+      anchor = substr(path, anchor_at + 1)
+      path = substr(path, 1, anchor_at - 1)
+      if (anchor == "" || anchor !~ /^[[:alnum:]_.-]+$/) return 0
+    }
+    if (path == "" || path !~ /^[[:alnum:]_.\/-]+$/ || substr(path, length(path), 1) == "/") return 0
+    count = split(path, segments, "/")
+    for (i = 1; i <= count; i++) {
+      if (segments[i] == "" || segments[i] == "." || segments[i] == "..") return 0
+    }
+    return 1
   }
 
   function canonical_captain_pointer(l) {

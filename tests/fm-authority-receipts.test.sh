@@ -717,6 +717,37 @@ test_review_intent_forwards_only_the_matched_captain_receipt() {
   pass "fm-doctrine-contract.sh: review intent exposes exactly the matched captain receipt"
 }
 
+test_repository_sources_are_project_root_relative() {
+  local brief out pointer
+  brief="$TMP_ROOT/repository-source.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: SPACEGAME.md#helm => document the helm contract' \
+    > "$brief"
+  out=$("$ROOT/bin/fm-doctrine-contract.sh" check "$brief" 2>&1)
+  expect_code 0 "$?" "a root-file source with an anchor must remain valid (got: $out)"
+
+  for pointer in \
+    '/tmp/scout-report.md' \
+    '../data/scout-report.md' \
+    'docs/./scout-report.md' \
+    'docs/../scout-report.md' \
+    'docs//scout-report.md' \
+    'docs/'; do
+    printf '%s\n' \
+      '# Delivery contract' \
+      '- task-tier: T0' \
+      "- outcome: $pointer => document the scout result" \
+      > "$brief"
+    out=$("$ROOT/bin/fm-doctrine-contract.sh" check "$brief" 2>&1)
+    expect_code 1 "$?" "a repository source must reject a non-root-relative path: $pointer"
+    assert_contains "$out" 'explicit repository path' \
+      "the invalid repository source did not fail at the canonical source boundary: $pointer"
+  done
+  pass "fm-doctrine-contract.sh: repository sources stay project-root-relative"
+}
+
 # Driven against a real scaffold rather than a fixture, because the trap is in
 # the scaffold's own text: a generated brief explains that it "cannot inspect the
 # task text that replaces `{TASK}` later", so a substring match would refuse every
@@ -800,5 +831,6 @@ test_spawn_refuses_a_brief_with_an_unreplaced_placeholder
 test_spawn_refuses_invalid_core_delivery_fields_before_launch
 test_spawn_binds_captain_outcome_to_the_receipted_provenance_block
 test_review_intent_forwards_only_the_matched_captain_receipt
+test_repository_sources_are_project_root_relative
 test_spawn_lets_a_filled_generated_brief_past_the_placeholder_gate
 test_help_includes_entire_header
