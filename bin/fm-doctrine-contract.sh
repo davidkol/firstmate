@@ -76,8 +76,8 @@ check_contract() {
 
     function captain_pointer_like(value, normalized) {
       normalized = tolower(trim(value))
-      if (normalized ~ /(^|[^[:alnum:]_])captain([^[:alnum:]_]|$)/) return 1
-      if (normalized ~ /^(decision|ruling)([ 	]|$)/) return 1
+      if (normalized ~ /^captain/) return 1
+      if (normalized ~ /^(decision|ruling)/) return 1
       return 0
     }
 

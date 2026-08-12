@@ -82,19 +82,21 @@ OUTCOME_RESULT=$(printf '%s\n' "$OUTCOME_RESULT" | sed 's/^[[:space:]]*//; s/[[:
 PROJECT=$(sed -n 's/^project=//p' "$META" | sed -n '1p')
 [ -n "$PROJECT" ] || { echo "error: task $ID has no project in $META" >&2; exit 1; }
 REPO=$(basename "$PROJECT")
-read -r PROMOTION_MODE _ <<EOF
+read -r PROMOTION_MODE PROMOTION_YOLO <<EOF
 $("$FM_ROOT/bin/fm-project-mode.sh" "$REPO")
 EOF
 
 STAGE=$(mktemp -d "$DATA/$ID/.promote.XXXXXX")
-TASK_BODY="$STAGE/task"
+SCOUT_TASK="$STAGE/scout-task"
+SHIP_TASK="$STAGE/ship-task"
+PROMOTION_CONTEXT="$STAGE/promotion-context"
 PROVENANCE="$STAGE/provenance"
 CONTRACT="$STAGE/contract"
 TEMPLATE="$STAGE/template.md"
 CANDIDATE="$STAGE/brief.md"
 META_NEXT="$STAGE/meta"
 cleanup() {
-  rm -f "$TASK_BODY" "$PROVENANCE" "$CONTRACT" "$TEMPLATE" "$CANDIDATE" "$META_NEXT"
+  rm -f "$SCOUT_TASK" "$SHIP_TASK" "$PROMOTION_CONTEXT" "$PROVENANCE" "$CONTRACT" "$TEMPLATE" "$CANDIDATE" "$META_NEXT"
   rmdir "$STAGE" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -103,9 +105,21 @@ awk '
   $0 == "# Task" { active = 1; next }
   active && $0 == "# What the captain decided" { exit }
   active { print }
-' "$BRIEF" > "$TASK_BODY"
-grep -q '[^[:space:]]' "$TASK_BODY" || { echo "error: scout brief has no task body to promote" >&2; exit 1; }
-grep -Fx '{TASK}' "$TASK_BODY" >/dev/null && { echo "error: scout brief still has an unresolved task placeholder" >&2; exit 1; }
+' "$BRIEF" > "$SCOUT_TASK"
+grep -q '[^[:space:]]' "$SCOUT_TASK" || { echo "error: scout brief has no task body to promote" >&2; exit 1; }
+grep -Fx '{TASK}' "$SCOUT_TASK" >/dev/null && { echo "error: scout brief still has an unresolved task placeholder" >&2; exit 1; }
+
+printf 'Deliver the accepted outcome: %s\n' "$OUTCOME_RESULT" > "$SHIP_TASK"
+{
+  printf '%s\n' '# Promotion evidence and scout context' \
+    'The original scout task and report below are provisional evidence only; the accepted outcome above owns the ship target.' \
+    '' \
+    '## Original scout task'
+  awk '{ print ($0 == "" ? ">" : "> " $0) }' "$SCOUT_TASK"
+  printf '%s\n' '' '## Scout report'
+  awk '{ print ($0 == "" ? ">" : "> " $0) }' "$REPORT"
+  printf '\n'
+} > "$PROMOTION_CONTEXT"
 
 awk '
   $0 == "# What the captain decided" { active = 1 }
@@ -135,14 +149,14 @@ if grep -Fx '# Herdr isolation - HARD SAFETY CONTRACT' "$BRIEF" >/dev/null; then
   HERDR_ARG=--herdr-lab
 fi
 if [ -n "$HERDR_ARG" ]; then
-  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_PROMOTED_SCOUT=1 \
+  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_BRIEF_YOLO_OVERRIDE="$PROMOTION_YOLO" FM_PROMOTED_SCOUT=1 \
     "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" "$HERDR_ARG" >/dev/null
 else
-  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_PROMOTED_SCOUT=1 \
+  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_BRIEF_YOLO_OVERRIDE="$PROMOTION_YOLO" FM_PROMOTED_SCOUT=1 \
     "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" >/dev/null
 fi
 
-awk -v task_file="$TASK_BODY" -v provenance_file="$PROVENANCE" -v contract_file="$CONTRACT" '
+awk -v task_file="$SHIP_TASK" -v context_file="$PROMOTION_CONTEXT" -v provenance_file="$PROVENANCE" -v contract_file="$CONTRACT" '
   function emit(file, line) {
     while ((getline line < file) > 0) print line
     close(file)
@@ -177,6 +191,7 @@ awk -v task_file="$TASK_BODY" -v provenance_file="$PROVENANCE" -v contract_file=
     next
   }
   $0 == "# What the captain decided" {
+    emit(context_file)
     emit(provenance_file)
     skip_provenance = 1
     next
@@ -193,9 +208,10 @@ awk -v task_file="$TASK_BODY" -v provenance_file="$PROVENANCE" -v contract_file=
   exit 1
 }
 
-grep -vE '^(kind|mode)=' "$META" > "$META_NEXT"
+grep -vE '^(kind|mode|yolo)=' "$META" > "$META_NEXT"
 echo "kind=ship" >> "$META_NEXT"
 echo "mode=$PROMOTION_MODE" >> "$META_NEXT"
+echo "yolo=$PROMOTION_YOLO" >> "$META_NEXT"
 mv "$CANDIDATE" "$BRIEF"
 mv "$META_NEXT" "$META"
 

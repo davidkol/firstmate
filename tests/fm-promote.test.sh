@@ -18,7 +18,7 @@ make_scout() {
     || fail "$name: could not generate the canonical scout brief"
   brief="$home/data/scout-a/brief.md"
   awk '
-    $0 == "{TASK}" { print "Implement the accepted bounded scout finding."; next }
+    $0 == "{TASK}" { print "Diagnose only; do not implement the suspected bounded-path change."; next }
     $0 == "{CAPTAIN_RULINGS}" { print "- Captain decision 1: \"Enable X through the bounded path.\""; next }
     $0 == "{FIRSTMATE_INFERENCE}" { print "- The scout isolated the bounded implementation path."; next }
     { print }
@@ -29,7 +29,8 @@ make_scout() {
     "worktree=$dir/worktree" \
     "project=$dir/project" \
     'kind=scout' \
-    'mode=direct-PR'
+    'mode=direct-PR' \
+    'yolo=on'
   printf '%s\n' 'command: focused accepted-finding check' 'exit: 0' > "$dir/worktree/evidence.txt"
   cat > "$dir/fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash
@@ -46,8 +47,19 @@ run_promote() {
     "$PROMOTE" scout-a "$@"
 }
 
+prompt_command() {
+  local brief=$1 prefix=$2
+  awk -v prefix="$prefix" '
+    index($0, prefix) == 1 {
+      count = split($0, pieces, "`")
+      if (count >= 3) print pieces[2]
+      exit
+    }
+  ' "$brief"
+}
+
 test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
-  local dir brief review_out validate_out inventory_line preserve_line base_line branch_line
+  local dir brief review_out validate_out inventory_line preserve_line base_line branch_line task_text context_text
   dir=$(make_scout success)
   brief="$dir/home/data/scout-a/brief.md"
   printf '%s\n' '- project [local-only] - promotion fixture (added 2026-08-12)' > "$dir/home/data/projects.md"
@@ -56,20 +68,34 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
     --task-tier T1 \
     --outcome 'captain decision 1 => Ship X through the bounded path.' \
     > "$dir/promote.out" 2> "$dir/promote.err" \
-    || fail "promotion should shape a valid ship task from the explicit authoritative outcome"
+    || fail "promotion should shape a valid ship task from the explicit authoritative outcome: $(cat "$dir/promote.err")"
 
   [ "$(sed -n 's/^kind=//p' "$dir/home/state/scout-a.meta")" = ship ] \
     || fail "promotion did not change kind after shaping the ship brief"
   [ "$(sed -n 's/^mode=//p' "$dir/home/state/scout-a.meta")" = local-only ] \
     || fail "promotion metadata did not converge on the promotion-time registry mode"
+  [ "$(sed -n 's/^yolo=//p' "$dir/home/state/scout-a.meta")" = off ] \
+    || fail "promotion metadata retained the scout's revoked yolo authority"
   "$ROOT/bin/fm-doctrine-contract.sh" check "$brief" \
     || fail "the promoted brief does not carry a valid canonical delivery contract"
   "$ROOT/bin/fm-authority-receipts.sh" "$brief" \
     || fail "the promoted brief lost its valid captain provenance"
-  assert_grep 'Implement the accepted bounded scout finding.' "$brief" \
-    "promotion lost the accepted scout task"
+  task_text=$(awk '$0 == "# Task" { active = 1; next } active && $0 == "# Delivery contract" { exit } active { print }' "$brief")
+  assert_contains "$task_text" 'Ship X through the bounded path.' \
+    "the promoted ship task was not generated from the explicit accepted target"
+  assert_not_contains "$task_text" 'Diagnose only' \
+    "the promoted ship task retained the scout's contradictory diagnose-only instruction"
+  context_text=$(awk '$0 == "# Promotion evidence and scout context" { active = 1 } active && $0 == "# What the captain decided" { exit } active { print }' "$brief")
+  assert_contains "$context_text" 'Diagnose only; do not implement the suspected bounded-path change.' \
+    "promotion did not retain the original scout task as provisional context"
+  assert_contains "$context_text" 'Rejected: the alternate scout mechanism was not viable.' \
+    "promotion did not retain the scout report as provisional evidence"
   assert_grep 'This project ships **local-only**' "$brief" \
     "the promoted prompt did not use the same promotion-time delivery mode as metadata"
+  assert_grep 'promotion delivery state is **mode=local-only, yolo=off**' "$brief" \
+    "the promoted prompt did not record the same current yolo posture as metadata"
+  assert_no_grep 'promotion delivery state is **mode=local-only, yolo=on**' "$brief" \
+    "the promoted prompt retained revoked yolo authority"
   assert_no_grep 'This project ships **direct-PR**' "$brief" \
     "the promoted prompt retained the scout's stale delivery mode"
   assert_grep 'You drive the review by responding to its gate' "$brief" \
@@ -99,6 +125,61 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
   assert_grep 'matched captain authority receipt:' "$dir/no-mistakes.log" \
     "validation did not forward the promoted task's matched authority receipt"
   pass "fm-promote.sh: promotion constructs a validated role-specific ship prompt"
+}
+
+test_promoted_setup_recovers_across_separate_shells() {
+  local dir brief worktree command snapshot cleanup_rc
+  dir=$(make_scout separate-shells)
+  brief="$dir/home/data/scout-a/brief.md"
+  worktree="$dir/worktree"
+  git -C "$worktree" init -q -b main
+  git -C "$worktree" config user.name 'Promotion Test'
+  git -C "$worktree" config user.email 'promotion@example.invalid'
+  printf '%s\n' base > "$worktree/intended.txt"
+  git -C "$worktree" add intended.txt
+  git -C "$worktree" commit -q -m base
+  git -C "$worktree" switch -q -c scout-scratch
+  printf '%s\n' 'preserved scout work' > "$worktree/intended.txt"
+  printf '%s\n' 'debug residue' > "$worktree/debug.txt"
+
+  run_promote "$dir" \
+    --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X through the bounded path.' \
+    > "$dir/promote.out" 2> "$dir/promote.err" \
+    || fail "promotion should generate the separate-shell recovery contract"
+
+  command=$(prompt_command "$brief" '2. Preserve the complete scout state recoverably before cleaning it:')
+  [ -n "$command" ] || fail "the promoted prompt did not emit an executable preservation command"
+  (cd "$worktree" && bash -c "$command") \
+    || fail "the preservation command failed in its own worker shell"
+  snapshot=$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot) \
+    || fail "the preservation command did not create its task-scoped Git ref"
+
+  command=$(prompt_command "$brief" '3. Return to the proven clean default-branch base:')
+  (cd "$worktree" && bash -c "$command") \
+    || fail "the clean-base command could not recover in a separate worker shell"
+  command=$(prompt_command "$brief" '4. Prove the base before carrying work:')
+  (cd "$worktree" && bash -c "$command") \
+    || fail "the base-proof command depended on variables from an earlier worker shell"
+  command=$(prompt_command "$brief" '5. Only after that proof, create the ship branch:')
+  (cd "$worktree" && bash -c "$command") \
+    || fail "the branch command failed after the separate-shell base proof"
+  command=$(prompt_command "$brief" '6. Restore only the intended implementation and regression-test paths:')
+  command=${command/'<paths>'/intended.txt}
+  (cd "$worktree" && bash -c "$command") \
+    || fail "the restore command could not find the task-scoped snapshot from a separate worker shell"
+  [ "$(cat "$worktree/intended.txt")" = 'preserved scout work' ] \
+    || fail "the separate-shell restore did not recover the preserved scout work"
+
+  command=$(prompt_command "$brief" '7. Clean up the snapshot ref only after Git proves it is reachable from the current ship history:')
+  set +e
+  (cd "$worktree" && bash -c "$command")
+  cleanup_rc=$?
+  set -e
+  expect_code 1 "$cleanup_rc" "snapshot cleanup must refuse while the preserved commit is not reachable from ship history"
+  [ "$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)" = "$snapshot" ] \
+    || fail "refusing cleanup lost the preserved snapshot"
+  pass "fm-promote.sh: promoted setup recovers safely across separate worker shells"
 }
 
 test_promotion_requires_explicit_authority_instead_of_scout_prose() {
@@ -153,5 +234,6 @@ test_promotion_refuses_a_generic_decision_pointer() {
 }
 
 test_promotion_builds_a_validated_ship_prompt_before_changing_kind
+test_promoted_setup_recovers_across_separate_shells
 test_promotion_requires_explicit_authority_instead_of_scout_prose
 test_promotion_refuses_a_generic_decision_pointer

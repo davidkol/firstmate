@@ -517,7 +517,7 @@ test_spawn_refuses_invalid_core_delivery_fields_before_launch() {
 test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   local home brief out
   home="$TMP_ROOT/spawn-doctrine-authority"
-  mkdir -p "$home/data/unbound" "$home/data/vague" "$home/data/generic" "$home/data/ambiguous" "$home/data/prefix" "$home/state" "$home/proj"
+  mkdir -p "$home/data/unbound" "$home/data/vague" "$home/data/generic" "$home/data/punctuation" "$home/data/ambiguous" "$home/data/prefix" "$home/state" "$home/proj"
   brief="$home/data/unbound/brief.md"
   printf '%s\n' \
     '# Delivery contract' \
@@ -566,6 +566,22 @@ test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   expect_code 1 "$?" "spawn must reject an ambiguous generic decision pointer"
   assert_contains "$out" 'must use captain decision <complete-id>' \
     "the generic decision pointer was not refused at the delivery-contract gate"
+
+  brief="$home/data/punctuation/brief.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: decision#1 => enable X' \
+    '' \
+    '# What the captain decided' \
+    '- Captain decision #1: "Do not enable X."' \
+    > "$brief"
+  "$ROOT/bin/fm-authority-receipts.sh" "$brief" \
+    || fail "the punctuation-pointer case must clear the receipt check to reproduce the boundary failure"
+  out=$(run_spawn_gate "$home" punctuation "$home/proj")
+  expect_code 1 "$?" "spawn must reject a punctuation-shaped generic decision pointer"
+  assert_contains "$out" 'must use captain decision <complete-id>' \
+    "the punctuation-shaped decision pointer bypassed the canonical receipt syntax"
 
   brief="$home/data/ambiguous/brief.md"
   printf '%s\n' \

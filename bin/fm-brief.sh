@@ -641,12 +641,17 @@ fi
 # firstmate applies the authority contract in AGENTS.md section 7, so discard it.
 if [ -n "${FM_BRIEF_MODE_OVERRIDE:-}" ]; then
   MODE=$FM_BRIEF_MODE_OVERRIDE
+  YOLO=${FM_BRIEF_YOLO_OVERRIDE:-}
   case "$MODE" in
     no-mistakes|validated-main|direct-PR|local-only) ;;
     *) echo "error: invalid FM_BRIEF_MODE_OVERRIDE: $MODE" >&2; exit 1 ;;
   esac
+  case "$YOLO" in
+    on|off) ;;
+    *) echo "error: invalid FM_BRIEF_YOLO_OVERRIDE: $YOLO" >&2; exit 1 ;;
+  esac
 else
-  read -r MODE _ <<EOF
+  read -r MODE YOLO <<EOF
 $("$FM_ROOT/bin/fm-project-mode.sh" "$REPO")
 EOF
 fi
@@ -806,21 +811,23 @@ EOF
 IMPLEMENTATION_DOCTRINE=${IMPLEMENTATION_DOCTRINE%$'\n'}
 
 if [ "${FM_PROMOTED_SCOUT:-0}" = 1 ]; then
-  PROMOTION_SETUP2=$(printf '%s\n' "$SETUP2" | sed 's/^3\./7./')
+  PROMOTION_SETUP2=$(printf '%s\n' "$SETUP2" | sed 's/^3\./8./')
   IFS= read -r -d '' SHIP_SETUP <<EOF || true
 # Setup
 You are in the existing disposable scout worktree of $REPO. Its current HEAD and dirty state are recoverable scout evidence, not the ship base.
+The promotion delivery state is **mode=$MODE, yolo=$YOLO**. This records Firstmate authority and grants the worker no approval authority.
 
 **Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a treehouse pool path or an Orca-managed worktree, not the primary checkout firstmate operates from.
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
 1. Inventory the scout state before changing refs: run \`git status --short --branch\`, \`git log --oneline -15\`, and \`git diff --stat\`; identify the intended implementation and regression-test paths separately from debug residue.
-2. Preserve the complete scout state recoverably before cleaning it: if \`git status --porcelain\` is nonempty, run \`git add -A && git commit -m "scout snapshot before promotion"\`; then record \`SCOUT_SNAPSHOT=\$(git rev-parse HEAD)\`. Never push that snapshot.
-3. Return to the proven clean default-branch base: source \`$FM_ROOT/bin/fm-tangle-lib.sh\`, resolve \`DEFAULT_BRANCH=\$(fm_default_branch .)\`, and run \`git switch --detach "\$DEFAULT_BRANCH"\`.
-4. Prove the base before carrying work: require empty \`git status --porcelain\` and require \`git rev-parse HEAD\` to equal \`git rev-parse "refs/heads/\$DEFAULT_BRANCH"\`; otherwise append \`blocked: promoted scout could not establish a clean default-branch base\` and stop.
+2. Preserve the complete scout state recoverably before cleaning it: \`if test -n "\$(git status --porcelain)"; then git add -A && git commit -m "scout snapshot before promotion"; fi && git update-ref refs/fm-promote/$ID/scout-snapshot HEAD\`. Never push that task-scoped ref.
+3. Return to the proven clean default-branch base: \`source "$FM_ROOT/bin/fm-tangle-lib.sh" && DEFAULT_BRANCH=\$(fm_default_branch .) && git switch --detach "\$DEFAULT_BRANCH"\`.
+4. Prove the base before carrying work: \`source "$FM_ROOT/bin/fm-tangle-lib.sh" && DEFAULT_BRANCH=\$(fm_default_branch .) && test -z "\$(git status --porcelain)" && test "\$(git rev-parse HEAD)" = "\$(git rev-parse "refs/heads/\$DEFAULT_BRANCH")"\`. If it fails, append \`blocked: promoted scout could not establish a clean default-branch base\` and stop.
 5. Only after that proof, create the ship branch: \`git checkout -b fm/$ID\`.
-6. Restore only the intended implementation and regression-test paths from \`\$SCOUT_SNAPSHOT\` with \`git restore --source "\$SCOUT_SNAPSHOT" -- <paths>\`; leave scratch commits and debug residue behind, then orient against the promoted task. $ORIENT_1
+6. Restore only the intended implementation and regression-test paths: \`git restore --source refs/fm-promote/$ID/scout-snapshot -- <paths>\`. Leave scratch commits and debug residue behind, then orient against the promoted task. $ORIENT_1
+7. Clean up the snapshot ref only after Git proves it is reachable from the current ship history: \`git merge-base --is-ancestor refs/fm-promote/$ID/scout-snapshot HEAD && git update-ref -d refs/fm-promote/$ID/scout-snapshot\`. Until that succeeds, keep the ref.
    $ORIENT_2$PROMOTION_SETUP2$MEMORY_SECTION
 EOF
 else
