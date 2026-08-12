@@ -646,7 +646,7 @@ EOF
 VALIDATE_COMMAND="\`$FM_ROOT/bin/fm-validate.sh $ID --evidence <project-relative-result-or-capture>\`"
 IFS= read -r -d '' VALIDATE_EVIDENCE <<'EOF' || true
 Run each applicable oracle once after the final change and save its executed output or capture inside this worktree.
-Pass every saved result or capture with `--evidence`; one saved execution may satisfy multiple delivery-contract evidence lines when it is genuinely the same oracle.
+Pass every saved result or capture with `--evidence`; the validation wrapper publishes copies where isolated pipeline agents can inspect them, and one saved execution may satisfy multiple delivery-contract evidence lines when it is genuinely the same oracle.
 EOF
 VALIDATE_EVIDENCE=${VALIDATE_EVIDENCE%$'\n'}
 

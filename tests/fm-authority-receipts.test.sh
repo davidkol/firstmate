@@ -517,7 +517,7 @@ test_spawn_refuses_invalid_core_delivery_fields_before_launch() {
 test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   local home brief out
   home="$TMP_ROOT/spawn-doctrine-authority"
-  mkdir -p "$home/data/unbound" "$home/state" "$home/proj"
+  mkdir -p "$home/data/unbound" "$home/data/vague" "$home/data/ambiguous" "$home/state" "$home/proj"
   brief="$home/data/unbound/brief.md"
   printf '%s\n' \
     '# Delivery contract' \
@@ -532,9 +532,41 @@ test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   expect_code 1 "$?" "spawn must refuse a captain-sourced outcome absent from captain provenance"
   assert_contains "$out" 'invalid delivery contract' \
     "the unbound outcome did not reach the delivery-contract gate"
-  assert_contains "$out" 'must also appear in # What the captain decided' \
+  assert_contains "$out" 'must identify exactly one receipted entry' \
     "the refusal did not name the provenance binding"
 
+  brief="$home/data/vague/brief.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: captain => enable X' \
+    '' \
+    '# What the captain decided' \
+    '- Captain decision 2026-08-03: "Do not enable X."' \
+    > "$brief"
+  "$ROOT/bin/fm-authority-receipts.sh" "$brief" \
+    || fail "the misleading case must clear the existing receipt check to reproduce the boundary failure"
+  out=$(run_spawn_gate "$home" vague "$home/proj")
+  expect_code 1 "$?" "spawn must not bind a generic captain word to an unrelated receipted decision"
+  assert_contains "$out" 'must identify exactly one receipted entry' \
+    "the vague captain source was not refused at the delivery-contract gate"
+
+  brief="$home/data/ambiguous/brief.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: captain decision 2026-08-03 => the requested behavior is delivered' \
+    '' \
+    '# What the captain decided' \
+    '- captain decision 2026-08-03: "Deliver behavior A."' \
+    '- captain decision 2026-08-03: "Deliver behavior B."' \
+    > "$brief"
+  out=$("$ROOT/bin/fm-doctrine-contract.sh" check "$brief" 2>&1)
+  expect_code 1 "$?" "an outcome source shared by two provenance entries does not identify a specific receipt"
+  assert_contains "$out" 'must identify exactly one receipted entry' \
+    "the ambiguous receipt pointer was not refused"
+
+  brief="$home/data/unbound/brief.md"
   printf '%s\n' \
     '# Delivery contract' \
     '- task-tier: T0' \
@@ -547,7 +579,7 @@ test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
     || fail "the bound captain source should pass the existing receipt check"
   "$ROOT/bin/fm-doctrine-contract.sh" check "$brief" \
     || fail "the outcome source repeated in receipted captain provenance should pass"
-  pass "fm-spawn.sh: captain outcomes are bound to receipted provenance"
+  pass "fm-spawn.sh: captain outcomes identify one specific receipted provenance entry"
 }
 
 # Driven against a real scaffold rather than a fixture, because the trap is in

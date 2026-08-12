@@ -52,7 +52,8 @@
 # task brief. A legacy caller-supplied --intent is accepted but ignored so a
 # paraphrase cannot weaken or replace the canonical outcome. At least one
 # --evidence path must name a non-empty executed result or capture inside the
-# task worktree; those paths are forwarded to the selected reviewer.
+# task worktree; the wrapper publishes copies on no-mistakes' temporary evidence
+# surface so every isolated review round can inspect and refresh them.
 # Usage: fm-validate.sh <task-id> --evidence <path> [--evidence <path>...] [extra axi run args...]
 set -eu
 
@@ -156,7 +157,7 @@ done
   exit 1
 }
 
-EVIDENCE_INTENT=""
+EVIDENCE_REAL_PATHS=()
 for evidence_path in "${EVIDENCE_PATHS[@]}"; do
   [ -n "$evidence_path" ] || { echo "error: --evidence path cannot be empty" >&2; exit 1; }
   [ -f "$evidence_path" ] && [ ! -L "$evidence_path" ] && [ -s "$evidence_path" ] || {
@@ -175,18 +176,53 @@ for evidence_path in "${EVIDENCE_PATHS[@]}"; do
       exit 1
       ;;
   esac
-  evidence_relative=${evidence_real#"$THERE"/}
-  EVIDENCE_INTENT="${EVIDENCE_INTENT}${EVIDENCE_INTENT:+
-}$evidence_relative"
+  EVIDENCE_REAL_PATHS+=("$evidence_real")
 done
 
 REVIEW_INTENT=$("$SCRIPT_DIR/fm-doctrine-contract.sh" review-intent "$BRIEF") || {
   echo "error: task $ID has no valid canonical delivery contract; validation did not start" >&2
   exit 1
 }
+
+PIPELINE_EVIDENCE_ROOT="${TMPDIR:-/tmp}/no-mistakes-evidence"
+mkdir -p "$PIPELINE_EVIDENCE_ROOT" || {
+  echo "error: cannot create no-mistakes evidence root: $PIPELINE_EVIDENCE_ROOT" >&2
+  exit 1
+}
+evidence_slug=$(printf '%s' "$ID" | tr -c 'A-Za-z0-9._-' '-')
+PIPELINE_EVIDENCE_DIR=$(mktemp -d "$PIPELINE_EVIDENCE_ROOT/fm-validate-$evidence_slug.XXXXXX") || {
+  echo "error: cannot create pipeline evidence directory under $PIPELINE_EVIDENCE_ROOT" >&2
+  exit 1
+}
+
+EVIDENCE_INTENT=""
+evidence_index=0
+for evidence_real in "${EVIDENCE_REAL_PATHS[@]}"; do
+  evidence_index=$((evidence_index + 1))
+  evidence_name=$(basename "$evidence_real")
+  evidence_name=$(printf '%s' "$evidence_name" | tr -c 'A-Za-z0-9._-' '-')
+  published_evidence="$PIPELINE_EVIDENCE_DIR/input-$evidence_index-$evidence_name"
+  cp "$evidence_real" "$published_evidence" || {
+    echo "error: cannot publish evidence to $published_evidence" >&2
+    exit 1
+  }
+  [ -s "$published_evidence" ] || {
+    echo "error: published evidence is empty: $published_evidence" >&2
+    exit 1
+  }
+  EVIDENCE_INTENT="${EVIDENCE_INTENT}${EVIDENCE_INTENT:+
+}$published_evidence"
+done
+
 REVIEW_INTENT="$REVIEW_INTENT
-Executed final-change evidence (inspect each saved result or capture directly):
-$EVIDENCE_INTENT"
+Executed final-change evidence is on the shared no-mistakes evidence surface.
+Pipeline evidence directory: $PIPELINE_EVIDENCE_DIR
+Initial worker captures (inspect each directly):
+$EVIDENCE_INTENT
+Evidence lifecycle for every topology:
+- Reuse these captures when no pipeline rebase resolution or review fix changes the relevant final diff.
+- When a pipeline rebase resolution or review fix changes the relevant final diff, that phase must save the output or capture from its already-required focused verification in $PIPELINE_EVIDENCE_DIR/pipeline-final-change.txt, replacing the prior pipeline-final-change capture before the next review. Do not run a second execution solely to create evidence.
+- After such a change, the next reviewer must inspect that pipeline-owned final-change capture and must not accept the initial worker capture, a plan, or a fix summary as evidence for the changed area."
 
 if [ -n "$CALLER_INTENT" ]; then
   echo "fm-validate: ignored caller --intent; using the canonical outcome and selected-review contract from $BRIEF." >&2

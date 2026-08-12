@@ -43,7 +43,7 @@ make_case() {
   local name=$1 mode=$2 case_dir fakebin
   case_dir="$TMP_ROOT/$name"
   fakebin="$case_dir/fakebin"
-  mkdir -p "$case_dir/state" "$case_dir/wt" "$case_dir/data/task-v1" "$fakebin"
+  mkdir -p "$case_dir/state" "$case_dir/wt" "$case_dir/data/task-v1" "$case_dir/pipeline-tmp" "$fakebin"
   fm_write_ship_brief "$case_dir/data/task-v1/brief.md" T0 \
     "tests/fm-validate.test.sh:$name => validation starts with the recorded delivery topology"
   printf '%s\n' 'command: focused-final-change-check' 'exit: 0' 'result: observable behavior passed' \
@@ -82,6 +82,7 @@ run_validate_from() {
     FM_STATE_OVERRIDE="$case_dir/state" \
     FM_DATA_OVERRIDE="$case_dir/data" \
     FM_TEST_NM_LOG="$case_dir/nm.log" \
+    TMPDIR="$case_dir/pipeline-tmp" \
     PATH="$case_dir/fakebin:$PATH" \
       "$VALIDATE" "$@"
   )
@@ -99,6 +100,10 @@ invoked() {
 
 invoked_skip() {
   sed -n '1s/.*--skip \([^ ]*\).*/\1/p' "$1/nm.log" 2>/dev/null || true
+}
+
+pipeline_evidence_dir() {
+  sed -n 's/^Pipeline evidence directory: //p' "$1/nm.log" 2>/dev/null | sed -n '1p'
 }
 
 test_validated_main_derives_skip() {
@@ -302,7 +307,7 @@ test_canonical_intent_comes_from_brief() {
 }
 
 test_executed_evidence_is_required_and_forwarded() {
-  local case_dir out rc
+  local case_dir out pipeline_dir published rc
   case_dir=$(make_case required-evidence direct-PR)
   set +e
   run_validate_from "$case_dir" "$case_dir/wt" task-v1 \
@@ -317,13 +322,33 @@ test_executed_evidence_is_required_and_forwarded() {
   run_validate "$case_dir" task-v1 >/dev/null 2>&1 \
     || fail "validation should start when a non-empty evidence capture is supplied"
   out=$(invoked "$case_dir")
-  assert_contains "$out" 'Executed final-change evidence' \
+  assert_contains "$out" 'shared no-mistakes evidence surface' \
     "the executed evidence was not forwarded to the selected reviewer"
   assert_contains "$out" 'final-change-evidence.txt' \
     "the selected reviewer did not receive the inspectable capture path"
+  pipeline_dir=$(pipeline_evidence_dir "$case_dir")
+  [ -n "$pipeline_dir" ] || fail "the invocation did not name its pipeline evidence directory"
+  case "$pipeline_dir" in
+    "$case_dir/pipeline-tmp/no-mistakes-evidence/"*) ;;
+    *) fail "evidence was not published on the no-mistakes temp surface: $pipeline_dir" ;;
+  esac
+  published="$pipeline_dir/input-1-final-change-evidence.txt"
+  cmp "$case_dir/wt/final-change-evidence.txt" "$published" >/dev/null \
+    || fail "the published pipeline evidence does not preserve the executed worker capture"
+  rm -f "$case_dir/wt/final-change-evidence.txt"
+  [ -s "$published" ] \
+    || fail "the published capture disappeared with the worker-local copy"
+  assert_contains "$out" 'Reuse these captures when no pipeline rebase resolution or review fix changes the relevant final diff.' \
+    "an unchanged diff cannot reuse its existing accessible capture"
+  assert_contains "$out" 'already-required focused verification' \
+    "a pipeline change was not bound to its own focused verification"
+  assert_contains "$out" "$pipeline_dir/pipeline-final-change.txt" \
+    "the next review did not receive the pipeline-owned final-change evidence location"
+  assert_contains "$out" 'Do not run a second execution solely to create evidence.' \
+    "the evidence lifecycle can duplicate an execution that already proves the fix"
   assert_not_contains "$out" '--evidence' \
     "the wrapper leaked its evidence option to no-mistakes instead of consuming it"
-  pass "fm-validate requires and forwards inspectable executed evidence"
+  pass "fm-validate publishes reusable evidence and binds changed diffs to pipeline verification"
 }
 
 test_missing_meta_refuses() {

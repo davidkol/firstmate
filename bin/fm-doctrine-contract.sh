@@ -57,6 +57,16 @@ check_contract() {
       return line ~ /^[ \t]*(```|~~~)/
     }
 
+    function has_authority_receipt(line, lower) {
+      lower = tolower(line)
+      if (lower ~ /[12][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) return 1
+      if (lower ~ /(ruling|rulings|decision|decisions)[ ]*#?[ ]*[0-9]/) return 1
+      if (lower ~ /"[^"]+"/) return 1
+      if (index(lower, "\342\200\234") > 0) return 1
+      if (lower ~ /captain-decisions/) return 1
+      return 0
+    }
+
     BEGIN {
       section_count = 0
       in_contract = 0
@@ -90,7 +100,10 @@ check_contract() {
 
       if (in_captain) {
         if ($0 ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+/) {
-          captain_provenance = captain_provenance "\n" $0
+          captain_count++
+          captain_entry[captain_count] = $0
+        } else if (captain_count > 0 && $0 ~ /^[ \t]+[^ \t]/) {
+          captain_entry[captain_count] = captain_entry[captain_count] "\n" $0
         }
         next
       }
@@ -142,8 +155,16 @@ check_contract() {
           if (placeholder(source) || placeholder(result)) {
             finding("outcome must contain a non-placeholder source pointer and observable result")
           }
-          if (tolower(source) ~ /captain/ && index(tolower(captain_provenance), tolower(source)) == 0) {
-            finding("captain-sourced outcome pointer must also appear in # What the captain decided")
+          if (tolower(source) ~ /captain/) {
+            captain_matches = 0
+            if (has_authority_receipt(source)) {
+              for (captain_item = 1; captain_item <= captain_count; captain_item++) {
+                if (index(tolower(captain_entry[captain_item]), tolower(source)) > 0) captain_matches++
+              }
+            }
+            if (captain_matches != 1) {
+              finding("captain-sourced outcome pointer must identify exactly one receipted entry in # What the captain decided")
+            }
           }
         }
       }
