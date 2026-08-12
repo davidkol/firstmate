@@ -517,7 +517,7 @@ test_spawn_refuses_invalid_core_delivery_fields_before_launch() {
 test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   local home brief out
   home="$TMP_ROOT/spawn-doctrine-authority"
-  mkdir -p "$home/data/unbound" "$home/data/vague" "$home/data/generic" "$home/data/punctuation" "$home/data/ambiguous" "$home/data/prefix" "$home/state" "$home/proj"
+  mkdir -p "$home/data/unbound" "$home/data/vague" "$home/data/generic" "$home/data/punctuation" "$home/data/wrapped" "$home/data/ambiguous" "$home/data/prefix" "$home/state" "$home/proj"
   brief="$home/data/unbound/brief.md"
   printf '%s\n' \
     '# Delivery contract' \
@@ -583,6 +583,22 @@ test_spawn_binds_captain_outcome_to_the_receipted_provenance_block() {
   assert_contains "$out" 'must use captain decision <complete-id>' \
     "the punctuation-shaped decision pointer bypassed the canonical receipt syntax"
 
+  brief="$home/data/wrapped/brief.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T0' \
+    '- outcome: the decision#1 => enable X' \
+    '' \
+    '# What the captain decided' \
+    '- Captain decision #1: "Do not enable X."' \
+    > "$brief"
+  "$ROOT/bin/fm-authority-receipts.sh" "$brief" \
+    || fail "the wrapped-pointer case must clear the receipt check to reproduce the boundary failure"
+  out=$(run_spawn_gate "$home" wrapped "$home/proj")
+  expect_code 1 "$?" "spawn must reject an article-wrapped generic decision pointer"
+  assert_contains "$out" 'must use captain decision <complete-id>' \
+    "the wrapped decision pointer bypassed the canonical receipt syntax"
+
   brief="$home/data/ambiguous/brief.md"
   printf '%s\n' \
     '# Delivery contract' \
@@ -643,7 +659,8 @@ test_review_intent_forwards_only_the_matched_captain_receipt() {
     '- outcome: captain decision 1 => enable X' \
     '' \
     '# What the captain decided' \
-    '- Captain decision 1: "Do not enable X."' \
+    '- Captain decision 1:' \
+    '> "Do not enable X."' \
     '- Captain decision 2: "Keep Y enabled."' \
     > "$brief"
 
@@ -651,8 +668,10 @@ test_review_intent_forwards_only_the_matched_captain_receipt() {
     || fail "a structurally valid contradictory target should reach independent review"
   assert_contains "$out" 'matched captain authority receipt:' \
     "the reviewer interface did not label the matched authority receipt"
-  assert_contains "$out" '- Captain decision 1: "Do not enable X."' \
-    "the reviewer cannot inspect the authoritative text that contradicts the outcome"
+  assert_contains "$out" '- Captain decision 1:' \
+    "the reviewer cannot inspect the matched authority receipt"
+  assert_contains "$out" '> "Do not enable X."' \
+    "the reviewer lost an unindented continuation accepted by the authority parser"
   assert_not_contains "$out" 'Captain decision 2' \
     "the reviewer received the whole provenance block instead of the one matched receipt"
   pass "fm-doctrine-contract.sh: review intent exposes exactly the matched captain receipt"

@@ -128,7 +128,7 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
 }
 
 test_promoted_setup_recovers_across_separate_shells() {
-  local dir brief worktree command snapshot cleanup_rc
+  local dir brief worktree command snapshot
   dir=$(make_scout separate-shells)
   brief="$dir/home/data/scout-a/brief.md"
   worktree="$dir/worktree"
@@ -158,28 +158,36 @@ test_promoted_setup_recovers_across_separate_shells() {
   command=$(prompt_command "$brief" '3. Return to the proven clean default-branch base:')
   (cd "$worktree" && bash -c "$command") \
     || fail "the clean-base command could not recover in a separate worker shell"
+  command=$(prompt_command "$brief" '2. Preserve the complete scout state recoverably before cleaning it:')
+  (cd "$worktree" && bash -c "$command") \
+    || fail "retrying preservation after an interruption failed"
+  [ "$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)" = "$snapshot" ] \
+    || fail "retrying preservation replaced the original scout snapshot with the clean base"
   command=$(prompt_command "$brief" '4. Prove the base before carrying work:')
   (cd "$worktree" && bash -c "$command") \
     || fail "the base-proof command depended on variables from an earlier worker shell"
   command=$(prompt_command "$brief" '5. Only after that proof, create the ship branch:')
   (cd "$worktree" && bash -c "$command") \
     || fail "the branch command failed after the separate-shell base proof"
-  command=$(prompt_command "$brief" '6. Restore only the intended implementation and regression-test paths:')
-  command=${command/'<paths>'/intended.txt}
+  command=$(prompt_command "$brief" '6. Import only the intended implementation and regression-test paths transactionally:')
+  command=${command//'<paths>'/intended.txt}
   (cd "$worktree" && bash -c "$command") \
-    || fail "the restore command could not find the task-scoped snapshot from a separate worker shell"
+    || fail "the import transaction could not recover and commit the selected scout work"
   [ "$(cat "$worktree/intended.txt")" = 'preserved scout work' ] \
-    || fail "the separate-shell restore did not recover the preserved scout work"
-
-  command=$(prompt_command "$brief" '7. Clean up the snapshot ref only after Git proves it is reachable from the current ship history:')
-  set +e
-  (cd "$worktree" && bash -c "$command")
-  cleanup_rc=$?
-  set -e
-  expect_code 1 "$cleanup_rc" "snapshot cleanup must refuse while the preserved commit is not reachable from ship history"
-  [ "$(git -C "$worktree" rev-parse refs/fm-promote/scout-a/scout-snapshot)" = "$snapshot" ] \
-    || fail "refusing cleanup lost the preserved snapshot"
-  pass "fm-promote.sh: promoted setup recovers safely across separate worker shells"
+    || fail "the import transaction did not recover the selected scout work"
+  [ ! -e "$worktree/debug.txt" ] \
+    || fail "the import transaction carried unselected debug residue"
+  git -C "$worktree" diff --quiet "$snapshot" HEAD -- intended.txt \
+    || fail "the committed ship history does not preserve the selected snapshot path"
+  [ "$(git -C "$worktree" log -1 --format=%s)" = 'import promoted scout work' ] \
+    || fail "the selected scout work was not committed as a reachable import"
+  if git -C "$worktree" show-ref --verify --quiet refs/fm-promote/scout-a/scout-snapshot; then
+    fail "the proven selective import retained its private snapshot ref"
+  fi
+  if git -C "$worktree" show-ref --verify --quiet refs/fm-promote/scout-a/import; then
+    fail "the proven selective import retained its transaction ref"
+  fi
+  pass "fm-promote.sh: promoted setup retries and commits selective recovery safely"
 }
 
 test_promotion_requires_explicit_authority_instead_of_scout_prose() {

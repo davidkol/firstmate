@@ -811,7 +811,7 @@ EOF
 IMPLEMENTATION_DOCTRINE=${IMPLEMENTATION_DOCTRINE%$'\n'}
 
 if [ "${FM_PROMOTED_SCOUT:-0}" = 1 ]; then
-  PROMOTION_SETUP2=$(printf '%s\n' "$SETUP2" | sed 's/^3\./8./')
+  PROMOTION_SETUP2=$(printf '%s\n' "$SETUP2" | sed 's/^3\./7./')
   IFS= read -r -d '' SHIP_SETUP <<EOF || true
 # Setup
 You are in the existing disposable scout worktree of $REPO. Its current HEAD and dirty state are recoverable scout evidence, not the ship base.
@@ -822,12 +822,11 @@ The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
 1. Inventory the scout state before changing refs: run \`git status --short --branch\`, \`git log --oneline -15\`, and \`git diff --stat\`; identify the intended implementation and regression-test paths separately from debug residue.
-2. Preserve the complete scout state recoverably before cleaning it: \`if test -n "\$(git status --porcelain)"; then git add -A && git commit -m "scout snapshot before promotion"; fi && git update-ref refs/fm-promote/$ID/scout-snapshot HEAD\`. Never push that task-scoped ref.
+2. Preserve the complete scout state recoverably before cleaning it: \`if git show-ref --verify --quiet refs/fm-promote/$ID/scout-snapshot; then :; else if test -n "\$(git status --porcelain)"; then git add -A && git commit -m "scout snapshot before promotion"; fi && git update-ref refs/fm-promote/$ID/scout-snapshot HEAD ""; fi\`. Never push that task-scoped ref.
 3. Return to the proven clean default-branch base: \`source "$FM_ROOT/bin/fm-tangle-lib.sh" && DEFAULT_BRANCH=\$(fm_default_branch .) && git switch --detach "\$DEFAULT_BRANCH"\`.
 4. Prove the base before carrying work: \`source "$FM_ROOT/bin/fm-tangle-lib.sh" && DEFAULT_BRANCH=\$(fm_default_branch .) && test -z "\$(git status --porcelain)" && test "\$(git rev-parse HEAD)" = "\$(git rev-parse "refs/heads/\$DEFAULT_BRANCH")"\`. If it fails, append \`blocked: promoted scout could not establish a clean default-branch base\` and stop.
 5. Only after that proof, create the ship branch: \`git checkout -b fm/$ID\`.
-6. Restore only the intended implementation and regression-test paths: \`git restore --source refs/fm-promote/$ID/scout-snapshot -- <paths>\`. Leave scratch commits and debug residue behind, then orient against the promoted task. $ORIENT_1
-7. Clean up the snapshot ref only after Git proves it is reachable from the current ship history: \`git merge-base --is-ancestor refs/fm-promote/$ID/scout-snapshot HEAD && git update-ref -d refs/fm-promote/$ID/scout-snapshot\`. Until that succeeds, keep the ref.
+6. Import only the intended implementation and regression-test paths transactionally: \`REF=refs/fm-promote/$ID/scout-snapshot && IMPORT_REF=refs/fm-promote/$ID/import && if git show-ref --verify --quiet "\$IMPORT_REF"; then :; elif git diff --quiet "\$REF" HEAD -- <paths>; then git update-ref "\$IMPORT_REF" HEAD ""; else git restore --source "\$REF" -- <paths> && git add -A -- <paths> && git commit -m "import promoted scout work" && git update-ref "\$IMPORT_REF" HEAD ""; fi && git merge-base --is-ancestor "\$IMPORT_REF" HEAD && git diff --quiet "\$REF" "\$IMPORT_REF" -- <paths> && git update-ref -d "\$IMPORT_REF" && git update-ref -d "\$REF"\`. This applies and commits only the selected paths, proves that import reachable, and leaves both refs intact on any earlier failure. Leave scratch commits and debug residue behind, then orient against the promoted task. $ORIENT_1
    $ORIENT_2$PROMOTION_SETUP2$MEMORY_SECTION
 EOF
 else

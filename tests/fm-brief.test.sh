@@ -314,12 +314,12 @@ test_doctrine_contract_ignores_fenced_examples() {
     '```md' \
     '# Delivery contract' \
     '- task-tier: T3' \
-    '- outcome: sample => sample' \
+    '- outcome: tests/sample => sample' \
     '```' \
     '~~~~' \
     '# Delivery contract' \
     '- task-tier: T4' \
-    '- outcome: another sample => another sample' \
+    '- outcome: tests/another-sample => another sample' \
     '~~~~' \
     '`````' \
     '# Delivery contract' \

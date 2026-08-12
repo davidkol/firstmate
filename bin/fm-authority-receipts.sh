@@ -2,6 +2,7 @@
 # fm-authority-receipts.sh - find claims made under the captain's authority that
 # carry no receipt.
 # Usage: fm-authority-receipts.sh <path>...
+#        fm-authority-receipts.sh match <brief.md> <source-pointer>
 #   Each path is a Markdown file, or a directory scanned for *.md.
 #   Prints one line per unreceipted claim and exits 1; exits 0 when clean.
 #
@@ -85,6 +86,15 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
 
+ACTION=check
+POINTER=
+if [ "${1:-}" = match ]; then
+  [ "$#" -eq 3 ] || { usage >&2; exit 2; }
+  ACTION=match
+  POINTER=$3
+  set -- "$2"
+fi
+
 [ "$#" -gt 0 ] || { echo "error: no paths given (see --help)" >&2; exit 2; }
 
 FILES=()
@@ -108,6 +118,7 @@ if [ "${#FILES[@]}" -eq 0 ]; then
   exit 2
 fi
 
+export FM_AUTHORITY_ACTION=$ACTION FM_AUTHORITY_POINTER=$POINTER
 awk '
   # Claims the captain as the source of a decision. Matched against a
   # lowercased copy of the line, so the patterns stay case-blind without
@@ -175,6 +186,28 @@ awk '
     return l
   }
 
+  function repository_pointer(l) {
+    return l ~ /^[[:alnum:]_.-]+(\/[[:alnum:]_.#-]+)+$/
+  }
+
+  function canonical_captain_pointer(l) {
+    return l ~ /^captain decision [[:alnum:]_.#\/-]+$/
+  }
+
+  function authority_pointer_shaped(l) {
+    if (l ~ /(^|[^[:alnum:]_])captain([^[:alnum:]_]|$)/) return 1
+    if (l ~ /(^|[^[:alnum:]_])(decision|decisions|ruling|rulings)([^[:alnum:]_]|$)/) return 1
+    return 0
+  }
+
+  function receipt_matches_pointer(first, pointer, normalized, following) {
+    normalized = tolower(first)
+    sub(/^[ \t]*([-*+]|[0-9]+\.)[ \t]+/, "", normalized)
+    if (index(normalized, pointer) != 1) return 0
+    following = substr(normalized, length(pointer) + 1, 1)
+    return following == "" || following !~ /[[:alnum:]_.#\/-]/
+  }
+
   # A pending list item is only judged once its continuation lines are known,
   # which can be as late as the last line of its file. It therefore carries its
   # own file, line, and opener: by the time it is judged, FILENAME may already
@@ -182,8 +215,15 @@ awk '
   function flush_item() {
     blank_pending = 0
     if (item_line == 0) return
-    if (!declares_absence(item_first) && !has_receipt(item_text)) report(item_file, item_line, item_first)
-    item_line = 0; item_text = ""; item_first = ""; item_indent = 0
+    if (action == "match") {
+      if (match_kind == "captain" && receipt_matches_pointer(item_first, pointer)) {
+        matched_receipts++
+        matched_receipt = item_render
+      }
+    } else if (!declares_absence(item_first) && !has_receipt(item_text)) {
+      report(item_file, item_line, item_first)
+    }
+    item_line = 0; item_text = ""; item_first = ""; item_render = ""; item_indent = 0
   }
 
   function report(file, line, text) {
@@ -191,13 +231,33 @@ awk '
     findings++
   }
 
+  BEGIN {
+    action = ENVIRON["FM_AUTHORITY_ACTION"]
+    pointer = tolower(trim(ENVIRON["FM_AUTHORITY_POINTER"]))
+    if (action == "match") {
+      if (repository_pointer(pointer)) {
+        match_kind = "repository"
+      } else if (canonical_captain_pointer(pointer)) {
+        match_kind = "captain"
+      } else {
+        match_invalid = 1
+        if (authority_pointer_shaped(pointer)) {
+          print "error: captain authority source pointer must use captain decision <complete-id>" > "/dev/stderr"
+        } else {
+          print "error: outcome source pointer must use an explicit repository path or captain decision <complete-id>" > "/dev/stderr"
+        }
+      }
+    }
+  }
+
   FNR == 1 {
     flush_item()
     in_block = 0; table_row = 0; in_fence = 0
-    item_line = 0; item_text = ""; item_first = ""; item_indent = 0
+    item_line = 0; item_text = ""; item_first = ""; item_render = ""; item_indent = 0
   }
 
   {
+    if (match_invalid || match_kind == "repository") next
     line = $0
 
     # A fenced block is a sample, not structure. Skipping it whole stops a shell
@@ -208,7 +268,11 @@ awk '
 
     if (is_heading(line)) {
       flush_item()
-      in_block = claims_authority(line)
+      if (action == "match") {
+        in_block = line ~ /^# What the captain decided[ \t]*$/
+      } else {
+        in_block = claims_authority(line)
+      }
       table_row = 0
       next
     }
@@ -239,12 +303,29 @@ awk '
       # sub-bullet neither borrows the receipt above it nor lends it one.
       flush_item()
       item_line = FNR; item_text = line; item_first = line
-      item_file = FILENAME; item_indent = indent_of(line)
+      item_render = line; item_file = FILENAME; item_indent = indent_of(line)
       next
     }
 
-    if (item_line > 0) { item_text = item_text " " line; next }   # continuation
+    if (item_line > 0) {
+      item_text = item_text " " line
+      item_render = item_render "\n" line
+      next
+    }
   }
 
-  END { flush_item(); if (findings > 0) exit 1 }
+  END {
+    flush_item()
+    if (action == "match") {
+      if (match_invalid) exit 1
+      if (match_kind == "repository") exit 0
+      if (matched_receipts != 1) {
+        print "error: captain-sourced outcome pointer must identify exactly one receipted entry in # What the captain decided" > "/dev/stderr"
+        exit 1
+      }
+      print matched_receipt
+      exit 0
+    }
+    if (findings > 0) exit 1
+  }
 ' "${FILES[@]}"

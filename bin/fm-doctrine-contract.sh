@@ -8,9 +8,11 @@
 # The "# Delivery contract" block is the single machine-owned schema.
 # Exactly one task-tier and outcome are always required.
 # prove, player, parts, platform, and correct are conditional evidence lines.
-# This script validates structure only; workers and the selected reviewer judge
-# whether the cited source and evidence actually establish the claimed outcome.
+# This script validates structure and source binding; workers and the selected
+# reviewer judge whether the cited evidence establishes the claimed outcome.
 set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 usage() {
   awk '
@@ -31,7 +33,7 @@ BRIEF=${2:-}
 
 check_contract() {
   output_mode=${1:-check}
-  awk -v output_mode="$output_mode" '
+  awk '
     function trim(value) {
       sub(/^[ \t]+/, "", value)
       sub(/[ \t]+$/, "", value)
@@ -68,31 +70,9 @@ check_contract() {
       return 1
     }
 
-    function canonical_captain_pointer(value, normalized) {
-      normalized = tolower(trim(value))
-      if (normalized ~ /^captain decision [[:alnum:]_.#\/-]+$/) return normalized
-      return ""
-    }
-
-    function captain_pointer_like(value, normalized) {
-      normalized = tolower(trim(value))
-      if (normalized ~ /^captain/) return 1
-      if (normalized ~ /^(decision|ruling)/) return 1
-      return 0
-    }
-
-    function captain_entry_matches(entry, pointer, normalized, following) {
-      normalized = tolower(entry)
-      sub(/^[ 	]*([-*+]|[0-9]+\.)[ 	]+/, "", normalized)
-      if (index(normalized, pointer) != 1) return 0
-      following = substr(normalized, length(pointer) + 1, 1)
-      return following == "" || following !~ /[[:alnum:]_.#\/-]/
-    }
-
     BEGIN {
       section_count = 0
       in_contract = 0
-      in_captain = 0
       in_fence = 0
       findings = 0
     }
@@ -115,27 +95,10 @@ check_contract() {
       if ($0 ~ /^# Delivery contract[ \t]*$/) {
         section_count++
         in_contract = 1
-        in_captain = 0
-        next
-      }
-      if ($0 ~ /^# What the captain decided[ \t]*$/) {
-        in_contract = 0
-        in_captain = 1
         next
       }
       if ($0 ~ /^#/) {
         in_contract = 0
-        in_captain = 0
-      }
-
-      if (in_captain) {
-        if ($0 ~ /^[ \t]*([-*+]|[0-9]+\.)[ \t]+/) {
-          captain_count++
-          captain_entry[captain_count] = $0
-        } else if (captain_count > 0 && $0 ~ /^[ \t]+[^ \t]/) {
-          captain_entry[captain_count] = captain_entry[captain_count] "\n" $0
-        }
-        next
       }
       if (!in_contract) next
 
@@ -185,21 +148,6 @@ check_contract() {
           if (placeholder(source) || placeholder(result)) {
             finding("outcome must contain a non-placeholder source pointer and observable result")
           }
-          captain_pointer = canonical_captain_pointer(source)
-          if (captain_pointer_like(source) && captain_pointer == "") {
-            finding("captain authority source pointer must use captain decision <complete-id>")
-          } else if (captain_pointer != "") {
-            captain_matches = 0
-            for (captain_item = 1; captain_item <= captain_count; captain_item++) {
-              if (captain_entry_matches(captain_entry[captain_item], captain_pointer)) {
-                captain_matches++
-                captain_match_index = captain_item
-              }
-            }
-            if (captain_matches != 1) {
-              finding("captain-sourced outcome pointer must identify exactly one receipted entry in # What the captain decided")
-            }
-          }
         }
       }
 
@@ -222,12 +170,17 @@ check_contract() {
       if (!correction && count["correct"] > 0) finding("correct evidence requires the T4 correction overlay")
       if (base != "T3" && count["parts"] > 0) finding("parts evidence requires a T3 runtime tier")
 
-      if (findings == 0 && output_mode == "matched-receipt" && captain_match_index > 0) {
-        print captain_entry[captain_match_index]
-      }
       exit findings > 0 ? 1 : 0
     }
-  ' "$BRIEF"
+  ' "$BRIEF" || return 1
+
+  outcome=$(field_value outcome)
+  source=${outcome%%=>*}
+  source=$(printf '%s\n' "$source" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  matched_receipt=$("$SCRIPT_DIR/fm-authority-receipts.sh" match "$BRIEF" "$source") || return 1
+  if [ "$output_mode" = matched-receipt ] && [ -n "$matched_receipt" ]; then
+    printf '%s\n' "$matched_receipt"
+  fi
 }
 
 field_value() {
