@@ -48,16 +48,20 @@
 # directory and does not change it, and refuses when that directory is not the one
 # the task's own meta records. Drive the resulting gates with
 # `no-mistakes axi respond` as usual; this script only starts the run.
-# Usage: fm-validate.sh <task-id> --intent "<what the user set out to accomplish>" [extra axi run args...]
+# The selected review intent comes from the validated delivery contract in the
+# task brief. A legacy caller-supplied --intent is accepted but ignored so a
+# paraphrase cannot weaken or replace the canonical outcome.
+# Usage: fm-validate.sh <task-id> [extra axi run args...]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
 usage() {
-  echo 'usage: fm-validate.sh <task-id> --intent "<what the user set out to accomplish>" [extra axi run args...]' >&2
+  echo 'usage: fm-validate.sh <task-id> [extra axi run args...]' >&2
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -68,6 +72,13 @@ fi
 ID=${1:-}
 [ -n "$ID" ] || { usage; exit 1; }
 shift
+
+BRIEF="$DATA/$ID/brief.md"
+[ -f "$BRIEF" ] || { echo "error: no brief for task $ID at $BRIEF" >&2; exit 1; }
+REVIEW_INTENT=$("$SCRIPT_DIR/fm-doctrine-contract.sh" review-intent "$BRIEF") || {
+  echo "error: task $ID has no valid canonical delivery contract; validation did not start" >&2
+  exit 1
+}
 
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
@@ -104,8 +115,8 @@ esac
 # Pull any caller-supplied --skip out of the passthrough args so a second --skip
 # cannot override the mode's. The two sets are merged below.
 CALLER_SKIP=""
+CALLER_INTENT=""
 ARGS=()
-HAS_INTENT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --skip)
@@ -117,9 +128,13 @@ while [ $# -gt 0 ]; do
       CALLER_SKIP="${CALLER_SKIP:+$CALLER_SKIP,}${1#--skip=}"
       shift
       ;;
-    --intent|--intent=*)
-      HAS_INTENT=1
-      ARGS+=("$1")
+    --intent)
+      [ $# -ge 2 ] || { echo "error: --intent needs a value" >&2; exit 1; }
+      CALLER_INTENT=$2
+      shift 2
+      ;;
+    --intent=*)
+      CALLER_INTENT=${1#--intent=}
       shift
       ;;
     *)
@@ -129,13 +144,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# axi run requires --intent to start a run; refuse here with the reason rather
-# than letting the daemon reject a half-started run.
-[ "$HAS_INTENT" -eq 1 ] || {
-  echo "error: --intent is required to start a validation run (what the user set out to accomplish, not a description of the diff)" >&2
-  usage
-  exit 1
-}
+if [ -n "$CALLER_INTENT" ]; then
+  echo "fm-validate: ignored caller --intent; using the canonical outcome and selected-review contract from $BRIEF." >&2
+fi
+ARGS+=(--intent "$REVIEW_INTENT")
 
 # Merge and de-duplicate, preserving the mode's steps first. This loop is the one
 # place the final skip set is assembled, so it is where the never-skip-review

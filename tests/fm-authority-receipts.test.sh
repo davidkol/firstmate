@@ -481,6 +481,39 @@ EOF
   pass "fm-spawn.sh: refuses a brief whose provenance section is still a placeholder"
 }
 
+test_spawn_refuses_invalid_core_delivery_fields_before_launch() {
+  local home case_name brief out
+  home="$TMP_ROOT/spawn-doctrine-core"
+  mkdir -p "$home/data" "$home/state" "$home/proj"
+
+  for case_name in missing duplicate placeholder illegal; do
+    brief="$home/data/$case_name/brief.md"
+    mkdir -p "$(dirname "$brief")"
+    case "$case_name" in
+      missing)
+        printf '%s\n' '# Delivery contract' '- task-tier: T0' > "$brief"
+        ;;
+      duplicate)
+        printf '%s\n' '# Delivery contract' '- task-tier: T0' '- task-tier: T1' \
+          '- outcome: tests/fm-authority-receipts.test.sh#duplicate => dispatch refuses the ambiguous tier' > "$brief"
+        ;;
+      placeholder)
+        printf '%s\n' '# Delivery contract' '- task-tier: T0' '- outcome: TODO' > "$brief"
+        ;;
+      illegal)
+        printf '%s\n' '# Delivery contract' '- task-tier: T9' \
+          '- outcome: tests/fm-authority-receipts.test.sh#illegal => dispatch refuses the illegal tier' > "$brief"
+        ;;
+    esac
+
+    out=$(run_spawn_gate "$home" "$case_name" "$home/proj")
+    expect_code 1 "$?" "$case_name: spawn must refuse an invalid core delivery field"
+    assert_contains "$out" 'invalid delivery contract' \
+      "$case_name: spawn did not refuse at the delivery-contract gate"
+  done
+  pass "fm-spawn.sh: missing, duplicate, placeholder, and illegal core fields fail before launch"
+}
+
 # Driven against a real scaffold rather than a fixture, because the trap is in
 # the scaffold's own text: a generated brief explains that it "cannot inspect the
 # task text that replaces `{TASK}` later", so a substring match would refuse every
@@ -503,11 +536,19 @@ test_spawn_lets_a_filled_generated_brief_past_the_placeholder_gate() {
   out=$(run_spawn_gate "$home" filled "$home/proj")
   expect_code 1 "$?" "a freshly generated brief still carries every placeholder"
   assert_contains "$out" "{TASK}" "the refusal must name the unfilled task placeholder"
+  assert_contains "$out" "{TASK_TIER}" "the refusal must name the unfilled tier placeholder"
+  assert_contains "$out" "{OUTCOME}" "the refusal must name the unfilled outcome placeholder"
   assert_contains "$out" "{CAPTAIN_RULINGS}" "the refusal must name the unfilled rulings placeholder"
   assert_contains "$out" "{FIRSTMATE_INFERENCE}" "the refusal must name the unfilled inference placeholder"
 
   awk '{
     if ($0 == "{TASK}") print "Replace the veer impulse with sustained force."
+    else if ($0 == "- task-tier: {TASK_TIER}") print "- task-tier: T2"
+    else if ($0 == "- outcome: {OUTCOME}") print "- outcome: captain decision 2026-08-03 => sustained veer force moves the crew"
+    else if ($0 == "# Delivery doctrine - implementation slice") {
+      print "- player: normal launch -> trigger the veer -> observe sustained crew movement"
+      print $0
+    }
     else if ($0 == "{CAPTAIN_RULINGS}") print "- Gravity goes when you veer."
     else if ($0 == "{FIRSTMATE_INFERENCE}") print "- the engine bleeds the impulse off in one frame"
     else print
@@ -552,5 +593,6 @@ test_a_bullet_keeps_its_indented_evidence
 test_a_sub_bullet_is_judged_on_its_own_text
 test_spawn_refuses_a_brief_that_claims_the_captain_without_a_receipt
 test_spawn_refuses_a_brief_with_an_unreplaced_placeholder
+test_spawn_refuses_invalid_core_delivery_fields_before_launch
 test_spawn_lets_a_filled_generated_brief_past_the_placeholder_gate
 test_help_includes_entire_header

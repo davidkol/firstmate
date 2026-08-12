@@ -33,14 +33,15 @@ For a read-only game status or report request, apply the same project-source and
 Use this authority order: purpose, doctrine, and design intent are human-originated; architecture, specification, and implementation translate them downward.
 Never invent missing design intent or let a mechanical gate stand in for it.
 Use mechanical checks to catch execution slips and this authority boundary to catch intent gaps; neither substitutes for the other.
-Treat project-owned files as game truth and point to them instead of copying their contents into a second source of truth.
+Human and authoritative designer sources define the target, current code and observed runtime define the present, and agent-authored artifacts remain provisional claims regardless of where the project stores them.
+Load [`delivery-doctrine`](../delivery-doctrine/SKILL.md) before shaping a ship contract, and terminate its canonical outcome at an authoritative source rather than a queued task, report, comment, test, status line, memory, or agent-authored plan.
 
 ## Intake transformation
 
 1. Preserve the complete request verbatim before interpreting it.
 2. Write a cleaned reading that removes transcription noise and repairs readability without adding, dropping, broadening, or narrowing meaning.
 3. Inspect the project's authoritative design, implementation, decision, and acceptance sources that bear on the request.
-4. Keep a concise private project context card made of the current goal, priorities, built, planned, and unknown state, pertinent open decisions, source pointers with a pertinence rationale, and relevant captain corrections; use the existing project-private equivalent when one exists, otherwise use `data/project-context/<project>.md` in the active Firstmate home.
+4. Keep the concise private project context card to authoritative source pointers with a pertinence rationale, pertinent open decisions, and exact dated captain corrections; read current code and runtime on demand instead of copying goal, priority, built, planned, or unknown summaries into a second intent surface.
 5. Let the Companion intake that resolved the request be the card's only writer; workers read it through source pointers.
 6. Identify only ambiguity whose answer could change the pertinent behavior or implementation boundary.
 7. Take the fast path when no pertinent ambiguity remains.
@@ -66,6 +67,8 @@ Prepare one task-local intake block with these sections:
 - Observable done conditions.
 - Review risk and required evidence.
 
+For a ship, translate that block into the two required delivery-contract fields and only the applicable conditional evidence lines through `delivery-doctrine`.
+
 Keep the result cold-readable and decision-free before dispatch: a worker may choose implementation mechanics inside the accepted contract, but may not receive an unresolved product or design choice.
 Link to repository truth instead of embedding a context dump.
 
@@ -81,6 +84,6 @@ Do not copy those procedures into this skill or create another handoff document.
 Name the review risk in the task content without replacing the selected delivery path.
 Keep planner or architect, executor, and fresh reviewer separation available when risk warrants it, but do not instantiate extra roles by default.
 
-- For a localized mechanical change with no behavior or architecture effect, require its targeted check plus the review already required by the selected path.
-- For a behavior, architecture, or cross-seam change, require the full project check, observation of one behavior before stacking more behavior changes, and the fresh reviewer the selected path provides when that depth is warranted.
-- If a faster path is too shallow for the risk, use the existing section 7 escalation about switching to no-mistakes; do not invent an extra manual review gate.
+- For a localized mechanical change with no behavior or architecture effect, require its direct oracle plus the review already required by the selected path.
+- For behavior, architecture, cross-seam, platform, and correction work, apply the tier-specific evidence in `delivery-doctrine` and the fresh reviewer the selected path already provides.
+- Keep that evidence depth independent from the selected delivery topology and do not invent an extra manual review gate.

@@ -43,7 +43,9 @@ make_case() {
   local name=$1 mode=$2 case_dir fakebin
   case_dir="$TMP_ROOT/$name"
   fakebin="$case_dir/fakebin"
-  mkdir -p "$case_dir/state" "$case_dir/wt" "$fakebin"
+  mkdir -p "$case_dir/state" "$case_dir/wt" "$case_dir/data/task-v1" "$fakebin"
+  fm_write_ship_brief "$case_dir/data/task-v1/brief.md" T0 \
+    "tests/fm-validate.test.sh:$name => validation starts with the recorded delivery topology"
   if [ "$mode" != "__none__" ]; then
     fm_write_meta "$case_dir/state/task-v1.meta" \
       "window=fm-task-v1" \
@@ -76,6 +78,7 @@ run_validate_from() {
     cd "$from" || exit 1
     FM_ROOT_OVERRIDE="$ROOT" \
     FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_DATA_OVERRIDE="$case_dir/data" \
     FM_TEST_NM_LOG="$case_dir/nm.log" \
     PATH="$case_dir/fakebin:$PATH" \
       "$VALIDATE" "$@"
@@ -89,6 +92,10 @@ run_validate() {
 
 invoked() {
   cat "$1/nm.log" 2>/dev/null || true
+}
+
+invoked_skip() {
+  sed -n '1s/.*--skip \([^ ]*\).*/\1/p' "$1/nm.log" 2>/dev/null || true
 }
 
 test_validated_main_derives_skip() {
@@ -142,7 +149,7 @@ test_no_mode_skips_review() {
     case_dir=$(make_case "review-kept-$mode" "$mode")
     run_validate "$case_dir" task-v1 --intent "add a thing" >/dev/null 2>&1 \
       || fail "review-kept-$mode: fm-validate should succeed"
-    out=$(invoked "$case_dir")
+    out=$(invoked_skip "$case_dir")
     assert_not_contains "$out" "review" \
       "review-kept-$mode: mode $mode must never skip the review step"
   done
@@ -167,7 +174,7 @@ test_caller_cannot_skip_review() {
       || fail "caller-skip-review-$mode: fm-validate should still start the run"
     [ -s "$case_dir/nm.log" ] \
       || fail "caller-skip-review-$mode: the run should still have been started"
-    assert_not_contains "$(invoked "$case_dir")" "review" \
+    assert_not_contains "$(invoked_skip "$case_dir")" "review" \
       "caller-skip-review-$mode: a caller's --skip review must never reach the final skip set"
     assert_grep "dropped 'review'" "$case_dir/stderr" \
       "caller-skip-review-$mode: dropping the caller's review skip must be reported on stderr"
@@ -176,14 +183,14 @@ test_caller_cannot_skip_review() {
   case_dir=$(make_case caller-skip-review-equals direct-PR)
   run_validate "$case_dir" task-v1 --intent "add a thing" --skip=review >/dev/null 2>&1 \
     || fail "caller-skip-review-equals: fm-validate should still start the run"
-  assert_not_contains "$(invoked "$case_dir")" "review" \
+  assert_not_contains "$(invoked_skip "$case_dir")" "review" \
     "caller-skip-review-equals: the --skip=<value> form must not smuggle review through"
 
   case_dir=$(make_case caller-skip-review-mixed validated-main)
   run_validate "$case_dir" task-v1 --intent "add a thing" --skip review,lint >/dev/null 2>&1 \
     || fail "caller-skip-review-mixed: fm-validate should still start the run"
-  out=$(invoked "$case_dir")
-  assert_contains "$out" '--skip pr,ci,lint' \
+  out=$(invoked_skip "$case_dir")
+  assert_contains "$out" 'pr,ci,lint' \
     "caller-skip-review-mixed: the caller's other requested steps must still merge"
   assert_not_contains "$out" "review" \
     "caller-skip-review-mixed: review must be dropped out of a mixed caller skip set"
@@ -205,8 +212,8 @@ test_light_paths_derive_the_review_only_skip_set() {
     case_dir=$(make_case "review-only-$mode" "$mode")
     run_validate "$case_dir" task-v1 --intent "add a thing" >/dev/null 2>&1 \
       || fail "review-only-$mode: fm-validate should succeed"
-    out=$(invoked "$case_dir")
-    assert_contains "$out" '--skip intent,rebase,test,document,lint,push,pr,ci' \
+    out=$(invoked_skip "$case_dir")
+    assert_contains "$out" 'intent,rebase,test,document,lint,push,pr,ci' \
       "review-only-$mode: $mode must derive the review-only skip set"
     for step in intent rebase test document lint push pr ci; do
       assert_contains "$out" "$step" \
@@ -218,6 +225,34 @@ test_light_paths_derive_the_review_only_skip_set() {
   pass "fm-validate derives a review-only run for the light paths"
 }
 
+test_t3_review_depth_does_not_change_direct_pr_topology() {
+  local case_dir out brief
+  case_dir=$(make_case t3-direct-pr direct-PR)
+  brief="$case_dir/data/task-v1/brief.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T3' \
+    '- outcome: design/system-map.md#assembly => the ordinary player path composes the full system' \
+    '- player: normal launch -> use the system -> observe the composed result' \
+    '- parts: input=trace; runtime=counter; output=observable change' \
+    > "$brief"
+
+  run_validate "$case_dir" task-v1 >/dev/null 2>&1 \
+    || fail "t3-direct-pr: fm-validate should keep the direct-PR path usable"
+  out=$(invoked "$case_dir")
+  assert_contains "$out" '--skip intent,rebase,test,document,lint,push,pr,ci' \
+    "t3-direct-pr: T3 evidence depth secretly changed the direct-PR topology"
+  assert_contains "$out" 'one full project regression on the final change' \
+    "t3-direct-pr: the selected reviewer did not receive the T3 regression duty"
+  assert_contains "$out" 'parts: input=trace; runtime=counter; output=observable change' \
+    "t3-direct-pr: the selected reviewer did not receive the applicable parts evidence"
+  assert_contains "$out" 'whether the task was under-tiered' \
+    "t3-direct-pr: the selected reviewer did not receive the tier-check duty"
+  assert_contains "$out" 'do not invent a new product target' \
+    "t3-direct-pr: the selected reviewer can still manufacture a new target"
+  pass "fm-validate keeps T3 evidence depth independent from direct-PR topology"
+}
+
 # Keeping review everywhere must not be read as licence to drop the rest from the
 # modes that carry the full pipeline. validated-main lands straight on the default
 # branch, so its local test, document, and lint steps stay load-bearing.
@@ -227,7 +262,7 @@ test_full_pipeline_modes_keep_test_document_and_lint() {
     case_dir=$(make_case "full-surface-$mode" "$mode")
     run_validate "$case_dir" task-v1 --intent "add a thing" >/dev/null 2>&1 \
       || fail "full-surface-$mode: fm-validate should succeed"
-    out=$(invoked "$case_dir")
+    out=$(invoked_skip "$case_dir")
     for step in test document lint; do
       assert_not_contains "$out" "$step" \
         "full-surface-$mode: mode $mode must never skip the $step step"
@@ -236,18 +271,27 @@ test_full_pipeline_modes_keep_test_document_and_lint() {
   pass "fm-validate keeps test, document, and lint for the full-pipeline modes"
 }
 
-test_missing_intent_refuses() {
-  local case_dir rc
-  case_dir=$(make_case missing-intent validated-main)
-  set +e
-  run_validate "$case_dir" task-v1 > "$case_dir/stdout" 2> "$case_dir/stderr"
-  rc=$?
-  set -e
-  expect_code 1 "$rc" "missing-intent: fm-validate should refuse without --intent"
-  assert_grep '--intent is required' "$case_dir/stderr" \
-    "missing-intent: the refusal should name the missing intent"
-  [ ! -s "$case_dir/nm.log" ] || fail "missing-intent: no run should have been started"
-  pass "fm-validate refuses a run with no --intent before starting one"
+test_canonical_intent_comes_from_brief() {
+  local case_dir out
+  case_dir=$(make_case canonical-intent validated-main)
+  run_validate "$case_dir" task-v1 >/dev/null 2>&1 \
+    || fail "canonical-intent: fm-validate should start without a caller paraphrase"
+  out=$(invoked "$case_dir")
+  assert_contains "$out" 'Firstmate Designer -> Runtime -> Player selected review.' \
+    "canonical-intent: the selected-review role contract did not reach no-mistakes"
+  assert_contains "$out" 'tests/fm-validate.test.sh:canonical-intent => validation starts with the recorded delivery topology' \
+    "canonical-intent: the canonical outcome did not reach no-mistakes"
+
+  case_dir=$(make_case caller-intent-ignored validated-main)
+  run_validate "$case_dir" task-v1 --intent "weakened caller paraphrase" \
+    > /dev/null 2> "$case_dir/stderr" \
+    || fail "caller-intent-ignored: fm-validate should start with canonical intent"
+  out=$(invoked "$case_dir")
+  assert_not_contains "$out" 'weakened caller paraphrase' \
+    "caller-intent-ignored: a caller paraphrase displaced the canonical outcome"
+  assert_grep 'ignored caller --intent' "$case_dir/stderr" \
+    "caller-intent-ignored: the ignored paraphrase was not disclosed"
+  pass "fm-validate derives canonical selected-review intent from the task brief"
 }
 
 test_missing_meta_refuses() {
@@ -320,8 +364,9 @@ test_no_mode_skips_review
 test_caller_cannot_skip_review
 test_light_paths_derive_the_review_only_skip_set
 test_full_pipeline_modes_keep_test_document_and_lint
-test_missing_intent_refuses
+test_canonical_intent_comes_from_brief
 test_missing_meta_refuses
 test_absent_mode_falls_back_to_full_pipeline
 test_wrong_worktree_refuses
 test_subdirectory_of_worktree_is_accepted
+test_t3_review_depth_does_not_change_direct_pr_topology

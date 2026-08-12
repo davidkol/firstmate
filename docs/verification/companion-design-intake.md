@@ -60,10 +60,10 @@ This focused rerun proves the generated normative contract only, while the succe
 ## Successful cold Delivery rerun
 
 On 2026-08-11, the genuinely cold Delivery rerun from Firstmate fix commit `81238c326458ffb25c3632cf4606c76d218ac1a0` passed.
-The acceptance root was `/Users/davidkol/.firstmate-acceptance/companion-design-intake-agent-81238c3`.
-Its fresh code checkout at `/Users/davidkol/.firstmate-acceptance/companion-design-intake-agent-81238c3/code` was detached and clean at exact commit `81238c326458ffb25c3632cf4606c76d218ac1a0`.
-The peer home was `/Users/davidkol/.firstmate-acceptance/companion-design-intake-agent-81238c3/home`.
-The Delivery primary checkout was `/Users/davidkol/.firstmate-acceptance/companion-design-intake-agent-81238c3/home/projects/Delivery`, and the isolated scout worktree was `/Users/davidkol/.treehouse/Delivery-32e7b3/3/Delivery` at exact clean commit `d0b0c15f7ca9aeb8270cd7ee7817ee177615d429`.
+The acceptance root was `<acceptance-root>/companion-design-intake-agent-81238c3`.
+Its fresh code checkout at `<acceptance-root>/companion-design-intake-agent-81238c3/code` was detached and clean at exact commit `81238c326458ffb25c3632cf4606c76d218ac1a0`.
+The peer home was `<acceptance-root>/companion-design-intake-agent-81238c3/home`.
+The Delivery primary checkout was `<acceptance-root>/companion-design-intake-agent-81238c3/home/projects/Delivery`, and the isolated scout worktree was `<treehouse-root>/Delivery-32e7b3/3/Delivery` at exact clean commit `d0b0c15f7ca9aeb8270cd7ee7817ee177615d429`.
 The cold Codex xhigh task was `delivery-design-intake-cold-rerun`.
 It retained a 52-line report at `home/data/delivery-design-intake-cold-rerun/report.md` with exactly four sections, 12 candidate dispositions, and three new shortlist items.
 The report classified the viewport question as answered from the verbatim decision, reconciled multiple duplicates from their full records, classified ready-up as implementation-only, and classified every surviving shortlist question as play-answerable.

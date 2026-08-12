@@ -156,6 +156,18 @@ fm_write_meta() {
   done
 }
 
+# fm_write_ship_brief <file> [tier] [outcome]: write the smallest valid public
+# delivery contract for spawn/validation tests whose subject is not doctrine.
+fm_write_ship_brief() {
+  local file=$1 tier=${2:-T0} outcome=${3:-tests/fixture => the requested test path reaches its observable result}
+  mkdir -p "$(dirname "$file")"
+  printf '%s\n' \
+    '# Delivery contract' \
+    "- task-tier: $tier" \
+    "- outcome: $outcome" \
+    > "$file"
+}
+
 # fm_write_secondmate_meta <file> <home> [window] [projects] [harness]: write the
 # standard kind=secondmate meta block used across the secondmate suites. Window
 # defaults to firstmate:fm-<id>, projects defaults to alpha, and harness defaults

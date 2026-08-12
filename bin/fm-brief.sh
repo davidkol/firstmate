@@ -6,6 +6,10 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
+# Every ship scaffold also carries exactly two always-required delivery fields:
+# {TASK_TIER} and {OUTCOME}. Firstmate replaces them with one legal tier and a
+# canonical authoritative-source-pointer => observable-result outcome, then adds
+# only the prove/player/parts/platform/correct evidence lines the tier needs.
 # Ship and scout scaffolds also split the brief's provenance into two sections
 # firstmate fills in before dispatch. "What the captain decided" takes
 # {CAPTAIN_RULINGS}: one bullet per ruling carrying his own words and the date
@@ -651,7 +655,7 @@ Review is the ONLY pipeline step that runs on this path; the other eight are ski
 
 The task is complete only when committed on your branch.
 When it is implemented and committed, start the review with this exact command, from inside your worktree:
-\`$FM_ROOT/bin/fm-validate.sh $ID --intent "<what the captain set out to accomplish>"\`
+\`$FM_ROOT/bin/fm-validate.sh $ID\`
 Do NOT call \`no-mistakes axi run\` directly. Which steps this path skips is derived from the task's recorded delivery mode inside that command rather than typed by you, so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart the review.
 It never skips the review step itself, for any mode.
 You drive the review by responding to its gate: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
@@ -680,7 +684,7 @@ When you believe it is complete, append \`done: {summary}\` to the status file a
 Firstmate will then instruct you to run /no-mistakes to validate the branch.
 
 Start the run with this exact command, from inside your worktree:
-\`$FM_ROOT/bin/fm-validate.sh $ID --intent "<what the captain set out to accomplish>"\`
+\`$FM_ROOT/bin/fm-validate.sh $ID\`
 Do NOT call \`no-mistakes axi run\` directly. This project's delivery path omits the PR and CI steps, and that omission is derived from the task's recorded delivery mode inside that command rather than typed by you - so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart validation.
 It never omits review, test, document or lint for any mode.
 You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
@@ -707,7 +711,7 @@ Review is the ONLY pipeline step that runs on this path; the other eight are ski
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
 When it is implemented and committed, start the review with this exact command, from inside your worktree:
-\`$FM_ROOT/bin/fm-validate.sh $ID --intent "<what the captain set out to accomplish>"\`
+\`$FM_ROOT/bin/fm-validate.sh $ID\`
 Do NOT call \`no-mistakes axi run\` directly. Which steps this path skips is derived from the task's recorded delivery mode inside that command rather than typed by you, so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart the review.
 It never skips the review step itself, for any mode.
 You drive the review by responding to its gate: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
@@ -730,6 +734,10 @@ EOF
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
 Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
+
+Start the run with this exact command, from inside your worktree:
+\`$FM_ROOT/bin/fm-validate.sh $ID\`
+The wrapper reads the canonical outcome and selected-review contract from this brief; do not replace it with a caller-authored intent paraphrase.
 
 You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
@@ -756,19 +764,39 @@ DOD=${DOD%$'\n'}
 # shellcheck disable=SC2016  # single quotes are deliberate: backticks and {} must reach the brief verbatim.
 CHECKLIST=$(printf '%s\n' \
 'Answer every item below explicitly before the final `done:` line the delivery path below names for this task, never before an earlier progress append; an item you cannot satisfy is named as a gap, never skipped in silence.' \
-'- [ ] The check command passes - `script/check` if it exists, otherwise the command `AGENTS.md` names. If this project has no verification at all, name that gap in your done line, because a silent pass here is the failure this list exists to catch.' \
-'- [ ] One edit named that would make a new test go red - made, confirmed red, reverted.' \
-'- [ ] A different context reviewed the diff than the one that wrote it.' \
+'- [ ] The delivery contract still cites the authoritative target and names the observable result actually delivered.' \
+'- [ ] Every evidence line present was satisfied on the final change; one execution may satisfy multiple lines when it is genuinely the same oracle.' \
+'- [ ] The tier-proportional checks pass: T0 direct oracle; T1 focused oracle plus risk-selected wider evidence; T2 ordinary player path plus risk-selected regression; T3 ordinary player path, every separable part contributing, and one final full regression; T4 bounded live-owner correction plus its attached runtime tier.' \
+'- [ ] A new or suspect oracle was deliberately shown able to fail before its green result; an established sensitive regression needs no theatrical mutation.' \
+'- [ ] The selected path produced its fresh review of the final diff and actual evidence.' \
 '- [ ] No new question left unasked.' \
 '- [ ] Any owner decision quoted verbatim, with its date.' \
 '- [ ] Any lesson learned the hard way that clears the Project memory bar above is a dated note in that project `AGENTS.md`. A task that produced no such lesson satisfies this with nothing written.' \
-'- [ ] Nothing added to a document that no execution touches.')
+'- [ ] Existing documentation owners were updated only when their present contract, operator workflow, or stable non-obvious invariant changed; no chronology or handoff document was created by default.')
+
+IFS= read -r -d '' IMPLEMENTATION_DOCTRINE <<'EOF' || true
+# Delivery doctrine - implementation slice
+The delivery contract is the accepted target and risk boundary, not evidence that the target or result is true.
+A queued task, plan, report, comment, test, status line, memory, or agent-authored brief remains a provisional claim and never becomes designer intent merely by being copied.
+Challenge a stale or mis-sourced outcome before editing; do not quietly reinterpret it.
+Use only the conditional evidence lines present, and let one real execution or capture satisfy multiple purposes when it is genuinely the same oracle.
+T0 uses its direct mechanical oracle; T1 adds only risk-warranted wider evidence; T2 exercises the affected ordinary player path; T3 also proves every separable architecture-bearing part contributes and runs one final full regression; T4 corrects bounded live authority-bearing owners and active descendants while preserving clearly labeled history.
+The selected delivery mode does not change those evidence requirements, and the tier does not change the selected delivery mode.
+Update an existing documentation owner only when its present contract, operator workflow, or stable non-obvious invariant changed; do not create chronology or handoff prose by default.
+EOF
+IMPLEMENTATION_DOCTRINE=${IMPLEMENTATION_DOCTRINE%$'\n'}
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
 {TASK}
+
+# Delivery contract
+- task-tier: {TASK_TIER}
+- outcome: {OUTCOME}
+
+$IMPLEMENTATION_DOCTRINE
 
 $PROVENANCE
 
@@ -828,4 +856,4 @@ $CHECKLIST
 
 $DOD
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE})"
+echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK}, {TASK_TIER}, {OUTCOME}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE}; add only applicable evidence lines)"

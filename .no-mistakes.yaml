@@ -21,6 +21,11 @@ document:
     For changed prose, verify audience, authoritative owner, current relevance,
     evidence destination, and unique safety facts, then review the complete
     branch diff again after every documentation or lint fix.
+    Do not create chronology or handoff prose by default.
+    Update an existing owner only when its present contract, operator workflow,
+    or stable non-obvious invariant changed; delete or relabel stale current
+    claims while preserving authoritative human sources and clearly labeled
+    historical evidence.
 
 # Pin lint to the same owner CI runs instead of leaving it to no-mistakes'
 # default handling, which does not invoke the repository's canonical lint gate.

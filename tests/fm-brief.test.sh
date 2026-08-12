@@ -249,6 +249,63 @@ test_ship_modes_generate_clean_briefs() {
   pass "fm-brief.sh: no-mistakes/validated-main/direct-PR/local-only briefs generate cleanly"
 }
 
+test_ship_brief_scaffolds_only_two_core_doctrine_fields() {
+  local home id brief
+  home="$TMP_ROOT/doctrine-core-home"
+  write_registry "$home"
+  id="brief-doctrine-core-a8"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj >/dev/null 2>&1 \
+    || fail "doctrine-core: ship brief should scaffold"
+  brief="$home/data/$id/brief.md"
+
+  [ "$(grep -c '^- task-tier:' "$brief")" -eq 1 ] \
+    || fail "doctrine-core: ship brief must scaffold exactly one task-tier field"
+  [ "$(grep -c '^- outcome:' "$brief")" -eq 1 ] \
+    || fail "doctrine-core: ship brief must scaffold exactly one outcome field"
+  for optional in prove player parts platform correct; do
+    assert_no_grep "- $optional:" "$brief" \
+      "doctrine-core: optional $optional evidence was scaffolded as mandatory ceremony"
+  done
+  assert_no_grep 'N/A' "$brief" \
+    "doctrine-core: ship brief still scaffolds N/A evidence ceremony"
+  assert_grep 'one real execution or capture satisfy multiple purposes' "$brief" \
+    "doctrine-core: worker prompt lost shared-oracle handling"
+  assert_grep 'The selected delivery mode does not change those evidence requirements' "$brief" \
+    "doctrine-core: worker prompt still couples evidence depth to delivery topology"
+  assert_no_grep 'agentic-game-failure-forensics' "$brief" \
+    "doctrine-core: worker prompt leaked a historical failure report"
+  pass "fm-brief.sh: ship scaffold has two core fields and a narrow implementation role slice"
+}
+
+test_doctrine_contract_is_proportional_and_allows_one_shared_oracle() {
+  local dir contract
+  dir="$TMP_ROOT/doctrine-contract-cases"
+  mkdir -p "$dir"
+
+  for tier in T0 T1; do
+    contract="$dir/$tier.md"
+    printf '%s\n' \
+      '# Delivery contract' \
+      "- task-tier: $tier" \
+      "- outcome: tests/fm-brief.test.sh#$tier => the bounded task reaches its observable result" \
+      > "$contract"
+    "$ROOT/bin/fm-doctrine-contract.sh" check "$contract" \
+      || fail "$tier: core-only contract should not require conditional evidence"
+  done
+
+  contract="$dir/t2-shared-oracle.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T2' \
+    '- outcome: design/viewport.md#helm => the normal helm view shows the live exterior' \
+    '- player: normal launch -> take the helm -> capture the responsive exterior view before and after' \
+    > "$contract"
+  "$ROOT/bin/fm-doctrine-contract.sh" check "$contract" \
+    || fail "T2: one player execution should satisfy focused and player proof without duplication"
+
+  pass "fm-doctrine-contract.sh: T0/T1 stay light and T2 accepts one shared proof/player oracle"
+}
+
 # validated-main drops the PR but NOT the automated review: the pipeline's review,
 # test, document and lint steps are exactly what makes landing straight on main
 # safe. A brief that let a worker read "no PR" as "no pipeline" would remove the
@@ -264,7 +321,7 @@ test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci() {
 
   assert_grep "Skipping the PR does NOT skip the review" "$brief" \
     "validated-main brief lost the review-is-retained statement"
-  assert_grep "bin/fm-validate.sh $id --intent" "$brief" \
+  assert_grep "bin/fm-validate.sh $id" "$brief" \
     "validated-main brief lost the mode-derived run command, so the skip set stops being structural"
   assert_no_grep '--skip pr,ci' "$brief" \
     "validated-main brief asks a worker to type the skip flags; they must be derived from the recorded mode instead"
@@ -295,7 +352,7 @@ test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
 
-  assert_grep "bin/fm-validate.sh $id --intent" "$brief" \
+  assert_grep "bin/fm-validate.sh $id" "$brief" \
     "direct-PR brief lost the mode-derived run command, so the light path runs no review at all"
   assert_no_grep '--skip intent,rebase' "$brief" \
     "direct-PR brief asks a worker to type the skip flags; they must be derived from the recorded mode instead"
@@ -329,7 +386,7 @@ test_local_only_brief_runs_a_review_that_publishes_nothing() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
 
-  assert_grep "bin/fm-validate.sh $id --intent" "$brief" \
+  assert_grep "bin/fm-validate.sh $id" "$brief" \
     "local-only brief lost the mode-derived run command, so the light path runs no review at all"
   assert_grep "did not write your change and does not share your session" "$brief" \
     "local-only brief lost the statement that the reviewer is a different context"
@@ -818,12 +875,16 @@ test_ship_checklist_is_in_the_brief() {
     "ship checklist can still be read against the first done append"
   assert_grep "an item you cannot satisfy is named as a gap, never skipped in silence" "$brief" \
     "ship checklist lost the no-silent-skip rule"
-  # All seven items, in the brief itself.
-  assert_grep "The check command passes" "$brief" "checklist missing the check item"
-  assert_grep "One edit named that would make a new test go red - made, confirmed red, reverted." "$brief" \
-    "checklist missing the break-it-on-purpose item"
-  assert_grep "A different context reviewed the diff than the one that wrote it." "$brief" \
-    "checklist missing the second-context review item"
+  assert_grep "The delivery contract still cites the authoritative target" "$brief" \
+    "checklist missing the canonical target item"
+  assert_grep "one execution may satisfy multiple lines when it is genuinely the same oracle" "$brief" \
+    "checklist duplicates shared evidence purposes"
+  assert_grep "T0 direct oracle; T1 focused oracle" "$brief" \
+    "checklist lost proportional evidence depth"
+  assert_grep "A new or suspect oracle was deliberately shown able to fail" "$brief" \
+    "checklist lost the risk-selected negative control"
+  assert_grep "The selected path produced its fresh review of the final diff and actual evidence." "$brief" \
+    "checklist missing the selected reviewer item"
   assert_grep "No new question left unasked." "$brief" "checklist missing the open-question item"
   assert_grep "Any owner decision quoted verbatim, with its date." "$brief" \
     "checklist missing the verbatim-decision item"
@@ -833,10 +894,10 @@ test_ship_checklist_is_in_the_brief() {
     "the dated-note item cannot be satisfied by a task that produced no durable lesson"
   [ "$(grep -cF 'Record only project knowledge useful to almost every future session' "$brief")" = 1 ] \
     || fail "the checklist restated the Project memory bar instead of pointing at its one owner"
-  assert_grep "Nothing added to a document that no execution touches." "$brief" \
-    "checklist missing the no-inert-document item"
-  [ "$(grep -c '^- \[ \] ' "$brief")" = 7 ] || fail "ship checklist is no longer seven items"
-  pass "fm-brief.sh: the ship brief carries all seven completion items"
+  assert_grep "no chronology or handoff document was created by default" "$brief" \
+    "checklist missing the current-owner documentation rule"
+  [ "$(grep -c '^- \[ \] ' "$brief")" = 9 ] || fail "ship checklist is no longer nine proportional items"
+  pass "fm-brief.sh: the ship brief carries the proportional completion items"
 }
 
 # An item a worker cannot satisfy where it stops is worse than no item: it forces
@@ -866,10 +927,9 @@ EOF
   pass "fm-brief.sh: the ship checklist omits the items no crewmate can satisfy"
 }
 
-# The check item is wrong as literally written and must stay corrected: most
-# projects have no `script/check`, and a project with no verification at all can
-# only satisfy it by saying so. A silent pass is the failure mode.
-test_checklist_check_item_is_satisfiable() {
+# The evidence item must stay proportional: a tiny task gets a direct oracle,
+# while a system task gets the normal path, contribution, and final regression.
+test_checklist_evidence_depth_is_proportional() {
   local home id brief
   home="$TMP_ROOT/checklist-fixes-home"
   mkdir -p "$home/data"
@@ -879,14 +939,13 @@ EOF
   id="brief-checklist-fixes-e2"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
-  # shellcheck disable=SC2016  # literal backticks must survive into the brief
-  assert_grep 'otherwise the command `AGENTS.md` names' "$brief" \
-    "check item lost its fallback to the command the project actually names"
-  assert_grep "If this project has no verification at all, name that gap in your done line" "$brief" \
-    "check item can be satisfied without naming a missing-verification gap"
-  assert_grep "a silent pass here is the failure this list exists to catch" "$brief" \
-    "check item lost the silent-pass warning"
-  pass "fm-brief.sh: the check item works in a project with no script/check"
+  assert_grep "T0 direct oracle" "$brief" \
+    "checklist makes a T0 task run disproportionate evidence"
+  assert_grep "T3 ordinary player path, every separable part contributing, and one final full regression" "$brief" \
+    "checklist lost the full T3 evidence depth"
+  assert_grep "an established sensitive regression needs no theatrical mutation" "$brief" \
+    "checklist still requires a deliberate mutation for every task"
+  pass "fm-brief.sh: checklist evidence depth is tier-proportional"
 }
 
 # The working tree outranks every document: a session that reads a status doc
@@ -1302,7 +1361,7 @@ test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order() {
 # Compare ordinary rendering against the exact approved Companion prerequisite.
 # The temporary baseline script shares the current helper scripts and root so the
 # only compared behavior is fm-brief.sh's ordinary ship/scout/secondmate output.
-test_design_intake_preserves_ordinary_brief_bytes() {
+test_design_intake_preserves_nonship_brief_bytes() {
   local approved base_root home kind id expected current
   approved=6077d702e1d50a8e364dc77b0eb8a64f018545c2
   base_root="$TMP_ROOT/design-intake-approved-base"
@@ -1313,7 +1372,7 @@ test_design_intake_preserves_ordinary_brief_bytes() {
     || fail "could not read the approved Companion fm-brief.sh baseline"
   chmod +x "$base_root/bin/fm-brief.sh"
 
-  for kind in ship scout secondmate; do
+  for kind in scout secondmate; do
     id="design-intake-byte-$kind"
     case "$kind" in
       ship)
@@ -1351,13 +1410,15 @@ test_design_intake_preserves_ordinary_brief_bytes() {
     cmp -s "$expected" "$current" \
       || fail "ordinary $kind brief changed from the exact approved Companion bytes"
   done
-  pass "fm-brief.sh: ordinary ship, scout, and secondmate briefs remain byte-compatible"
+  pass "fm-brief.sh: scout and secondmate briefs remain byte-compatible"
 }
 
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
+test_ship_brief_scaffolds_only_two_core_doctrine_fields
+test_doctrine_contract_is_proportional_and_allows_one_shared_oracle
 test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci
 test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr
 test_local_only_brief_runs_a_review_that_publishes_nothing
@@ -1377,7 +1438,7 @@ test_scout_and_secondmate_load_decision_hold_policy
 test_provenance_split_separates_rulings_from_inference
 test_ship_checklist_is_in_the_brief
 test_ship_checklist_omits_unsatisfiable_items
-test_checklist_check_item_is_satisfiable
+test_checklist_evidence_depth_is_proportional
 test_orientation_step_precedes_the_work
 test_project_memory_paths_are_named_when_they_exist
 test_project_memory_never_resolves_to_another_project
@@ -1389,4 +1450,4 @@ test_scout_checklist_is_reduced
 test_scout_and_secondmate_scaffold
 test_design_intake_scaffold_is_read_only_and_bounded
 test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order
-test_design_intake_preserves_ordinary_brief_bytes
+test_design_intake_preserves_nonship_brief_bytes

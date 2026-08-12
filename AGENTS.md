@@ -248,6 +248,8 @@ When a natural or dictated request asks for the status or report of a resolved r
 When explicit design-question discovery is needed for a resolved registered game, launch the separate design-intake scout; loading `companion-intake` is not a substitute for that process.
 Purpose, doctrine, and design intent remain human-owned; never invent a missing value.
 The skill owns faithful cleanup, project-source pointers, pertinent ambiguity, corrections, and the cold-readable handoff.
+Before writing or materially changing any ship brief, load `delivery-doctrine`; it owns the two-field tier/outcome contract, conditional evidence depth, false-canon overlay, and role-specific review boundary.
+Human and authoritative designer sources own the target, executing code and observed runtime own the present, and every queued task, plan, report, comment, test, status line, memory, or agent-authored brief remains a provisional claim even when copied.
 
 Resolve the project independently for every request.
 An explicit project wins, a clear follow-up inherits its referent, and otherwise match the request against the registry, work under way, and project code or README.
@@ -291,11 +293,11 @@ Supervise all live work under section 8.
 
 ### Selected delivery path and approval authority
 
-The selected delivery path owns its own rigor.
+Validation depth and delivery topology are independent.
 When no-mistakes is selected, no-mistakes alone owns review, fixes, tests, documentation, push, PR, and CI; otherwise follow the faster path and add no reviewer beyond the one that path already runs.
 Never hold work outside no-mistakes for a manual clean verdict, stack serial manual reviews, or infer authority for one from security, architecture, or risk alone.
 A separate review or audit is allowed only when the captain explicitly requests that deliverable or the authorized task is a knowledge-only review; one named question remains scoped to that question.
-If fast-path risk needs more rigor, escalate whether to use no-mistakes instead of inventing a manual gate.
+Run the task tier's required focused, player, contribution, platform, correction, and regression evidence without changing `direct-PR`, `local-only`, `validated-main`, or `no-mistakes` merely because the tier is deeper.
 The path's worker, automated gates, and captain approval remain authoritative:
 
 - **no-mistakes** runs the full pipeline through a PR, then waits for the configured merge authority.
@@ -322,8 +324,8 @@ After an autonomous merge or landing, give the captain a one-line outcome: the f
 
 For a no-mistakes or validated-main ship, firstmate triggers validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
 For a direct-PR or local-only ship, the worker starts its own review from its brief as soon as it commits, so firstmate triggers nothing for those two and never sends a second `axi run` for a light path already under way.
-Every mode except no-mistakes starts through `bin/fm-validate.sh <id> --intent "..."`, which derives the pipeline's skip set from the task's recorded delivery mode, so nobody passes a flag: validated-main omits the PR and CI steps, while direct-PR and local-only keep review alone and omit the other eight; everything else about driving it is identical.
-A no-mistakes ship starts its run directly, the way it always has.
+Every mode starts through `bin/fm-validate.sh <id>`, which reads the canonical tier, outcome, and applicable evidence from the task brief and derives the pipeline's skip set from the task's recorded delivery mode: validated-main omits the PR and CI steps, direct-PR and local-only keep review alone and omit the other eight, and no-mistakes omits nothing.
+The wrapper gives the selected reviewer only its role-specific doctrine contract and ignores a caller-authored intent paraphrase.
 That skip set never includes review for any mode, and never drops test, document, or lint from a full-pipeline mode.
 The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.

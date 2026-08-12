@@ -91,7 +91,8 @@
 #   any worker reads it). There is deliberately no flag to skip it: the fix is to
 #   quote him with a date or move the line under "What firstmate worked out".
 #   It likewise refuses a brief or charter that still carries an unreplaced
-#   fm-brief.sh placeholder ({TASK}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE}),
+#   fm-brief.sh placeholder ({TASK}, {TASK_TIER}, {OUTCOME},
+#   {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE}),
 #   naming the ones still unfilled. Only a whole line equal to the token counts,
 #   so brace-bearing task text and the brief's own prose mention of `{TASK}` in
 #   its Herdr declaration do not trip it.
@@ -826,14 +827,16 @@ else
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 
-# fm-brief.sh emits {TASK}, and on ship and scout briefs {CAPTAIN_RULINGS} and
-# {FIRSTMATE_INFERENCE}, each alone on its own line, for firstmate to replace
-# after scaffolding. A rule firstmate has to remember is a rule firstmate
+# fm-brief.sh emits {TASK}, on ship briefs {TASK_TIER} and {OUTCOME}, and on
+# ship and scout briefs {CAPTAIN_RULINGS} and {FIRSTMATE_INFERENCE}, with the
+# core pair in their generated field lines and the other three alone on their
+# own lines, for firstmate to replace after scaffolding. A rule firstmate
+# has to remember is a rule firstmate
 # forgets, so the hole is closed by refusing here rather than by instruction
 # somewhere: an unfilled {CAPTAIN_RULINGS} in particular clears the receipts
 # check below in silence, because a bare placeholder is prose and not a claim,
 # and the worker then reads a provenance section that says nothing at all.
-# Only a whole line that is exactly one of the three tokens counts. The
+# Only the exact generated line shape counts. The
 # generated brief itself names `{TASK}` in the prose of its Herdr declaration,
 # and task text firstmate writes may legitimately contain braces, so a substring
 # match would refuse every dispatch of an unguarded brief.
@@ -843,6 +846,8 @@ for PLACEHOLDER in '{TASK}' '{CAPTAIN_RULINGS}' '{FIRSTMATE_INFERENCE}'; do
     UNFILLED="$UNFILLED $PLACEHOLDER"
   fi
 done
+grep -Fxq -- '- task-tier: {TASK_TIER}' "$BRIEF" && UNFILLED="$UNFILLED {TASK_TIER}"
+grep -Fxq -- '- outcome: {OUTCOME}' "$BRIEF" && UNFILLED="$UNFILLED {OUTCOME}"
 if [ -n "$UNFILLED" ]; then
   {
     echo "error: brief still carries unreplaced scaffold placeholders:$UNFILLED"
@@ -882,6 +887,30 @@ elif [ "$RECEIPTS_RC" -ne 0 ]; then
     echo "fix: repair $SCRIPT_DIR/fm-authority-receipts.sh; the brief itself may be fine."
   } >&2
   exit 1
+fi
+
+# The authority receipt above remains the first semantic brief gate and keeps
+# its exact refusal. A ship then gets one structural doctrine check at the last
+# point before launch. The checker knows only the two core fields and the
+# conditional evidence shape; it does not turn field presence into proof.
+if [ "$KIND" = ship ]; then
+  DOCTRINE_RC=0
+  DOCTRINE=$("$SCRIPT_DIR/fm-doctrine-contract.sh" check "$BRIEF" 2>&1) || DOCTRINE_RC=$?
+  if [ "$DOCTRINE_RC" -eq 1 ]; then
+    {
+      echo "error: invalid delivery contract in $BRIEF:"
+      printf '%s\n' "$DOCTRINE"
+      echo "fix: provide exactly one legal task-tier, one canonical source => result outcome, and only the conditional evidence required by that tier."
+    } >&2
+    exit 1
+  elif [ "$DOCTRINE_RC" -ne 0 ]; then
+    {
+      echo "error: the delivery-contract check could not run (exit $DOCTRINE_RC), so $BRIEF was never judged:"
+      printf '%s\n' "$DOCTRINE"
+      echo "fix: repair $SCRIPT_DIR/fm-doctrine-contract.sh before dispatch."
+    } >&2
+    exit 1
+  fi
 fi
 
 BRIEF_DIR_REAL=$(cd "$(dirname "$BRIEF")" && pwd -P)
