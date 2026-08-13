@@ -310,7 +310,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - name: Run snapshot consumers with stock Bash
+      - name: Run macOS compatibility checks with stock Bash
         shell: /bin/bash {0}
         env:
           PATH: /bin:/usr/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
@@ -322,6 +322,11 @@ jobs:
           esac
           /bin/bash --version | head -1
           command -v jq >/dev/null || { echo "::error::jq is required"; exit 1; }
+
+          codex_primary_output=$(/bin/bash tests/fm-codex-primary.test.sh)
+          printf '%s\n' "$codex_primary_output"
+          printf '%s\n' "$codex_primary_output" | grep -Fq 'live argv oracle binds away entry'
+          printf '%s\n' "$codex_primary_output" | grep -Fq 'live argv oracle parses kernel argument boundaries'
 
           shell_inventory="$RUNNER_TEMP/fm-shell-inventory"
           bin/fm-lint.sh --list-files > "$shell_inventory"
