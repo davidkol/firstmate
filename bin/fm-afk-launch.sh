@@ -38,6 +38,9 @@
 #
 # Supported backends: herdr, tmux. Others (zellij, orca, cmux) have no verified
 # non-visible-launch primitive here yet and refuse loudly.
+# Before either start mode acquires its process-identity lock, the Codex away
+# guard refuses a command that Codex marked as running in its restricted macOS
+# sandbox, then proves an unmarked Codex thread from its effective rollout state.
 #
 # Test seam: FM_AFK_LAUNCH_ENTRY overrides the command run in the created
 # terminal (default bin/fm-afk-start.sh), so a topology test can run a harmless
@@ -605,7 +608,12 @@ fm_afk_launch_stop() {
 }
 
 fm_afk_launch_main() {
-  local result
+  local action=${1:-start} result
+  case "$action" in
+    start|start-native)
+      "$FM_AFK_LAUNCH_DIR/fm-codex-away-pretool-check.sh" --entry || return $?
+      ;;
+  esac
   # Traps first, lock second. Acquiring before the handlers exist leaves a
   # window where a signal terminates this process by default action and leaks
   # the lock directory, which then blocks the next away-mode launch until the
@@ -615,7 +623,7 @@ fm_afk_launch_main() {
   trap 'exit 130' INT
   trap 'exit 143' TERM
   fm_afk_launch_lock_acquire || return 1
-  case "${1:-start}" in
+  case "$action" in
     start) fm_afk_launch_start ;;
     start-native) fm_afk_launch_start_native ;;
     stop) fm_afk_launch_stop ;;

@@ -128,7 +128,7 @@ family_for_basename() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|fm-brief.test.sh|\
     fm-calm-pi-extension.test.sh|fm-captain-translation-contract.test.sh|fm-cd-pretool-check.test.sh|\
-    fm-companion-intake.test.sh|\
+    fm-companion-intake.test.sh|fm-codex-primary.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
     fm-crew-state.test.sh|fm-decision-hold-lifecycle.test.sh|\
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-grok-harness.test.sh|\
@@ -702,11 +702,18 @@ families_for_changed_path() {
     bin/fm-gate-refuse*|bin/fm-lock*)
       printf '%s\n' session-bootstrap
       ;;
-    bin/fm-sessionstart-run.sh|.claude/settings.json|.codex/hooks.json)
+    bin/fm-sessionstart-run.sh|.claude/settings.json)
       # The run tier's two harness-supplied facts (source vocabulary and
       # context-reset stdout injection) only show up against a real harness.
       printf '%s\n' session-bootstrap
       printf '%s\n' live-harness-optin
+      ;;
+    .codex/hooks.json)
+      # Codex session continuity needs a live probe, while the primary policy
+      # and away-prompt hook contract is deterministic and portable.
+      printf '%s\n' session-bootstrap
+      printf '%s\n' live-harness-optin
+      printf '%s\n' pure-contract-unit
       ;;
     bin/fm-timeout-lib.sh)
       # The shared hard bound: session start's runtime bound and the
@@ -748,7 +755,7 @@ families_for_changed_path() {
     bin/fm-decision-hold.sh|bin/fm-supervision*|bin/fm-transition-lib.sh|\
     bin/fm-tmux-lib.sh|bin/fm-marker-lib.sh|bin/fm-operational-input.sh|bin/fm-tasks-axi-lib.sh|\
     bin/fm-primary-scope-lib.sh|bin/fm-project-mode.sh|bin/fm-promote.sh|bin/fm-validate.sh|\
-    bin/fm-ff-lib.sh|bin/fm-gotmp*|bin/*pretool*)
+    bin/fm-ff-lib.sh|bin/fm-gotmp*|bin/fm-codex-*|bin/*pretool*)
       printf '%s\n' pure-contract-unit
       ;;
     .agents/skills/*|skills/*|.claude/skills)

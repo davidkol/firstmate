@@ -189,7 +189,7 @@ A project-level `.claude/settings.json` only takes effect when Claude Code's pro
 After those settings are loaded, hook command resolution is still cwd-sensitive because Claude Code runs commands through `/bin/sh` against the session's current cwd; keep the tracked commands anchored through `"$CLAUDE_PROJECT_DIR"/bin/...` and see `docs/turnend-guard.md` for the verified Stop-hook details.
 Claude Code's primary watcher protocol is Stop-owned: the auto-arm hook fires on every Stop and foregrounds `bin/fm-watch-arm.sh` when the home is eligible and still needs supervision, and its exit-2 `asyncRewake` rewake is the wake; the model drains and handles wakes but never runs a routine re-arm command.
 
-## codex (VERIFIED 2026-06-11, codex-cli 0.139.0)
+## codex (VERIFIED through 2026-08-12, codex-cli 0.147.0)
 
 | Fact | Value |
 |---|---|
@@ -208,11 +208,26 @@ Directory trust dialog on first run per repo root: "Do you trust the contents of
 Accept with Enter.
 The decision persists for the repo, so later worktrees of the same project skip it.
 
-Resume after exit with `codex resume <session-id>`.
+Resume an ordinary worker after exit with `codex resume <session-id>`.
 The session id is printed on quit.
+
+A primary Firstmate Codex session always starts or resumes through `bin/fm-codex-primary.sh`, for example `bin/fm-codex-primary.sh resume <session-id>`.
+That launcher owns the primary's explicit `approval_policy="never"` and `sandbox_mode="danger-full-access"` overrides, explicitly enables hooks, proves all three effective `codex doctor --json` results before accepting work, and loads the tracked project hooks without relying on persisted project trust.
+It refuses caller config, profile, feature, root, and remote layers that could replace that proved state; use ordinary non-config flags such as `--model` for supported customization.
+It also refuses non-interactive, service, maintenance, and fork subcommands; only fresh and resumed interactive sessions are inside the proved primary lifecycle.
+Do not replace it with raw `codex`, raw `codex resume`, an interactive `/permissions` choice, or a user-config assumption.
+This primary contract is separate from `bin/fm-spawn.sh`, whose Codex worker template retains `--dangerously-bypass-approvals-and-sandbox` and does not use the primary launcher.
 
 **Primary-session guard fact (verified 2026-07-08, codex-cli 0.142.1; typed continuation verified 2026-08-09, codex-cli 0.147.0).**
 The firstmate PRIMARY's own `.codex/hooks.json` registers a Stop hook that pipes Codex's Stop payload to `bin/fm-turnend-guard.sh`.
+It also registers `bin/fm-codex-away-pretool-check.sh` for Bash calls.
+Codex 0.147.0 reports `permission_mode:"bypassPermissions"` to that PreToolUse hook under the supported primary launcher and `permission_mode:"default"` under the on-request/workspace posture.
+The hook allows the former, but denies a hookable native restricted call while `state/.afk` exists and denies a hookable native restricted away declaration.
+Codex 0.147.0 code-mode shell calls use the dynamic `exec` tool and do not emit the native Bash PreToolUse or PermissionRequest hooks.
+Therefore `bin/fm-afk-launch.sh` and `bin/fm-afk-start.sh` also call the guard directly before process-identity work; `CODEX_SANDBOX=seatbelt` identifies the restricted macOS command, while an unrestricted command must have an OpenAI-signed live Codex ancestor carrying the launcher's immutable policy argv and safe latest effective rollout context.
+The argv oracle reads NUL-delimited arguments from macOS `KERN_PROCARGS2`, so policy options remain distinguishable from prompt text that merely mentions an option-shaped word.
+An on-request/danger-full-access raw session has no seatbelt marker but its rollout still reports `on-request`, so it is refused; caller-controlled `CODEX_HOME`, `CODEX_THREAD_ID`, and verification markers cannot choose another rollout or select around a restricted rollout held by the authenticated process.
+The direct entry check is the authoritative seatbelt that turns a restricted away declaration into a bounded refusal before a sandbox failure can become an unattended approval prompt.
 Codex Stop hooks honor a native typed `decision:"block"` continuation - the hook's concise reason is displayed, the session continues automatically with no human input, and a later clean stop ends the turn normally - and they also block on exit 2, which stays the guard's fallback when it cannot emit a typed block.
 They expose `stop_hook_active`, which the guard's non-`--claude` loop safety uses to let the second stop of a turn finish after one continuation.
 Codex's Stop payload includes `cwd`, but the tracked primary hook does not use it to choose the guard executable.

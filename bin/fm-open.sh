@@ -16,6 +16,7 @@
 #
 # Examples:
 #   fm-open.sh ~/fm-homes/hookgame claude
+#   fm-open.sh ~/fm-homes/delivery codex
 #   fm-open.sh ~/fm-homes/delivery grok --trust
 #
 # Supervision ownership is unchanged: the opened session acquires that home's
@@ -78,4 +79,12 @@ cd "$FM_ROOT"
 # project_mode_in_home blanks them: the session must resolve as if it were in this home.
 unset FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE
 export FM_HOME="$HOME_ABS"
+
+# A primary Codex process has a stronger executable entry contract than a
+# worker Codex process. Route the documented bare harness name through its
+# effective-policy gate; bin/fm-spawn.sh continues to own the worker bypass.
+if [ "$1" = codex ]; then
+  shift
+  exec "$FM_ROOT/bin/fm-codex-primary.sh" "$@"
+fi
 exec "$@"

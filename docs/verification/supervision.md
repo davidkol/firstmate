@@ -134,6 +134,72 @@ tests/fm-busy-adapter-wiring.test.sh
 tests/fm-crew-state.test.sh
 ```
 
+## Codex primary permission policy
+
+The supported primary Codex entry and its away-mode escalation guard were verified on 2026-08-12 with codex-cli 0.147.0 on macOS.
+
+The historical rollout separated the failure's three layers: the initiating trigger was a primary turn whose effective policy was `on-request`/`workspace-write`; the masking condition was that routine operations stayed inside that restricted workspace until away startup needed sandbox-sensitive supervision mechanics; and the visible symptom was the resulting `require_escalated` retry remaining unresolved for 17,657.9 seconds after the captain left.
+The unrestricted primary probe avoided that trigger with `never`/`danger-full-access`, while the separate worker dispatch test showed that `fm-spawn.sh` already retained its established `--dangerously-bypass-approvals-and-sandbox` path.
+
+The effective-policy oracle was exercised against both separable configurations:
+
+```sh
+codex doctor --json \
+  -c 'approval_policy="never"' \
+  -c 'sandbox_mode="danger-full-access"' --enable hooks \
+  | bin/fm-codex-primary-policy-check.sh
+
+codex doctor --json \
+  -c 'approval_policy="on-request"' \
+  -c 'sandbox_mode="workspace-write"' --enable hooks \
+  | bin/fm-codex-primary-policy-check.sh
+```
+
+Observed output and statuses:
+
+```text
+approval=Never filesystem=unrestricted network=enabled hooks=enabled
+exit=0
+error: Codex effective policy mismatch: approval=OnRequest filesystem=restricted network=restricted hooks=enabled
+exit=1
+```
+
+A third doctor fixture preserved the good sandbox values but omitted `hooks` from `config.load.details["enabled feature flags"]`; the same oracle reported `hooks=disabled` and exited 1.
+The launcher passes `--enable hooks` to both doctor and the TUI, so a persisted `features.hooks=false` cannot silently remove SessionStart, PreToolUse, or Stop after the check.
+
+A last-value-precedence probe showed Codex accepts `-c=approval_policy="on-request"` and `-c=sandbox_mode="workspace-write"` after canonical unrestricted overrides and then reports `OnRequest`/`restricted`.
+The launcher consequently refuses every caller config, profile, or feature layer before doctor or TUI launch, including that `-c=` form and `--disable hooks`; both refusals exited 2.
+It also refused `exec`, `review`, `delete`, `mcp-server`, and `fork` before doctor so its acceptance banner applies only to the verified fresh/resume interactive lifecycle.
+
+The ordinary player path used an isolated peer home and `bin/fm-open.sh <home> codex --no-alt-screen <acceptance-prompt>`.
+Before the TUI accepted the prompt, the launcher printed `fm-codex-primary: effective policy verified: approval=Never filesystem=unrestricted network=enabled hooks=enabled`; the TUI displayed `permissions: YOLO mode`; the rollout's first `turn_context` recorded `approval_policy:"never"` and `sandbox_policy:{"type":"danger-full-access"}`; and one shell call printed `PRIMARY_POLICY_LIVE_OK`.
+The same restricted session was then resumed through `bin/fm-open.sh <home> codex resume --no-alt-screen <session-id> <acceptance-prompt>`.
+Its next `turn_context` changed from the saved session's `on-request`/`workspace-write` posture to `never`/`danger-full-access`, the resumed TUI again displayed YOLO mode, and its shell call printed `RESUMED_POLICY_OK`.
+
+The negative player path launched raw Codex with `-a on-request -s workspace-write` in a separate isolated home and asked it to run `bash -x bin/fm-afk-launch.sh start`.
+The rollout recorded the restricted policy, the command environment carried `CODEX_SANDBOX=seatbelt`, and the lifecycle entry returned 2 with `[codex-away-permission]` before its process-identity lock.
+The pane contained `BOUNDED_AWAY_REFUSAL`, no `Would you like to run` approval prompt appeared, and the isolated state directory remained empty.
+A second raw negative used `-a on-request -s danger-full-access`, where Codex sets no seatbelt marker.
+The lifecycle still returned `[codex-away-permission]` because the live Codex process's open rollout reported `on-request`/`danger-full-access`, no approval prompt appeared, and the isolated state directory remained empty.
+Focused process fixtures also demonstrated that blank or fabricated `CODEX_THREAD_ID`/`CODEX_HOME` values and a spoofed legacy verification marker cannot override that restricted live rollout, a Codex-named unsigned process holding fabricated rollouts is rejected, and a missing authenticated live rollout fails closed.
+The genuine OpenAI-signed primary passed the gate with its live `never`/`danger-full-access` rollout; when that authenticated process held multiple internal rollouts, the guard required every latest effective context to have that safe posture instead of trusting the caller's thread id to choose one.
+The live-argv oracle separately read NUL-delimited process arguments from macOS `KERN_PROCARGS2`, accepted the launcher's exact `--dangerously-bypass-hook-trust -c approval_policy="never" -c sandbox_mode="danger-full-access" --enable hooks` prefix, rejected both raw restricted argv and a later policy override, and accepted prompt arguments containing `-c` or `-sandbox` as text, so neither writable rollout bytes nor flattened prompt text can change the guard's decision.
+
+Codex 0.147.0 code-mode calls use the dynamic `exec` tool and emitted neither the project's Bash PreToolUse hook nor its PermissionRequest hook in the negative probes.
+Disabling `features.code_mode_host` made code mode fail closed instead of exposing a normal hookable shell path, so that is not the shipped correction.
+The authoritative away-declaration seatbelt therefore runs inside both lifecycle entry points, while the tracked PreToolUse hook remains defense for native Bash calls.
+Code mode cannot provide a universal hook for an unsupported raw process opened after another session already entered away mode; the executable boundary is instead that raw Codex cannot create an away session, and every supported active-away primary starts and remains under the launcher's proved `Never` policy.
+
+The primary change did not modify the worker template in `bin/fm-spawn.sh`.
+`tests/fm-spawn-dispatch-profile.test.sh` separately observed the existing `--dangerously-bypass-approvals-and-sandbox` Codex worker launch.
+
+Deterministic coverage:
+
+```sh
+tests/fm-codex-primary.test.sh
+tests/fm-spawn-dispatch-profile.test.sh
+```
+
 ## Turn-end guard
 
 The direct and passive mechanisms were validated across all five harnesses on 2026-07-08 through 2026-07-12, with Claude's replacement Stop-owned path revalidated on 2026-07-24 and Codex's replacement native typed continuation validated on 2026-08-09.

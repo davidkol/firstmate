@@ -83,7 +83,7 @@ git clone https://github.com/kunchenguid/firstmate
 cd firstmate
 ```
 
-Then launch one of the co-primary harnesses; AGENTS.md takes over from there:
+Then launch a supported primary harness; AGENTS.md takes over from there:
 
 **Claude Code**
 
@@ -104,6 +104,15 @@ pi
 # or, when the signed wrapper is installed
 FM_PI_HARNESS=pi-signed pi-signed
 ```
+
+**Codex**
+
+```sh
+bin/fm-codex-primary.sh
+```
+
+The Codex launcher supplies Firstmate's no-prompt/full-access policy, explicitly enables tracked hooks, asks `codex doctor --json` to prove that complete effective posture, and refuses to accept work if Codex reports anything else.
+Use the same entry to resume a session, for example `bin/fm-codex-primary.sh resume <session-id>`; a raw `codex` or `codex resume` is not a supported primary Firstmate entry because it can inherit a restricted user or session policy.
 
 For Grok, `--trust` is needed once per clone so project hooks and the turn-end guard load; `/hooks-trust` inside Grok works too.
 For Pi, approve the project trust prompt once per clone on first launch so the tracked `.pi/extensions/*.ts` files auto-load.

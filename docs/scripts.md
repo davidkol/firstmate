@@ -43,6 +43,11 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-arm-pretool-check.sh` | Stable PreToolUse transport for the watcher-arm command policy (docs/arm-pretool-check.md) |
 | `fm-arm-command-policy.mjs` | Semantic owner of the watcher-arm PreToolUse policy (docs/arm-pretool-check.md)   |
 | `fm-subagent-pretool-check.sh` | Primary-home delegation-shape PreToolUse guard (docs/subagent-guard.md) |
+| `fm-codex-primary.sh`    | Start or resume a primary Codex session only after proving its effective no-prompt/full-access policy |
+| `fm-codex-primary-policy-check.sh` | Validate effective Codex sandbox, network, and hook posture reported by `codex doctor --json` |
+| `fm-codex-primary-argv-check.sh` | Validate the signed live Codex process carries the launcher's immutable primary-policy argv |
+| `fm-codex-rollout-policy-check.sh` | Validate every authenticated process-open Codex rollout remains no-prompt/full-access |
+| `fm-codex-away-pretool-check.sh` | Guard restricted Codex away entry directly and hookable native Bash calls while away |
 | `fm-supervision-instructions.sh` | Render the session-start primary-harness supervision block or the one-line repair instruction |
 | `fm-home-seed.sh`        | Transactionally provision a peer or secondmate home, maintaining `data/secondmates.md` for the latter |
 | `fm-open.sh`             | Open a peer firstmate home: set `FM_HOME` and launch the named harness from this code root |
