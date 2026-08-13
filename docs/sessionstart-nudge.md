@@ -18,10 +18,10 @@ The nudge tier remains the floor for harnesses that cannot carry hook stdout int
 Pi stays on the nudge tier here.
 Its adapter is a tracked extension rather than a hook payload, and moving it to the run tier means rewriting that extension's delivery and truncation handling; this fleet runs Claude, so that work is not carried.
 
-The tier for `codex exec` is UNESTABLISHED, which is why it appears in neither row above.
-`.codex/hooks.json` is wired for the run tier, but the two recorded observations disagree and neither settles the installed build: on codex-cli 0.144.4 a `SessionStart` hook completed and its stdout reached model context, in a checkout whose shape was not recorded, while on codex-cli 0.145.0, explicitly in a linked worktree, Firstmate-written project hooks under `<worktree>/.codex/hooks.json` fired for neither an interactive pane nor `codex exec`, though global `~/.codex/hooks.json` hooks fired in those same runs.
-Re-verification against the installed codex-cli is tracked as `fm-codex-run-tier-unverified`, and [`verification/supervision.md`](verification/supervision.md#native-session-start-delivery) holds both dated observations.
-Until it is settled, nothing is lost if the hook never fires: the tracked `AGENTS.md` session-start instruction is the floor on any Codex surface, the same floor the interactive TUI row below records.
+Raw `codex exec` is not a supported primary entry, and its session-start tier remains UNESTABLISHED, which is why it appears in neither row above.
+The supported interactive launcher explicitly enables tracked hooks and bypasses persisted project-hook trust; on codex-cli 0.147.0 its `SessionStart` hook completed in the primary player pass, but that pass did not preserve hook stdout or prove the full digest reached model context.
+The interactive TUI therefore remains on the nudge tier until full run-tier delivery is verified, with the tracked `AGENTS.md` session-start instruction as its floor.
+[`verification/supervision.md`](verification/supervision.md#native-session-start-delivery) owns the dated transport evidence and the remaining limit.
 
 ## Source routing
 
@@ -80,8 +80,8 @@ A lock another session holds, broken GitHub auth, and a truncated digest therefo
 | Harness | Tier | Tracked transport | Current compatibility |
 | --- | --- | --- | --- |
 | Claude | Run | `.claude/settings.json` registers one unmatched `SessionStart` hook, invoked through `CLAUDE_PROJECT_DIR` with a 180s timeout; the wrapper reads `source` from the hook payload. | Native stdout context injection is supported. |
-| Codex exec | Unestablished | `.codex/hooks.json` anchors to the hook process working directory, verifies a Firstmate-shaped hook-bearing root, and pipes the hook payload into the wrapper with a 180s timeout. | Whether a Firstmate-written project hook fires and reaches model context is unsettled on the installed build; see the tier note above and `fm-codex-run-tier-unverified`. |
-| Codex interactive TUI | Nudge | The tracked `AGENTS.md` session-start instruction remains visible when the project hook does not fire. | Firstmate ships no global hook and does not depend on one. |
+| Codex exec | Unestablished | `.codex/hooks.json` is wired for the run wrapper, but the primary launcher refuses this non-interactive surface. | Raw `codex exec` is not a supported primary entry; its historical transport evidence does not establish a current primary guarantee. |
+| Codex interactive TUI | Nudge | `bin/fm-codex-primary.sh` enables the tracked project hook, while the tracked `AGENTS.md` instruction remains the session-start floor. | Codex 0.147.0 completed the project `SessionStart` hook under the supported launcher, but full digest delivery into model context remains unverified. |
 | Pi / pi-signed | Nudge | `.pi/extensions/fm-primary-turnend-guard.ts` handles `session_start` reasons `startup`, `new`, and `resume`, then injects the wrapper output with `pi.sendMessage`. | The custom message reaches model context without racing an initial positional prompt. |
 | OpenCode | Nudge | `.opencode/plugins/fm-primary-sessionstart-nudge.js` listens for `session.created`, runs once per session id, and calls `client.session.promptAsync` only when the wrapper prints a nudge. | Interactive TUI delivery is supported; headless `opencode run` is intentionally fail-open because the process can exit before the queued turn. That early exit is also why OpenCode cannot use the run tier. |
 | Grok | Nudge | `.grok/hooks/fm-primary-sessionstart-nudge.json` registers a project `SessionStart` hook and invokes the wrapper through inline-defaulted `${GROK_WORKSPACE_ROOT:-}`. | The project hook runs when the checkout is trusted, but Grok currently discards hook stdout from model context, so this path is intentionally fail-open and cannot use the run tier. |

@@ -26,8 +26,9 @@ That result and the later Codex probe recorded under [Semantic busy state](#sema
 This one ran on codex-cli 0.144.4 and does not record its checkout shape, so it cannot be read as covering the primary checkout or a linked worktree specifically.
 The later one ran on codex-cli 0.145.0, explicitly in a linked worktree, and found that Firstmate-written project hooks under `<worktree>/.codex/hooks.json` fired for neither an interactive pane nor `codex exec`, while global `~/.codex/hooks.json` `SessionStart` hooks fired in the same runs.
 Both are real observations; they differ in codex-cli version and in checkout shape, and only the newer one says where it ran.
-
-Neither observation settles the installed build, so what session-open tier follows from them is not decided here: [`../sessionstart-nudge.md`](../sessionstart-nudge.md) owns tier assignment and the tracked re-verification card.
+The supported primary player pass on codex-cli 0.147.0 later showed the tracked project `SessionStart` hook completing under `bin/fm-codex-primary.sh`, which establishes hook loading for that interactive entry.
+That pass did not preserve the hook's stdout or prove that the full digest reached model context, so it does not establish run-tier delivery.
+[`../sessionstart-nudge.md`](../sessionstart-nudge.md) owns the resulting tier assignment; raw `codex exec` remains outside the supported primary entry.
 
 Grok command shape:
 
@@ -137,9 +138,6 @@ tests/fm-crew-state.test.sh
 ## Codex primary permission policy
 
 The supported primary Codex entry and its away-mode escalation guard were verified on 2026-08-12 with codex-cli 0.147.0 on macOS.
-
-The historical rollout separated the failure's three layers: the initiating trigger was a primary turn whose effective policy was `on-request`/`workspace-write`; the masking condition was that routine operations stayed inside that restricted workspace until away startup needed sandbox-sensitive supervision mechanics; and the visible symptom was the resulting `require_escalated` retry remaining unresolved for 17,657.9 seconds after the captain left.
-The unrestricted primary probe avoided that trigger with `never`/`danger-full-access`, while the separate worker dispatch test showed that `fm-spawn.sh` already retained its established `--dangerously-bypass-approvals-and-sandbox` path.
 
 The effective-policy oracle was exercised against both separable configurations:
 
