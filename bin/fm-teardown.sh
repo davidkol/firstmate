@@ -123,6 +123,8 @@
 #   `--force`, the operator's documented last-resort discard path, overrides
 #   either refusal and continues, naming exactly which run was left un-concluded
 #   and which pids were left running.
+# Final volatile-state cleanup also retires the task's review-convergence mirror;
+# it remains available for every cold handoff until the task itself is torn down.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1687,6 +1689,7 @@ fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 # Remove the per-task temp root (/tmp/fm-<id>/, incl. its gotmp/) recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
+rm -rf -- "$STATE/$ID.review-convergence"
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \

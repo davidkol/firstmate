@@ -1,0 +1,9 @@
+gate:
+  step: review
+  status: fix_review
+  findings[5]{id,severity,file,action,description}:
+    followup-missing-source,info,bin/fm-authority-receipts.sh,no-op,"FOLLOW-UP: Nonexistent repository source pointers need adjacent hardening."
+    followup-prompt-override,info,bin/fm-spawn.sh,no-op,"FOLLOW-UP: Canonical regeneration can erase explicit external-PR prompt overrides."
+    followup-post-checkout-ignored,info,bin/fm-brief.sh,no-op,"FOLLOW-UP: Ignored state created after checkout needs a separate recovery invariant."
+    followup-ref-transaction,info,bin/fm-brief.sh,no-op,"FOLLOW-UP: Recovery-ref cleanup should become atomic before automatic promotion expands."
+    followup-marker-literal,info,bin/fm-spawn.sh,no-op,"FOLLOW-UP: Generated-marker literals inside task examples need parser hardening."

@@ -616,9 +616,13 @@ test_teardown_prompts_tasks_axi_done_when_compatible() {
   case_dir=$(make_case tasks-axi-reminder)
   write_meta "$case_dir" no-mistakes ship
   printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/state/task-x1.review-convergence"
+  : > "$case_dir/state/task-x1.review-convergence/manifest"
   add_compatible_tasks_axi "$case_dir"
 
   out=$(run_teardown "$case_dir") || fail "teardown failed with compatible tasks-axi"
+  [ ! -e "$case_dir/state/task-x1.review-convergence" ] \
+    || fail "teardown retained the task's review-convergence mirror"
   printf '%s\n' "$out" | grep -F 'tasks-axi done task-x1 --pr https://github.com/example/repo/pull/7' >/dev/null \
     || fail "teardown did not prompt tasks-axi done: $out"
   printf '%s\n' "$out" | grep -F 'tasks-axi ready' >/dev/null \

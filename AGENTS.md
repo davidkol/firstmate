@@ -325,13 +325,17 @@ After an autonomous merge or landing, give the captain a one-line outcome: the f
 For a no-mistakes or validated-main ship, firstmate triggers validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
 For a direct-PR or local-only ship, the worker starts its own review from its brief as soon as it commits, so firstmate triggers nothing for those two and never sends a second `axi run` for a light path already under way.
 Every mode starts through `bin/fm-validate.sh <id> --evidence <project-relative-result-or-capture>`, which reads the canonical tier, outcome, and applicable evidence from the task brief, publishes the worker's executed captures on no-mistakes' temporary evidence surface, and derives the pipeline's skip set from the task's recorded delivery mode: validated-main omits the PR and CI steps, direct-PR and local-only keep review alone and omit the other eight, and no-mistakes omits nothing.
-The wrapper gives every isolated review round the evidence location plus its role-specific doctrine contract and ignores a caller-authored intent paraphrase; if a pipeline rebase resolution or review fix changes the relevant diff, that phase saves its already-required focused verification on the same surface for the next reviewer, while an unchanged diff reuses the accessible capture without another execution.
+Every later gate goes through `bin/fm-validate.sh <id> respond`, whose review path permits one initial review, one batched remediation, and at most one bounded closure review before tests.
+The remediation's one focused command runs through `bin/fm-review-convergence.sh`, which binds durable output to the exact command and unchanged worktree, refuses a new production path or disproportionate changed-test amplification, and reuses matching evidence after a cold handoff.
+The closure inspects prior findings, the remediation delta, and only catastrophic regressions at that boundary; adjacent hardening becomes inspectable follow-up output, and a catastrophic closure fails closed.
+A second remediation is refused, so a full-branch rereview cannot recursively reopen the current ship.
+Hard-earned 2026-08-12: raw review responses let one validation reach eleven review/fix passes before its first pipeline test, so the wrapper boundary above is a correctness requirement rather than optional operator convenience; [`docs/verification/validation-pipeline.md`](docs/verification/validation-pipeline.md#review-convergence-is-executable-and-handoff-safe) owns the maintained causal evidence.
 That skip set never includes review for any mode, and never drops test, document, or lint from a full-pipeline mode.
-The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
-Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.
+The task worker that starts a no-mistakes run drives the pipeline and owns every `bin/fm-validate.sh <id> respond` call through the next gate or outcome.
+Firstmate never invokes either response command for a crew-owned run.
 
 An ask-user finding returns as `needs-decision`; firstmate decides only when the configured authority permits, otherwise escalates to the captain.
-Send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the worker's open decision record closes at answer time.
+Send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact `bin/fm-validate.sh <id> respond` command, passing `--resolve-key` so the worker's open decision record closes at answer time.
 Require the matching `resolved` event, forbid `--yes`, and require the worker to process every synchronous return until completion or a genuinely new escalation.
 Resume fleet supervision immediately after the decision lands.
 

@@ -98,8 +98,11 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
     "the promoted prompt retained revoked yolo authority"
   assert_no_grep 'This project ships **direct-PR**' "$brief" \
     "the promoted prompt retained the scout's stale delivery mode"
-  assert_grep 'You drive the review by responding to its gate' "$brief" \
-    "promotion did not install the delivery-mode-specific ship worker prompt"
+  assert_grep "bin/fm-validate.sh scout-a respond" "$brief" \
+    "promotion did not install the executable review-convergence worker prompt"
+  # shellcheck disable=SC2016  # Backticks are literal generated-brief prose.
+  assert_grep 'Do not call `no-mistakes axi respond` directly' "$brief" \
+    "promotion still allows the old unbounded raw response path"
 
   inventory_line=$(grep -nF '1. Inventory the scout state before changing refs:' "$brief" | cut -d: -f1)
   preserve_line=$(grep -nF '2. Preserve the complete scout state recoverably before cleaning it:' "$brief" | cut -d: -f1)

@@ -662,6 +662,25 @@ Run each applicable oracle once after the final change and save its executed out
 Pass every saved result or capture with `--evidence`; the validation wrapper publishes copies where isolated pipeline agents can inspect them, and one saved execution may satisfy multiple delivery-contract evidence lines when it is genuinely the same oracle.
 EOF
 VALIDATE_EVIDENCE=${VALIDATE_EVIDENCE%$'\n'}
+IFS= read -r -d '' VALIDATE_DRIVE <<EOF || true
+Drive every pipeline gate through Firstmate's response boundary:
+
+\`$FM_ROOT/bin/fm-validate.sh $ID respond --action approve|fix|skip [other response flags]\`
+
+Do not call \`no-mistakes axi respond\` directly; that bypasses the executable review-round budget and durable evidence handoff.
+The review path permits one initial review, one batched remediation when findings require it, and at most one bounded closure review before tests; the initial reviewer is independent and fresh-context.
+Select every actionable initial-review finding in the one \`--action fix\` response.
+The wrapper gives that fixer the exact command that records its one focused verification, rejects a new production subsystem or disproportionate test amplification, and reuses unchanged command output after a session handoff.
+The closure review checks prior findings, the remediation delta, and only accepted-intent contradiction, work loss or destruction, security failure, or an immediately reachable regression introduced at the changed boundary.
+Adjacent hardening remains inspectable follow-up output and cannot open a second remediation.
+Do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
+Follow the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are version-matched, but substitute the response boundary above for every raw \`no-mistakes axi respond\` command they show.
+Two firstmate-specific authority rules also apply:
+- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
+  When the decision comes back, feed it to the gate through \`$FM_ROOT/bin/fm-validate.sh $ID respond\`, preserve firstmate's exact \`--resolve-key\`, and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+EOF
+VALIDATE_DRIVE=${VALIDATE_DRIVE%$'\n'}
 
 case "$MODE" in
   direct-PR)
@@ -679,12 +698,7 @@ $VALIDATE_EVIDENCE
 $VALIDATE_COMMAND
 Do NOT call \`no-mistakes axi run\` directly. Which steps this path skips is derived from the task's recorded delivery mode inside that command rather than typed by you, so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart the review.
 It never skips the review step itself, for any mode.
-You drive the review by responding to its gate: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
-Follow the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-Two firstmate-specific rules layer on top of it:
-- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
-- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+$VALIDATE_DRIVE
 
 When the run reaches a successful terminal outcome, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
 Pushing before the review reaches that outcome defeats the one safeguard this path has.
@@ -709,12 +723,7 @@ $VALIDATE_EVIDENCE
 $VALIDATE_COMMAND
 Do NOT call \`no-mistakes axi run\` directly. This project's delivery path omits the PR and CI steps, and that omission is derived from the task's recorded delivery mode inside that command rather than typed by you - so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart validation.
 It never omits review, test, document or lint for any mode.
-You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
-Follow the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-Two firstmate-specific rules layer on top of it:
-- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
-- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+$VALIDATE_DRIVE
 
 The pipeline commits its own fix rounds and pushes them, so your local branch may end up behind what it published. That is expected and is not yours to reconcile by hand.
 When the run reaches a successful terminal outcome, append \`done: validated on fm/$ID, ready to land\` and stop. You are finished.
@@ -737,12 +746,7 @@ $VALIDATE_EVIDENCE
 $VALIDATE_COMMAND
 Do NOT call \`no-mistakes axi run\` directly. Which steps this path skips is derived from the task's recorded delivery mode inside that command rather than typed by you, so it is inherited automatically, including on any re-run after a failure. Use the same command every time you need to start or restart the review.
 It never skips the review step itself, for any mode.
-You drive the review by responding to its gate: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
-Follow the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-Two firstmate-specific rules layer on top of it:
-- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
-- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+$VALIDATE_DRIVE
 
 When the run reaches a successful terminal outcome, append \`done: ready in branch fm/$ID\` to the status file and stop.
 A failed or cancelled run is terminal but NOT successful: never declare the branch ready on one - escalate to firstmate (rule 6) and stop, because firstmate fast-forwards a ready branch straight into local \`main\`.
@@ -763,12 +767,7 @@ $VALIDATE_EVIDENCE
 $VALIDATE_COMMAND
 The wrapper reads the canonical outcome and selected-review contract from this brief; do not replace it with a caller-authored intent paraphrase.
 
-You drive no-mistakes by responding to its gates: do not hand-edit, commit, or fix findings yourself while a run is active, because the pipeline applies every fix.
-Follow the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-Two firstmate-specific rules layer on top of it:
-- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop. Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
-- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+$VALIDATE_DRIVE
 
 After the wrapper-driven no-mistakes run reaches its CI-ready return point, append \`done: PR {url} checks green\` and stop. You are finished.
 Two things satisfy that return point: checks passed, or the PR registered no checks at all once the pipeline's registration grace elapsed.

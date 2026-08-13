@@ -380,10 +380,42 @@ test_full_mode_briefs_trigger_only_the_validation_wrapper() {
     brief="$home/data/$id/brief.md"
     assert_grep "bin/fm-validate.sh $id --evidence" "$brief" \
       "$id: the full-mode trigger did not invoke the topology-independent wrapper"
+    assert_grep "bin/fm-validate.sh $id respond" "$brief" \
+      "$id: later gates can bypass the executable review-convergence boundary"
+    # shellcheck disable=SC2016  # Backticks are literal generated-brief prose.
+    assert_no_grep 'feed it to the gate with `no-mistakes axi respond`' "$brief" \
+      "$id: ask-user recovery still bypasses the response wrapper"
     assert_no_grep '/no-mistakes' "$brief" \
       "$id: the full-mode trigger still offers a skill path that bypasses the wrapper"
   done
   pass "fm-brief.sh: full modes trigger validation only through fm-validate"
+}
+
+test_every_delivery_mode_routes_gate_responses_through_convergence() {
+  local home id proj brief
+  home="$TMP_ROOT/all-mode-convergence-home"
+  write_registry "$home"
+  for pair in \
+    'nm:no-registry-proj' \
+    'vm:main-proj' \
+    'pr:direct-proj' \
+    'local:local-proj'; do
+    id=${pair%%:*}
+    proj=${pair#*:}
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_grep "bin/fm-validate.sh $id respond" "$brief" \
+      "$id: delivery mode $proj does not use the convergence response boundary"
+    assert_grep 'one initial review, one batched remediation when findings require it, and at most one bounded closure review' "$brief" \
+      "$id: delivery mode $proj lost the observable review budget"
+    # shellcheck disable=SC2016  # Backticks are literal generated-brief prose.
+    assert_grep 'Do not call `no-mistakes axi respond` directly' "$brief" \
+      "$id: delivery mode $proj still permits bypassing the executable budget"
+    # shellcheck disable=SC2016  # Backticks are literal generated-brief prose.
+    assert_grep 'preserve firstmate'"'"'s exact `--resolve-key`' "$brief" \
+      "$id: delivery mode $proj lost ask-user decision closure"
+  done
+  pass "fm-brief.sh: every delivery mode routes review gates through convergence"
 }
 
 # The light path's whole safeguard is one review by an agent that did not write the
@@ -1470,6 +1502,7 @@ test_doctrine_contract_is_proportional_and_allows_one_shared_oracle
 test_doctrine_contract_ignores_fenced_examples
 test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci
 test_full_mode_briefs_trigger_only_the_validation_wrapper
+test_every_delivery_mode_routes_gate_responses_through_convergence
 test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr
 test_local_only_brief_runs_a_review_that_publishes_nothing
 test_faster_paths_use_configured_authority_without_stacked_review

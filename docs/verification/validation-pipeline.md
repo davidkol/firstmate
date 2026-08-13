@@ -2,9 +2,38 @@
 
 Audience: maintainer verification.
 
-This record supports four current guarantees: that a no-mistakes ship task reports its PR at the pipeline's CI-ready return point, including on a repository whose PR registers no checks, that the `validated-main` delivery mode validates through the same pipeline without ever opening a PR, that the pipeline reads repository `commands` and `agent` from the trusted default-branch config, and that `bin/fm-teardown.sh` can conclude a task's own parked run before removing the worker that would have answered its gate.
+This record supports five current guarantees: that review convergence is executable and handoff-safe, that a no-mistakes ship task reports its PR at the pipeline's CI-ready return point even when its repository registers no checks, that the `validated-main` delivery mode validates through the same pipeline without opening a PR, that the pipeline reads repository `commands` and `agent` from the trusted default-branch config, and that `bin/fm-teardown.sh` can conclude a task's own parked run before removing the worker that would have answered its gate.
 `AGENTS.md` section 7 owns the operating contract and `bin/fm-crew-state.sh` owns the state mapping.
 Task-specific chronology, temporary paths, run identifiers, and delivery transcripts remain in private reports or PR evidence.
+
+## Review convergence is executable and handoff-safe
+
+Verified on 2026-08-12 against `no-mistakes` v1.46.0 and the synthetic fixture in `tests/fm-review-convergence.test.sh`.
+
+`bin/fm-validate.sh <task-id> respond ...` is the supported response entry for every gate in all four delivery modes.
+It binds the active run's branch to the recorded task worktree before forwarding any response, and review responses additionally require the gate worktree's pipeline-owned convergence manifest.
+The state machine permits one `initial-review -> remediation -> closure-reviewed` path and refuses a second `begin-remediation` transition with exit 45, so repeated review/fix passes 2 through 9 cannot be expressed through the supported entry point.
+An initial review with no actionable findings advances directly, while an initial review with findings requires one fix response containing every actionable finding id so the fixer receives one root-cause batch.
+The fix response itself is the bounded closure review, and `close-review` accepts only `info`/`no-op` findings whose description starts with `FOLLOW-UP:` as inspectable follow-up rows.
+Any closure `auto-fix` or `ask-user` finding becomes a terminal `closure-blocked` state with exit 44 instead of starting another remediation.
+
+The fixer runs its one focused command through `fm-review-convergence.sh record <gate-worktree> -- <command...>`.
+The receipt binds the run id, exact shell argument vector, complete output hash, exit status, duration, and a Git tree assembled from the changed worktree while excluding the pipeline's ignored `.no-mistakes` state.
+An unchanged later invocation replays the saved output without executing the command, while a changed run, command, tree, missing output, changed output, or failed exit status refuses reuse.
+Both the receipt and output are mirrored under `state/<task-id>.review-convergence/`, so a cold worker or session handoff keeps the proof until task teardown retires that volatile record.
+
+Before the focused command executes, the same helper recomputes the proportional test selection and changed-path set against the exact initial-review worktree.
+New paths outside `tests/` are preserved in `followups/scope-expansion.txt` and refused with exit 42 because a remediation may not silently pull another production subsystem into the accepted ship.
+The selected-test cap is `max(10, 2 * initial_tests)` and records initial, final, repeated, and new test counts in `followups/test-amplification.txt` before refusing an over-cap plan with exit 43.
+This is a fail-closed expansion signal rather than permission to discard proportional tests or silently choose a smaller set.
+
+The fixture supplies six initially selected tests, injects the historical 118-test expansion, and proves the focused command never runs after that refusal.
+It also exercises a cold-shell receipt reuse, a different-command refusal, a cross-run refusal, a new-production-path refusal, repeated remediation attempts through pass 9, the ordinary validated-main entry path, and the review-only direct-PR path.
+Its closure corpus preserves five adjacent findings without reopening review: nonexistent repository source pointers, canonical regeneration erasing an external-PR prompt override, ignored state created after checkout, non-atomic recovery-ref cleanup, and generated-marker literals inside task examples.
+
+The durable metrics record implementation time and size, initial and closure review rounds, initial findings, review time, remediation file/line growth, time to first executable test, initial/final/repeated/new test counts, focused verification executions, follow-up count, review-found versus test-found defect counts and ids, and both expansion refusals.
+A review-only run records `time_to_first_test_ms=-1` rather than pretending that its intentionally skipped test phase executed.
+The final maintained oracle is `tests/fm-review-convergence.test.sh`; the project's ordinary full regression remains `bin/fm-test-run.sh --all`.
 
 ## No registered checks is a CI-ready result
 
