@@ -34,7 +34,8 @@ make_repo() {
 start_and_attach() {
   local case_dir=$1 repo=$2
   mkdir -p "$case_dir/state"
-  "$CONVERGENCE" start "$case_dir/state" synthetic "$repo" 1000 1100 >/dev/null
+  "$CONVERGENCE" start "$case_dir/state" synthetic "$repo" 1000 1100 \
+    "$case_dir/pipeline-final-change.txt" >/dev/null
   "$CONVERGENCE" attach "$case_dir/state" RUN-SYNTHETIC "$repo" "$case_dir/initial-status.toon" >/dev/null
 }
 
@@ -58,7 +59,7 @@ EOF
 }
 
 test_receipt_survives_handoff_and_reuses_only_exact_proof() {
-  local case_dir="$TMP_ROOT/receipt" repo counter focused out rc
+  local case_dir="$TMP_ROOT/receipt" repo counter focused pipeline_capture out rc
   repo=$(make_repo receipt 6)
   write_initial_status "$case_dir/initial-status.toon"
   start_and_attach "$case_dir" "$repo"
@@ -76,6 +77,14 @@ SH
     > "$case_dir/first-record.out"
   [ "$(wc -l < "$counter" | tr -d ' ')" -eq 1 ] \
     || fail "focused verification did not execute exactly once"
+  pipeline_capture="$case_dir/pipeline-final-change.txt"
+  assert_grep 'command: ' "$pipeline_capture" \
+    "pipeline evidence omitted the executed command"
+  assert_grep 'exit: 0' "$pipeline_capture" \
+    "pipeline evidence omitted the successful exit"
+  assert_grep 'focused verification passed' "$pipeline_capture" \
+    "pipeline evidence omitted the executed output"
+  rm -f "$pipeline_capture"
 
   # A new shell stands in for a cold reviewer/session handoff. The identical
   # command must reuse the receipt without executing it again.
@@ -85,6 +94,8 @@ SH
     "the cold handoff reran unchanged focused verification instead of reusing it"
   [ "$(wc -l < "$counter" | tr -d ' ')" -eq 1 ] \
     || fail "an unchanged handoff executed focused verification twice"
+  [ -s "$pipeline_capture" ] \
+    || fail "the cold handoff did not republish pipeline evidence from the bound receipt"
 
   "$CONVERGENCE" verify "$repo" -- "$focused" \
     >/dev/null || fail "the unchanged code and command did not verify"
@@ -255,7 +266,8 @@ EOF
 }
 
 test_ordinary_validation_entry_converges_before_tests() {
-  local case_dir="$TMP_ROOT/ordinary" task gate fakebin evidence outer_state metrics review_response_count
+  local case_dir="$TMP_ROOT/ordinary" task gate fakebin evidence outer_state metrics
+  local review_response_count accepted_response_count pipeline_final_change rc before_responses after_responses
   case_dir="$TMP_ROOT/ordinary"
   task=$(make_repo ordinary-task 6)
   gate="$case_dir/nm-home/worktrees/repo/RUN-SYNTHETIC"
@@ -367,6 +379,11 @@ EOF
   'axi respond')
     case "$phase" in
       initial)
+        if [ ! -e "$FM_FIXTURE_RETRY_MARKER" ]; then
+          : > "$FM_FIXTURE_RETRY_MARKER"
+          exit 71
+        fi
+        printf 'remediation\n' >> "$FM_FIXTURE_ACCEPTED_RESPONSES"
         printf 'base=true\nfeature=true\nremediated=true\n' > "$FM_FIXTURE_GATE/src/core.sh"
         "$FM_FIXTURE_CONVERGENCE" record "$FM_FIXTURE_GATE" -- \
           bash -c 'printf "focused remediation passed\\n"'
@@ -376,6 +393,7 @@ EOF
         cat "$FM_FIXTURE_ADJACENT"
         ;;
       closure)
+        printf 'closure\n' >> "$FM_FIXTURE_ACCEPTED_RESPONSES"
         printf 'test-gate\n' > "$FM_FIXTURE_PHASE"
         cat <<'EOF'
 run:
@@ -429,6 +447,36 @@ SH
 
   [ -s "$gate/.no-mistakes/review-convergence/manifest" ] \
     || fail "ordinary fm-validate did not attach durable convergence state to the gate worktree"
+  pipeline_final_change=$(sed -n 's/^pipeline_final_change=//p' "$outer_state/manifest")
+  [ -n "$pipeline_final_change" ] \
+    || fail "ordinary validation did not persist its pipeline final-change evidence path"
+  assert_contains "$(cat "$case_dir/axi.log")" "$pipeline_final_change" \
+    "the closure reviewer was not directed to the pipeline final-change capture"
+
+  before_responses=$(grep -c '^axi respond' "$case_dir/axi.log" || true)
+  set +e
+  (
+    cd "$task" || exit 1
+    FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_DATA_OVERRIDE="$case_dir/data" \
+    NM_HOME="$case_dir/nm-home" \
+    FM_FIXTURE_GATE="$gate" \
+    FM_FIXTURE_PHASE="$case_dir/phase" \
+    FM_FIXTURE_AXI_LOG="$case_dir/axi.log" \
+    FM_FIXTURE_ADJACENT="$ADJACENT" \
+    FM_FIXTURE_CONVERGENCE="$CONVERGENCE" \
+    PATH="$fakebin:$PATH" \
+      "$ROOT/bin/fm-validate.sh" synthetic respond --action approve
+  ) > "$case_dir/initial-approve.out" 2> "$case_dir/initial-approve.err"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "actionable initial findings were approved without remediation"
+  assert_grep 'actionable initial-review findings remain' "$case_dir/initial-approve.err" \
+    "the initial approval refusal did not identify the remaining remediation"
+  after_responses=$(grep -c '^axi respond' "$case_dir/axi.log" || true)
+  [ "$after_responses" -eq "$before_responses" ] \
+    || fail "the refused initial approval reached no-mistakes"
   mv "$gate/.no-mistakes/review-convergence" "$case_dir/simulated-lost-gate-state"
 
   printf 'wrong\n' > "$case_dir/phase"
@@ -454,6 +502,7 @@ SH
     "the cross-task response refusal did not identify the branch binding"
   printf 'initial\n' > "$case_dir/phase"
 
+  set +e
   (
     cd "$task" || exit 1
     FM_ROOT_OVERRIDE="$ROOT" \
@@ -465,6 +514,33 @@ SH
     FM_FIXTURE_AXI_LOG="$case_dir/axi.log" \
     FM_FIXTURE_ADJACENT="$ADJACENT" \
     FM_FIXTURE_CONVERGENCE="$CONVERGENCE" \
+    FM_FIXTURE_RETRY_MARKER="$case_dir/respond-failed-once" \
+    FM_FIXTURE_ACCEPTED_RESPONSES="$case_dir/accepted-review-responses" \
+    PATH="$fakebin:$PATH" \
+      "$ROOT/bin/fm-validate.sh" synthetic respond --action fix --findings root-a,root-b
+  ) > "$case_dir/failed-dispatch.out" 2> "$case_dir/failed-dispatch.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 71 ] || fail "the synthetic pre-dispatch failure did not propagate"
+  assert_grep 'stage=remediation' "$outer_state/manifest" \
+    "the failed response did not preserve its pending remediation transition"
+  [ ! -e "$case_dir/accepted-review-responses" ] \
+    || fail "the failed response dispatched remediation work"
+  mv "$gate/.no-mistakes/review-convergence" "$case_dir/simulated-failed-dispatch-state"
+
+  (
+    cd "$task" || exit 1
+    FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_DATA_OVERRIDE="$case_dir/data" \
+    NM_HOME="$case_dir/nm-home" \
+    FM_FIXTURE_GATE="$gate" \
+    FM_FIXTURE_PHASE="$case_dir/phase" \
+    FM_FIXTURE_AXI_LOG="$case_dir/axi.log" \
+    FM_FIXTURE_ADJACENT="$ADJACENT" \
+    FM_FIXTURE_CONVERGENCE="$CONVERGENCE" \
+    FM_FIXTURE_RETRY_MARKER="$case_dir/respond-failed-once" \
+    FM_FIXTURE_ACCEPTED_RESPONSES="$case_dir/accepted-review-responses" \
     PATH="$fakebin:$PATH" \
       "$ROOT/bin/fm-validate.sh" synthetic respond --action fix --findings root-a,root-b
   ) > "$case_dir/fix.out" 2> "$case_dir/fix.err" \
@@ -472,6 +548,12 @@ SH
 
   [ -s "$gate/.no-mistakes/review-convergence/remediation.receipt" ] \
     || fail "ordinary validation did not restore cold-session state from the durable mirror"
+  [ -s "$pipeline_final_change" ] \
+    || fail "ordinary validation did not publish pipeline final-change evidence before closure"
+  assert_grep 'exit: 0' "$pipeline_final_change" \
+    "pipeline final-change evidence did not record the successful focused verification"
+  assert_grep 'focused remediation passed' "$pipeline_final_change" \
+    "pipeline final-change evidence did not preserve the focused verification output"
 
   [ "$(wc -l < "$gate/.no-mistakes/review-convergence/followups/closure.tsv" | tr -d ' ')" -eq 5 ] \
     || fail "ordinary validation did not route the five closure findings to follow-up evidence"
@@ -487,6 +569,8 @@ SH
     FM_FIXTURE_AXI_LOG="$case_dir/axi.log" \
     FM_FIXTURE_ADJACENT="$ADJACENT" \
     FM_FIXTURE_CONVERGENCE="$CONVERGENCE" \
+    FM_FIXTURE_RETRY_MARKER="$case_dir/respond-failed-once" \
+    FM_FIXTURE_ACCEPTED_RESPONSES="$case_dir/accepted-review-responses" \
     PATH="$fakebin:$PATH" \
       "$ROOT/bin/fm-validate.sh" synthetic respond --action approve
   ) > "$case_dir/approve.out" 2> "$case_dir/approve.err" \
@@ -527,8 +611,11 @@ SH
     "$case_dir/state/synthetic.status" \
     "the successful wrapper response did not close its decision key"
   review_response_count=$(grep '^axi respond' "$case_dir/axi.log" | grep -vc -- '--step test' || true)
-  [ "$review_response_count" -eq 2 ] \
-    || fail "ordinary path used $review_response_count review responses instead of one remediation and one closure approval"
+  [ "$review_response_count" -eq 3 ] \
+    || fail "ordinary path did not preserve one failed dispatch, one remediation, and one closure response"
+  accepted_response_count=$(wc -l < "$case_dir/accepted-review-responses" | tr -d ' ')
+  [ "$accepted_response_count" -eq 2 ] \
+    || fail "ordinary path accepted $accepted_response_count review responses instead of one remediation and one closure"
   assert_grep '--add-finding {"id":"test-extra"}' "$case_dir/axi.log" \
     "the response boundary changed a non-review gate's native add-finding semantics"
   assert_grep 'outcome: passed' "$case_dir/test.out" \

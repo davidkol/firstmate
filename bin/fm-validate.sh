@@ -225,7 +225,7 @@ respond_gate() {
   local status_file response_file after_file run_id run_branch task_branch gate_step gate_status gate_worktree stage action=
   local after_gate_step after_run_status
   local findings='' caller_instructions='' resolve_keys='' resolve_key
-  local expected_ids selected_ids convergence_instructions combined_instructions
+  local expected_ids selected_ids convergence_instructions combined_instructions pipeline_final_change
   local response_rc close_rc=0 outer_state has_add_finding=0
   local -a response_args=() forwarded_args=()
 
@@ -412,10 +412,19 @@ respond_gate() {
 
   case "$action" in
     fix)
-      [ "$stage" = initial-review ] || {
-        echo "error: one batched remediation already ran; a second review-fix pass is forbidden" >&2
-        exit 45
-      }
+      case "$stage" in
+        initial-review) ;;
+        remediation)
+          [ "$gate_status" = awaiting_approval ] || {
+            echo "error: one batched remediation already ran; a second review-fix pass is forbidden" >&2
+            exit 45
+          }
+          ;;
+        *)
+          echo "error: one batched remediation already ran; a second review-fix pass is forbidden" >&2
+          exit 45
+          ;;
+      esac
       expected_ids=$(toon_actionable_ids "$status_file")
       selected_ids=$(printf '%s\n' "$findings" | tr ',' '\n' | sed '/^$/d' | LC_ALL=C sort -u)
       [ -n "$expected_ids" ] || {
@@ -427,8 +436,17 @@ respond_gate() {
         echo "expected finding ids: $(printf '%s' "$expected_ids" | tr '\n' ',' | sed 's/,$//')" >&2
         exit 1
       }
-      "$CONVERGENCE" begin-remediation "$gate_worktree" >/dev/null
-      convergence_instructions="Firstmate review convergence: this is the only remediation pass. Apply the selected findings as one root-cause batch. Run exactly one focused verification after all edits by wrapping that command as: $CONVERGENCE record $gate_worktree -- <focused-command-and-args>. Do not run that focused command outside the wrapper. If the wrapper refuses scope expansion or proportional-test amplification, stop and preserve its follow-up output instead of broadening the change."
+      pipeline_final_change=$(manifest_value "$gate_worktree" pipeline_final_change)
+      [ -n "$pipeline_final_change" ] || {
+        echo "error: review remediation has no pipeline final-change evidence destination" >&2
+        exit 1
+      }
+      if [ "$stage" = initial-review ]; then
+        "$CONVERGENCE" begin-remediation "$gate_worktree" >/dev/null
+      else
+        "$CONVERGENCE" retry-remediation "$gate_worktree" >/dev/null
+      fi
+      convergence_instructions="Firstmate review convergence: this is the only remediation pass. Apply the selected findings as one root-cause batch. Run exactly one focused verification after all edits by wrapping that command as: $CONVERGENCE record $gate_worktree -- <focused-command-and-args>. Do not run that focused command outside the wrapper. That record operation replaces $pipeline_final_change with the executed command, exit, and complete output before closure review. If the wrapper refuses scope expansion or proportional-test amplification, stop and preserve its follow-up output instead of broadening the change."
       combined_instructions=${caller_instructions:+$caller_instructions$'\n'}$convergence_instructions
       forwarded_args=("${response_args[@]}" --instructions "$combined_instructions")
       ;;
@@ -438,7 +456,14 @@ respond_gate() {
           "$CONVERGENCE" close-review "$gate_worktree" "$status_file"
           stage=closure-reviewed
           ;;
-        initial-review|closure-reviewed) ;;
+        initial-review)
+          expected_ids=$(toon_actionable_ids "$status_file")
+          [ -z "$expected_ids" ] || {
+            echo "error: actionable initial-review findings remain; use one batched remediation before approval" >&2
+            exit 1
+          }
+          ;;
+        closure-reviewed) ;;
         closure-blocked)
           echo "error: the bounded closure found a catastrophic blocker; split or fail closed" >&2
           exit 44
@@ -614,6 +639,7 @@ PIPELINE_EVIDENCE_DIR=$(mktemp -d "$PIPELINE_EVIDENCE_ROOT/fm-validate-$evidence
   echo "error: cannot create pipeline evidence directory under $PIPELINE_EVIDENCE_ROOT" >&2
   exit 1
 }
+PIPELINE_FINAL_CHANGE="$PIPELINE_EVIDENCE_DIR/pipeline-final-change.txt"
 
 EVIDENCE_INTENT=""
 evidence_index=0
@@ -641,7 +667,8 @@ Initial worker captures (inspect each directly):
 $EVIDENCE_INTENT
 Evidence lifecycle for every topology:
 - Reuse these captures when no pipeline rebase resolution or review fix changes the relevant final diff.
-- When a review remediation changes the relevant diff, the response wrapper supplies an exact fm-review-convergence record command. That executable runs the one focused verification, persists its complete output in the gate worktree's ignored pipeline state, and binds it to the unchanged worktree tree and exact command. Do not run that command separately.
+- When a pipeline rebase resolution or review fix changes the relevant final diff, that phase must replace $PIPELINE_FINAL_CHANGE with the output or capture from its already-required focused verification before the next review. The exact fm-review-convergence record command supplied to remediation does this during the same execution. Do not run a second execution solely to create evidence.
+- After such a change, the closure reviewer must inspect $PIPELINE_FINAL_CHANGE and must not accept the initial worker capture, a plan, or a fix summary as evidence for the changed area.
 - The first review is the one full independent audit. A post-remediation review is one bounded closure review over the initial findings, the remediation delta, and only catastrophic regressions: accepted-intent contradiction, work loss or destruction, security failure, or an immediately reachable regression introduced at the changed boundary.
 - On that closure review, report adjacent hardening and pre-existing weaknesses only as severity info, action no-op findings prefixed FOLLOW-UP. Do not restart the full-branch audit or request another remediation for them.
 - The executable response boundary permits one remediation only. If closure finds a catastrophic blocker, report it and fail closed so the work can be split; never begin review pass three."
@@ -692,7 +719,8 @@ start_pipeline() {
     outer_state="$STATE/$ID.review-convergence"
     start_epoch=$(date +%s)
     implementation_epoch=$(meta_mtime_epoch "$META")
-    "$CONVERGENCE" start "$outer_state" "$ID" "$THERE" "$implementation_epoch" "$start_epoch" >/dev/null
+    "$CONVERGENCE" start "$outer_state" "$ID" "$THERE" "$implementation_epoch" "$start_epoch" \
+      "$PIPELINE_FINAL_CHANGE" >/dev/null
     output_file="$outer_state/axi-start.toon"
     set +e
     no-mistakes axi run "${run_args[@]}" | tee "$output_file"

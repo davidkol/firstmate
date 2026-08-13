@@ -3,10 +3,11 @@
 # evidence for a no-mistakes run.
 #
 # A normal run uses this lifecycle:
-#   start <state-dir> <task-id> <task-worktree> <implementation-start-epoch> <validation-start-epoch>
+#   start <state-dir> <task-id> <task-worktree> <implementation-start-epoch> <validation-start-epoch> [pipeline-final-change-path]
 #   attach <state-dir> <run-id> <gate-worktree> <initial-status-file>
 #   restore <state-dir> <run-id> <gate-worktree>
 #   begin-remediation <gate-worktree>
+#   retry-remediation <gate-worktree>
 #   record <gate-worktree> -- <focused verification command...>
 #   close-review <gate-worktree> <closure-status-file>
 #   mark-tests <gate-worktree> [epoch]
@@ -220,6 +221,7 @@ command_digest() {
 
 receipt_valid() {
   local worktree=$1 state=$2 expected_digest=${3:-} receipt tree output_hash actual_output_hash
+  local pipeline_capture pipeline_capture_hash actual_pipeline_capture_hash
   local receipt_run manifest_run
   receipt="$state/remediation.receipt"
   [ -s "$receipt" ] || { printf 'fm-review-convergence: focused remediation evidence is missing\n' >&2; return 1; }
@@ -243,6 +245,34 @@ receipt_valid() {
   actual_output_hash=$(git -C "$worktree" hash-object "$output")
   [ "$output_hash" = "$actual_output_hash" ] \
     || { printf 'fm-review-convergence: focused remediation output binding changed\n' >&2; return 1; }
+  pipeline_capture="$state/pipeline-final-change.txt"
+  [ -s "$pipeline_capture" ] \
+    || { printf 'fm-review-convergence: pipeline final-change capture is missing\n' >&2; return 1; }
+  pipeline_capture_hash=$(sed -n 's/^pipeline_capture_hash=//p' "$receipt")
+  actual_pipeline_capture_hash=$(git -C "$worktree" hash-object "$pipeline_capture")
+  [ -n "$pipeline_capture_hash" ] && [ "$pipeline_capture_hash" = "$actual_pipeline_capture_hash" ] \
+    || { printf 'fm-review-convergence: pipeline final-change capture binding changed\n' >&2; return 1; }
+}
+
+publish_pipeline_final_change() {
+  local state=$1 target source parent tmp
+  target=$(manifest_field "$state" pipeline_final_change)
+  [ -n "$target" ] || return 0
+  source="$state/pipeline-final-change.txt"
+  [ -s "$source" ] || die "pipeline final-change capture is missing"
+  [ ! -L "$target" ] || die "pipeline final-change destination must not be a symlink"
+  parent=$(dirname "$target")
+  [ -d "$parent" ] || die "pipeline final-change directory is missing: $parent"
+  tmp=$(mktemp "$parent/.pipeline-final-change.XXXXXX") \
+    || die "cannot stage pipeline final-change evidence in $parent"
+  cp "$source" "$tmp" || {
+    rm -f "$tmp"
+    die "cannot stage pipeline final-change evidence"
+  }
+  mv "$tmp" "$target" || {
+    rm -f "$tmp"
+    die "cannot publish pipeline final-change evidence"
+  }
 }
 
 preflight() {
@@ -307,15 +337,17 @@ EOF
 }
 
 cmd_start() {
-  [ "$#" -eq 5 ] || die "start needs <state-dir> <task-id> <worktree> <implementation-start-epoch> <validation-start-epoch>"
+  [ "$#" -ge 5 ] && [ "$#" -le 6 ] \
+    || die "start needs <state-dir> <task-id> <worktree> <implementation-start-epoch> <validation-start-epoch> [pipeline-final-change-path]"
   local state=$1 task=$2 worktree=$3 implementation_start=$4 validation_start=$5
+  local pipeline_final_change=${6:-}
   local base head initial_tree files insertions deletions initial_count limit
   require_git_worktree "$worktree"
   mkdir -p "$state"
   rm -f -- "$state/manifest" "$state/initial-paths" "$state/final-paths" \
     "$state/initial-tests" "$state/final-tests" "$state/initial-review.toon" \
     "$state/closure-review.toon" "$state/remediation.receipt" \
-    "$state/remediation.output" "$state/defects.tsv"
+    "$state/remediation.output" "$state/pipeline-final-change.txt" "$state/defects.tsv"
   rm -rf -- "$state/followups"
   base=$(resolve_base "$worktree")
   head=$(git -C "$worktree" rev-parse HEAD)
@@ -365,6 +397,7 @@ scope_expansion_refused=0
 test_amplification_refused=0
 first_test_epoch=-1
 completion_epoch=-1
+pipeline_final_change=$pipeline_final_change
 mirror_dir=$state
 EOF
   printf 'FM_REVIEW_CONVERGENCE stage=started task=%s initial_tests=%s growth_limit=%s\n' \
@@ -446,7 +479,16 @@ cmd_restore() {
       [ "$tree" = "$(manifest_field "$state" initial_tree)" ] \
         || die "initial-review worktree changed while convergence state was unavailable"
       ;;
-    remediation|closure-reviewed|closure-blocked)
+    remediation)
+      if [ -s "$state/remediation.receipt" ]; then
+        receipt_valid "$worktree" "$state" ""
+      else
+        tree=$(worktree_tree "$worktree" "$state")
+        [ "$tree" = "$(manifest_field "$state" initial_tree)" ] \
+          || die "undispatched remediation changed while convergence state was unavailable"
+      fi
+      ;;
+    closure-reviewed|closure-blocked)
       receipt_valid "$worktree" "$state" ""
       ;;
     *) die "cannot restore convergence stage $stage into a gate worktree" ;;
@@ -473,9 +515,27 @@ cmd_begin_remediation() {
   printf 'FM_REVIEW_CONVERGENCE stage=remediation round=1\n'
 }
 
+cmd_retry_remediation() {
+  [ "$#" -eq 1 ] || die "retry-remediation needs <gate-worktree>"
+  local worktree=$1 state stage rounds tree
+  state=$(state_for_worktree "$worktree")
+  [ -s "$state/manifest" ] || die "review convergence state is missing"
+  stage=$(manifest_field "$state" stage)
+  rounds=$(manifest_field "$state" remediation_rounds)
+  [ "$stage" = remediation ] || die "only the pending first remediation can be retried"
+  [ "$rounds" = 1 ] || die "only the pending first remediation can be retried"
+  [ ! -e "$state/remediation.receipt" ] \
+    || die "a remediation with focused evidence cannot be redispatched"
+  tree=$(worktree_tree "$worktree" "$state")
+  [ "$tree" = "$(manifest_field "$state" initial_tree)" ] \
+    || die "remediation changed the worktree before dispatch acknowledgement"
+  printf 'FM_REVIEW_CONVERGENCE stage=remediation retry=undispatched\n'
+}
+
 cmd_record() {
   [ "$#" -ge 3 ] || die "record needs <gate-worktree> -- <command...>"
   local worktree=$1 state digest existing_digest before after output receipt tmp_receipt
+  local pipeline_capture pipeline_capture_hash
   local started finished duration rc display runs
   shift
   [ "${1:-}" = -- ] || die "record needs -- before the focused verification command"
@@ -488,6 +548,7 @@ cmd_record() {
   if [ -s "$state/remediation.receipt" ]; then
     existing_digest=$(sed -n 's/^command_digest=//p' "$state/remediation.receipt")
     if [ "$existing_digest" = "$digest" ] && receipt_valid "$worktree" "$state" "$digest"; then
+      publish_pipeline_final_change "$state"
       printf 'FM_REVIEW_EVIDENCE reused=true command_digest=%s\n' "$digest"
       cat "$state/remediation.output"
       return 0
@@ -509,6 +570,14 @@ cmd_record() {
     printf 'fm-review-convergence: focused verification changed the bound worktree; evidence refused\n' >&2
     return 46
   }
+  pipeline_capture="$state/pipeline-final-change.txt"
+  {
+    printf 'command: %s\n' "$display"
+    printf 'exit: %s\n' "$rc"
+    printf 'output:\n'
+    cat "$output"
+  } > "$pipeline_capture"
+  pipeline_capture_hash=$(git -C "$worktree" hash-object "$pipeline_capture")
   receipt="$state/remediation.receipt"
   tmp_receipt=$(mktemp "$state/.receipt.XXXXXX")
   cat > "$tmp_receipt" <<EOF
@@ -519,6 +588,7 @@ worktree_tree=$after
 command_digest=$digest
 command=$display
 output_hash=$(git -C "$worktree" hash-object "$output")
+pipeline_capture_hash=$pipeline_capture_hash
 exit=$rc
 started_ms=$started
 finished_ms=$finished
@@ -528,6 +598,7 @@ EOF
   runs=$(manifest_field "$state" focused_verification_runs)
   set_manifest_field "$state" focused_verification_runs "$((runs + 1))"
   sync_mirror "$state"
+  publish_pipeline_final_change "$state"
   printf 'FM_REVIEW_EVIDENCE reused=false command_digest=%s exit=%s\n' "$digest" "$rc"
   return "$rc"
 }
@@ -544,6 +615,7 @@ cmd_verify() {
     digest=$(command_digest "$worktree" "$@")
   fi
   receipt_valid "$worktree" "$state" "$digest"
+  publish_pipeline_final_change "$state"
   printf 'FM_REVIEW_EVIDENCE verified=true\n'
 }
 
@@ -555,6 +627,7 @@ cmd_close_review() {
     || die "closure review is legal only after the one remediation"
   [ -s "$status_file" ] || die "closure status is missing: $status_file"
   receipt_valid "$worktree" "$state" ""
+  publish_pipeline_final_change "$state"
   preflight "$worktree" "$state"
   mkdir -p "$state/followups"
   followups="$state/followups/closure.tsv"
@@ -725,6 +798,7 @@ case "${1:-}" in
   attach) shift; cmd_attach "$@" ;;
   restore) shift; cmd_restore "$@" ;;
   begin-remediation) shift; cmd_begin_remediation "$@" ;;
+  retry-remediation) shift; cmd_retry_remediation "$@" ;;
   record) shift; cmd_record "$@" ;;
   verify) shift; cmd_verify "$@" ;;
   close-review) shift; cmd_close_review "$@" ;;

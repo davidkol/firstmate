@@ -340,11 +340,11 @@ test_executed_evidence_is_required_and_forwarded() {
     || fail "the published capture disappeared with the worker-local copy"
   assert_contains "$out" 'Reuse these captures when no pipeline rebase resolution or review fix changes the relevant final diff.' \
     "an unchanged diff cannot reuse its existing accessible capture"
-  assert_contains "$out" 'exact fm-review-convergence record command' \
+  assert_contains "$out" 'already-required focused verification' \
     "a pipeline change was not bound to its one focused verification"
-  assert_contains "$out" "gate worktree's ignored pipeline state" \
-    "the next review did not receive the durable pipeline-owned evidence location"
-  assert_contains "$out" 'Do not run that command separately.' \
+  assert_contains "$out" "$pipeline_dir/pipeline-final-change.txt" \
+    "the next review did not receive the pipeline-owned final-change evidence location"
+  assert_contains "$out" 'Do not run a second execution solely to create evidence.' \
     "the evidence lifecycle can duplicate an execution that already proves the fix"
   assert_contains "$out" 'one bounded closure review' \
     "the review intent did not narrow the post-remediation closure"
