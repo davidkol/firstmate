@@ -67,13 +67,14 @@ The inventory records session date and contribution rather than private transcri
 - No additional harness store was included because no other local store could be identified reliably as a canonical primary Firstmate transcript rather than guessed from incidental files.
 - The inventory establishes every identifiable session in the two canonical stores available on this machine, but it cannot prove that an unavailable, deleted, or unrecognized external transcript never existed.
 
-## Design trial D1 - Martyrdome whole-game target
+## Design trial D1 - Martyrdome whole-game target (2026-08-13 to 2026-08-15)
 
 ### Scope and observed outcome
 
 The trial began with cross-session recovery of Martyrdome knowledge and ended with a private standalone target that was judged complete enough to pause at the reusable whole-game-system level.
 The result deliberately left slide handling for comparative playtesting, boss-specific answer structures for boss design, Broken-Muscle-Armor presentation for authored and feel-tested treatment, and exact values or content-specific effects for their named later activities.
-The result did not authorize gap analysis, implementation planning, content authoring, or publication.
+The design trial stopped before gap analysis, implementation planning, content authoring, or publication.
+The captain separately authorized publishing the completed target into Martyrdome after this assessment (captain, 2026-08-15, canonical primary transcript).
 
 The design outcome was successful, but the process that produced it was not efficient or consistently aligned with the captain's operating needs.
 The design-stage verdict is therefore **a useful target produced through a process mismatch**.
@@ -81,10 +82,10 @@ The design-stage verdict is therefore **a useful target produced through a proce
 ### Measured evidence
 
 - The complete inventory contains seven distinct primary sessions across two canonical harness stores.
-- The extended target-design session contained 160 captain messages after injected and hook records were excluded.
+- The extended target-design work contained 160 captain messages before the target closed, after injected and hook records were excluded.
 - A reproducible lower-bound count found 100 design-question prompts in that session, consisting of 99 option menus and the initial open-ended design question.
-- The same session contained 25 explicit "Book ...?" prompts and nine compaction records.
-- Seven worker passes were associated with the extended target-design work, including one aborted premature project ship and six completed report passes.
+- The target-design work contained 25 explicit "Book ...?" prompts and crossed nine compactions before the target closed.
+- Nine worker passes were associated with the extended target-design work, including one aborted premature project ship and eight completed report passes.
 - The late bulk intake classified 29 candidates, shortlisted 12 questions, and then required a separate clean seven-question captain-facing sheet after the internal report proved unreadable as an answer surface.
 - The final target preserved three deliberately open design areas and stopped rather than converting them into invented answers.
 
