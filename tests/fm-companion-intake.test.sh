@@ -52,6 +52,7 @@ test_root_contract_assigns_narrow_game_status_precedence() {
 
 test_skill_reuses_existing_owners() {
   local phrase
+  # shellcheck disable=SC2016 # Backticks below are literal Markdown code spans.
   for phrase in \
     'bin/fm-brief.sh' \
     'AGENTS.md` section 7' \
