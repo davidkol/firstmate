@@ -2,12 +2,13 @@
 
 Firstmate's overall process is not yet assessed.
 This living assessment records dated, evidence-based stage trials without turning task history into a transcript.
-The current version can judge the Martyrdome target-design and target-publication trials plus one unattended-away boundary observation.
+The current version can judge the Martyrdome target-design, target-publication, and target-to-current gap trials plus one unattended-away boundary observation.
 
 ## Assessment boundary
 
 - **Tested - Design:** One Martyrdome trial reached a durable, standalone whole-game target through discovery, question-and-answer work, drafting, and a bounded completeness audit.
 - **Partly tested - Design mode and repeatability:** One-at-a-time dialogue was used extensively, while clean bulk discovery was tried only near the end on questions already shaped by earlier work.
+- **Tested once - Gap analysis:** One Martyrdome scout compared all 77 accepted target elements with current code, scenes, tests, and bounded runtime observations without writing an implementation plan.
 - **Untested - Planning:** No implementation plan derived from the completed target has been assessed.
 - **Untested - Implementation:** No implementation of the completed target has been assessed.
 - **Partly tested - Review and validation:** Target publication received independent documentation review and bounded re-review, but implementation review, game-runtime validation, and player-outcome validation remain untested.
@@ -45,6 +46,12 @@ Those facts do not have to advance through a fixed workflow: a change may remain
 - **Planned:** Start the next unattended trial through the verified primary launcher so the owned away lifecycle can run and be observed.
 - **Made:** No launcher or away-mode behavior was changed in S1; the unverified session refused away mode and foreground supervision continued instead.
 - **Learned:** S1 proved the refusal boundary, not unattended operation or recovery.
+
+### G1-C1 - Reuse existing unresolved decisions across investigation stages
+
+- **Planned:** Before registering a captain decision found during an investigation, compare it with the home's existing unresolved decisions and reuse the existing identity when it is the same semantic choice.
+- **Made:** No shared behavior has changed yet; G1 registered a new slide-control decision even though the target-design trial already held the same choice under `martyrdome-target-design-draft-decision-slide-control-mapping-and-handling`.
+- **Learned:** Origin-scoped idempotency prevents duplicate registration within one report but does not prevent the same design question from reappearing when a later stage encounters it.
 
 ## Human-owned evaluation standard
 
@@ -87,7 +94,7 @@ The inventory records session date and contribution rather than private transcri
 4. **2026-08-08, Claude:** The process diagnosis checked why earlier project scouts missed game-development knowledge, used Martyrdome as part of that diagnosis, and captured the captain's intent-to-design-to-architecture-to-implementation goal that governs this assessment.
 5. **2026-08-13, Codex:** The captain dictated a large combat-system expansion, Firstmate converted it into design prose, published a standalone design addition, and then preserved the next sequence of runtime reconstruction, question audit, and human review.
 6. **2026-08-13, Codex:** Firstmate commissioned the runtime and transcript reconstruction plus the design-question audit, returned their reports, and began the first design question.
-7. **2026-08-13 to 2026-08-15, Codex:** The extended target-design session performed the main question-and-answer work, created the private living target, ran completeness and bulk-question passes, incorporated answers, closed the top-level target, created the first assessment entry, attempted away mode, and supervised publication through merged Martyrdome PR 12.
+7. **2026-08-13 to 2026-08-15, Codex:** The extended target-design session performed the main question-and-answer work, created the private living target, ran completeness and bulk-question passes, incorporated answers, closed the top-level target, created the first assessment entry, attempted away mode, supervised publication through merged Martyrdome PR 12, merged the resulting Firstmate intake correction, and commissioned and reviewed the target-to-current gap assessment.
 
 ### Exclusions and unavailable evidence
 
@@ -229,6 +236,66 @@ The initial reconciliation nevertheless missed `docs/handoff-combat-director.md`
 
 This trial does not show that publication will repeat successfully on another project or that Martyrdome's implementation matches the published target.
 
+## Gap-analysis trial G1 - Martyrdome target versus current implementation (2026-08-15)
+
+### Trial and boundary
+
+This trial began after the accepted target was published and compared that target with Martyrdome commit `1c13546`.
+It covers source routing, static implementation inspection, bounded runtime observation, classification of every accepted target element, and preservation of intentionally open questions.
+It excludes target revision, implementation planning, architecture selection, code changes, and player-cohort validation.
+
+### Captain-owned criteria
+
+The captain defined the sequence as "current target drafts of all the designs, the gap, and then the implementation plan" and later said to merge the Firstmate process change and resume the process (captain, 2026-08-13 and 2026-08-15, canonical primary transcript).
+The standing criteria for durable evidence, readable captain-facing communication, proportional ceremony, routine autonomy, and using his attention only for genuine choices also apply.
+
+### Status and observed outcome
+
+**Tested once - Gap analysis:** A read-only scout produced a standalone 77-row target coverage matrix with present-state evidence and one of five explicit classifications for every row.
+The result found 6 target elements met, 29 partial, 19 missing, 12 contradicted, and 11 unknown.
+The report remained evidence-only and did not become an implementation plan or alter Martyrdome.
+
+### Measured evidence
+
+- The report accounts for all 19 target-design sections, every grappling subsection, and all four intentionally open target-question rows.
+- The 77 classifications mechanically recount to 6 `met`, 29 `partial`, 19 `missing`, 12 `contradicted`, and 11 `unknown`.
+- Static evidence used current code, scenes, assets, and focused absence searches, while observed and controlled runtime evidence were labeled separately.
+- Runtime evidence reached the menu and world, observed dash and health behavior, demonstrated a full-health Hando entering `HELD`, and exercised encounter retreat cleanup.
+- No project-defined automated check was found; both executable smoke paths exited zero while emitting engine errors, so the report explicitly marked project test health `needs-human` instead of claiming green.
+- A clean-checkout Godot import rewrote 69 tracked generated-resource files, the scout restored them, and teardown verified a clean disposable worktree before removing it.
+- The required decision lifecycle registered three open questions with non-blocking defaults, but one slide-control record duplicated the same semantic question already registered by the target-design trial.
+
+### Verdict against the captain's goals
+
+- **Advance the full chain - Met for this boundary:** Firstmate moved from accepted target into a distinct evidence phase and stopped before implementation planning as requested.
+- **Preserve target versus present authority - Met:** The accepted target defined intent, executing code and runtime defined the present, and historical documents were used only as search leads.
+- **Use proportional rigor - Met overall:** One disposable scout, bounded runtime probes, focused absence searches, and a traceable report were appropriate for a whole-game gap assessment without project writes.
+- **Use captain attention only for real choices - Partly met:** The scout required no new immediate answer and gave every open question a non-blocking default, but the lifecycle duplicated one already-known slide-control choice and therefore added avoidable Captain's Call clutter.
+- **Keep captain-facing material readable - Partly met:** The internal 277-line report is appropriately comprehensive as planning evidence, but it still requires a separate concise captain reading rather than serving as the chat handoff itself.
+- **Report outcomes faithfully - Met:** The scout did not convert exit-zero smoke runs into a green project check and separated observed, static, missing, contradicted, and unknown claims.
+- **Avoid invented design - Met:** Intentionally open target questions remained open and the report recommended only evidence that could resolve unknown classifications.
+
+### Strengths and failures
+
+The trial produced a complete and traceable bridge between target design and later planning.
+Its strongest behavior was evidentiary discipline: current code and observed runtime outranked old prose, unknown qualitative claims stayed unknown, and contradictory current behavior was distinguished from mere absence.
+The report also exposed cross-cutting seams without prescribing architecture, which keeps the next planning phase informed without silently deciding it.
+
+The process failure was decision deduplication across stages.
+The lifecycle correctly preserved unresolved choices and kept them non-blocking, but origin-scoped identities allowed the existing slide-control question to be registered again.
+The project also lacks an automated health check, so this trial could not establish a green baseline and had to rely on bounded smoke observations that emitted engine errors.
+
+### Correction and uncertainty
+
+**Observed evidence:** One complete gap matrix was produced without changing the game or spilling into implementation planning, while one unresolved design question was duplicated across stage-specific records.
+
+**Captain's stated preference:** Complete the target first, then the gap, then the implementation plan, while recording planned changes, changes made, and what each phase teaches Firstmate (captain, 2026-08-13 and 2026-08-15, canonical primary transcript).
+
+**Assessment recommendation:** Preserve the evidence-only gap phase and its concise captain summary, but add semantic reuse of existing unresolved decisions before a later investigation registers new ones.
+
+This trial does not establish implementation-plan quality, implementation alignment, representative player feel, final difficulty, or the target's design quality in play.
+The 11 unknown classifications remain evidence limits rather than planning blockers unless a later plan depends on choosing their exact values.
+
 ## Supervision observation S1 - Unattended-away boundary (2026-08-15)
 
 ### Trial and boundary
@@ -297,6 +364,11 @@ Each entry should use the following shape.
 
 ## Later stage placeholders
 
+### Gap analysis
+
+G1 records one successful evidence-only Martyrdome target-to-current comparison with one decision-deduplication failure.
+Repeatability and player-cohort evidence remain untested.
+
 ### Planning
 
 Planning is untested, so no verdict is recorded.
@@ -322,8 +394,9 @@ Away-mode operation and recovery remain unproven.
 
 ## Current assessment conclusion
 
-Firstmate has now produced one durable standalone game-design target and successfully published that accepted target into its game repository through bounded review and merge.
-It still has not proved a concise, repeatable, end-to-end process, implementation alignment, game-runtime validity, or player outcomes.
+Firstmate has now produced one durable standalone game-design target, published it into Martyrdome through bounded review and merge, and completed one evidence-only target-to-current gap assessment.
+It still has not proved a concise, repeatable, end-to-end process, implementation-plan quality, implementation alignment, game-runtime validity, or player outcomes.
+The gap trial strengthened source-authority discipline, honest runtime evidence, and separation between investigation and planning while exposing cross-stage decision duplication as a new process failure.
 The publication trial strengthened durable repository truth, proportional project-delivery rigor, routine autonomy, and foreground momentum while preserving the design trial's earlier failures as historical findings.
 The supervision observation failed at the unattended-away boundary, and foreground continuation must not be credited as satisfying the captain's overnight request.
 The next assessment entry must evaluate a later process stage on its own evidence rather than extending either successful result into an assumed overall verdict.
