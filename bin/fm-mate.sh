@@ -37,7 +37,7 @@ esac
 PEER_ID=$1
 shift
 case "$PEER_ID" in
-  ''|*[!A-Za-z0-9._-]*)
+  ''|.|..|*[!A-Za-z0-9._-]*)
     echo "error: peer home id must match [A-Za-z0-9._-]+: ${PEER_ID:-<empty>}" >&2
     exit 1
     ;;

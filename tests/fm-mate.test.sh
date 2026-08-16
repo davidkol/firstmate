@@ -55,17 +55,35 @@ test_works_through_global_symlink() {
 }
 
 test_refuses_unknown_and_unsafe_ids() {
-  local out
+  local out unsafe_id
   out=$(FM_HOMES_ROOT="$HOMES" PATH="$FAKEBIN:$PATH" \
     "$MATE" missing claude 2>&1) \
     && fail "mate accepted an unknown peer-home id"
   assert_contains "$out" "peer home not found: missing" "unknown-home refusal was unclear"
 
-  out=$(FM_HOMES_ROOT="$HOMES" PATH="$FAKEBIN:$PATH" \
-    "$MATE" ../martyrdome claude 2>&1) \
-    && fail "mate accepted a path instead of a peer-home id"
-  assert_contains "$out" "peer home id must match" "unsafe-id refusal was unclear"
+  for unsafe_id in ../martyrdome . ..; do
+    out=$(FM_HOMES_ROOT="$HOMES" PATH="$FAKEBIN:$PATH" \
+      "$MATE" "$unsafe_id" claude 2>&1) \
+      && fail "mate accepted path-like peer-home id: $unsafe_id"
+    assert_contains "$out" "peer home id must match" \
+      "unsafe-id refusal was unclear for $unsafe_id"
+  done
   pass "mate refuses unknown homes and path-like ids"
+}
+
+test_defaults_to_home_fm_homes() {
+  local default_user_home default_peer out
+  default_user_home="$TMP_ROOT/default-user"
+  default_peer="$default_user_home/fm-homes/martyrdome"
+  mkdir -p "$default_peer/data" "$default_peer/state" "$default_peer/config" \
+    "$default_peer/projects"
+  printf '%s\n' martyrdome > "$default_peer/.fm-peer-home"
+
+  out=$(env -u FM_HOMES_ROOT HOME="$default_user_home" PATH="$FAKEBIN:$PATH" \
+    "$MATE" martyrdome claude) \
+    || fail "mate did not use the default HOME/fm-homes root: $out"
+  assert_contains "$out" "home=$default_peer" "mate resolved the wrong default homes root"
+  pass "mate defaults peer-home resolution to HOME/fm-homes"
 }
 
 test_requires_home_and_harness() {
@@ -79,4 +97,5 @@ test_requires_home_and_harness() {
 test_resolves_home_and_forwards_harness_arguments
 test_works_through_global_symlink
 test_refuses_unknown_and_unsafe_ids
+test_defaults_to_home_fm_homes
 test_requires_home_and_harness
