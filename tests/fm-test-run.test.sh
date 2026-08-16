@@ -711,21 +711,24 @@ exit 1
 SH
   cat >"$repo/$a" <<'SH'
 #!/usr/bin/env bash
-sleep 0.5
-touch "$SCHED_EVIDENCE/slow-done"
+attempt=0
+while [ ! -e "$SCHED_EVIDENCE/replacement-started" ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 500 ]; then
+    echo "not ok - scheduler waited for oldest worker"
+    exit 1
+  fi
+  sleep 0.01
+done
 echo "ok - slow fixture"
 SH
   cat >"$repo/$b" <<'SH'
 #!/usr/bin/env bash
-sleep 0.05
 echo "ok - fast fixture"
 SH
   cat >"$repo/$c" <<'SH'
 #!/usr/bin/env bash
-if [ -e "$SCHED_EVIDENCE/slow-done" ]; then
-  echo "not ok - scheduler waited for oldest worker"
-  exit 1
-fi
+touch "$SCHED_EVIDENCE/replacement-started"
 echo "ok - replacement fixture started before slow fixture finished"
 SH
   chmod +x "$runner" "$repo/$a" "$repo/$b" "$repo/$c" "$fake_bin/stat"
@@ -770,7 +773,6 @@ echo "not ok - deliberate proven-set fail"
 exit 1
 SH
   chmod +x "$repo/$b"
-  rm -f "$evidence/slow-done"
   set +e
   SCHED_EVIDENCE="$evidence" "$runner" --jobs 2 "$a" "$b" >"$tmp/out4" 2>"$tmp/err4"
   rc=$?
