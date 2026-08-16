@@ -50,6 +50,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-codex-away-pretool-check.sh` | Guard restricted Codex away entry directly and hookable native Bash calls while away |
 | `fm-supervision-instructions.sh` | Render the session-start primary-harness supervision block or the one-line repair instruction |
 | `fm-home-seed.sh`        | Transactionally provision a peer or secondmate home, maintaining `data/secondmates.md` for the latter |
+| `fm-mate.sh`             | Resolve a named peer home under the configured homes root and open it through an explicit harness |
 | `fm-open.sh`             | Open a peer firstmate home: set `FM_HOME` and launch the named harness from this code root |
 | `fm-spawn.sh`            | Spawn crewmates, scouts, `id=repo` batches, and secondmates on the resolved harness and runtime backend |
 | `fm-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |

@@ -115,13 +115,16 @@ bin/fm-codex-primary.sh
 The Codex launcher supplies Firstmate's no-prompt/full-access policy, explicitly enables tracked hooks, asks `codex doctor --json` to prove that complete effective posture, and refuses to accept work if Codex reports anything else.
 Use the same entry to resume a session, for example `bin/fm-codex-primary.sh resume <session-id>`; a raw `codex` or `codex resume` is not a supported primary Firstmate entry because it can inherit a restricted user or session policy.
 
-For a short global peer-home command, symlink the tracked launcher into a directory already on your `PATH`:
+For a short global peer-home command, symlink the tracked launcher into `~/.local/bin` and ensure that directory is on your `PATH`:
 
 ```sh
 mkdir -p "$HOME/.local/bin"
 ln -s "$(pwd -P)/bin/fm-mate.sh" "$HOME/.local/bin/mate"
 mate martyrdome claude
 ```
+
+`mate <project> <harness> [harness-args...]` opens `~/fm-homes/<project>` by default, requires the harness explicitly, and passes any remaining arguments to it unchanged.
+Because the global command is a symlink to the tracked launcher, it follows Firstmate updates while per-task and session harness overrides remain available.
 
 For Grok, `--trust` is needed once per clone so project hooks and the turn-end guard load; `/hooks-trust` inside Grok works too.
 For Pi, approve the project trust prompt once per clone on first launch so the tracked `.pi/extensions/*.ts` files auto-load.
