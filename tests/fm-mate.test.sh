@@ -55,18 +55,23 @@ test_works_through_global_symlink() {
 }
 
 test_refuses_unknown_and_unsafe_ids() {
-  local out unsafe_id
+  local out special_id
   out=$(FM_HOMES_ROOT="$HOMES" PATH="$FAKEBIN:$PATH" \
     "$MATE" missing claude 2>&1) \
     && fail "mate accepted an unknown peer-home id"
   assert_contains "$out" "peer home not found: missing" "unknown-home refusal was unclear"
 
-  for unsafe_id in ../martyrdome . ..; do
+  out=$(FM_HOMES_ROOT="$HOMES" PATH="$FAKEBIN:$PATH" \
+    "$MATE" ../martyrdome claude 2>&1) \
+    && fail "mate accepted a path instead of a peer-home id"
+  assert_contains "$out" "peer home id must match" "unsafe-id refusal was unclear"
+
+  for special_id in . ..; do
     out=$(FM_HOMES_ROOT="$HOMES" PATH="$FAKEBIN:$PATH" \
-      "$MATE" "$unsafe_id" claude 2>&1) \
-      && fail "mate accepted path-like peer-home id: $unsafe_id"
-    assert_contains "$out" "peer home id must match" \
-      "unsafe-id refusal was unclear for $unsafe_id"
+      "$MATE" "$special_id" claude 2>&1) \
+      && fail "mate accepted special path component: $special_id"
+    assert_contains "$out" "peer home id must not be . or .." \
+      "special path-component refusal was unclear for $special_id"
   done
   pass "mate refuses unknown homes and path-like ids"
 }
