@@ -16,9 +16,18 @@ Keep the boundary modular as inputs plus output so existing dispatch and decisio
 
 ## Design-question responsibility split
 
-The separate design-intake scout discovers and filters grounded candidate questions from project-owned sources.
-Loading this skill does not perform explicit design-question discovery and is not a substitute for that separate process.
-Regular Companion presents exactly one pertinent question, preserves exact answers and corrections, and routes accepted answers into ordinary work through the existing owners.
+Broad target-design collaboration and concrete task ambiguity use separate paths.
+Loading this skill does not perform explicit design-question discovery and is not a substitute for either scout.
+
+When the captain is collaboratively constructing or revising a broad game-design target, use `bin/fm-brief.sh --target-design-intake`.
+That scout produces an internal evidence report and a separate captain-facing clean bulk questionnaire by default.
+Regular Companion presents only the questionnaire and uses one-at-a-time dialogue only when the captain requests it.
+Do not register decision holds or add task dependencies for exploratory target-design questions.
+Preserve each answered question, its offered context, and the exact answer before synthesis in one dated private decision file per stable key.
+After preservation, reconcile the living target in batches without asking for a separate booking approval for every prose replacement.
+
+When one concrete ambiguity can change ordinary work now, the separate `bin/fm-brief.sh --design-intake` scout discovers and filters grounded candidates from project-owned sources.
+Regular Companion presents exactly one pertinent question through the existing decision-hold lifecycle, preserves exact answers and corrections, and routes accepted answers into ordinary work through the existing owners.
 
 ## Game status precedence
 

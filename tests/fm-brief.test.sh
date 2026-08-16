@@ -1349,6 +1349,91 @@ test_design_intake_scaffold_is_read_only_and_bounded() {
   pass "fm-brief.sh: --design-intake renders a bounded read-only scout contract"
 }
 
+# Whole-target design discovery is deliberately separate from the one-question
+# decision-hold path. The scaffold must give the worker distinct internal and
+# captain-facing outputs so presentation never requires the captain to skip an
+# audit, and it must preserve bulk answers before batched target reconciliation.
+test_target_design_intake_scaffold_separates_questionnaire_from_audit() {
+  local home id brief help
+  home="$TMP_ROOT/target-design-intake-home"
+  id="martyrdome-target-design-intake"
+  mkdir -p "$home/data" "$home/state"
+
+  help=$("$ROOT/bin/fm-brief.sh" --help)
+  assert_contains "$help" "--target-design-intake" \
+    "fm-brief.sh help omitted --target-design-intake"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-brief.sh" "$id" Martyrdome --target-design-intake >/dev/null 2>&1 \
+    || fail "fm-brief.sh --target-design-intake exited nonzero"
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "target-design-intake brief was not scaffolded"
+
+  assert_grep "This is a TARGET-DESIGN INTAKE SCOUT task" "$brief" \
+    "target-design intake did not retain a distinct process boundary"
+  assert_grep "internal evidence report at \`$home/data/$id/report.md\`" "$brief" \
+    "target-design intake did not name its internal report"
+  assert_grep "captain-facing questionnaire at \`$home/data/$id/questionnaire.md\`" "$brief" \
+    "target-design intake did not name its separate questionnaire"
+  assert_grep "plain Markdown" "$brief" \
+    "target-design intake did not require the captain's plain reading surface"
+  assert_grep "Keep stable keys in the internal questionnaire mapping and show only ordinary question numbers to the captain" "$brief" \
+    "target-design intake did not hide internal keys from the captain surface"
+  assert_grep "clean, deduplicated bulk questionnaire" "$brief" \
+    "target-design intake did not make clean bulk questions the default"
+  assert_grep "one-at-a-time only when the captain requests it" "$brief" \
+    "target-design intake did not preserve the captain's optional dialogue mode"
+  assert_grep "Do not register decision holds" "$brief" \
+    "target-design intake leaked exploratory questions into task-blocking holds"
+  assert_grep "preserve each answered question, its offered context, and the captain's exact answer before synthesis" "$brief" \
+    "target-design intake did not preserve exact answers before synthesis"
+  assert_grep "reconcile the living target in batches" "$brief" \
+    "target-design intake did not batch target reconciliation"
+  assert_no_grep "feed directly to \`bin/fm-decision-hold.sh hold\`" "$brief" \
+    "target-design intake inherited one-question hold mechanics"
+  assert_no_grep "first still-valid new shortlist item" "$brief" \
+    "target-design intake inherited one-at-a-time presentation mechanics"
+  assert_no_grep "Give each question its stable key" "$brief" \
+    "target-design intake exposed internal stable keys in the captain questionnaire"
+  pass "fm-brief.sh: --target-design-intake separates internal discovery from clean bulk Q&A"
+}
+
+test_target_design_intake_rejects_incompatible_modes() {
+  local home id rc
+  home="$TMP_ROOT/target-design-intake-conflicts"
+  mkdir -p "$home/data" "$home/state"
+
+  id=target-with-design-intake
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Martyrdome \
+    --target-design-intake --design-intake >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "target-design and decision-intake modes must be mutually exclusive"
+  assert_absent "$home/data/$id/brief.md" "mixed target/design intake wrote a brief"
+
+  id=target-with-secondmate
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Martyrdome \
+    --target-design-intake --secondmate >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "target-design intake must reject --secondmate"
+  assert_absent "$home/data/$id/brief.md" "mixed target/secondmate intake wrote a brief"
+
+  id=secondmate-with-target
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" --secondmate Martyrdome \
+    --target-design-intake >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "--secondmate must reject trailing target-design intake"
+  assert_absent "$home/data/$id/brief.md" "reverse mixed secondmate/target intake wrote a brief"
+
+  id=target-with-herdr
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Martyrdome \
+    --target-design-intake --herdr-lab >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "read-only target-design intake must reject --herdr-lab"
+  assert_absent "$home/data/$id/brief.md" "mixed target/Herdr intake wrote a brief"
+
+  id=herdr-with-target
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" Martyrdome \
+    --herdr-lab --target-design-intake >/dev/null 2>&1; rc=$?
+  expect_code 1 "$rc" "--herdr-lab must reject trailing target-design intake"
+  assert_absent "$home/data/$id/brief.md" "reverse mixed Herdr/target intake wrote a brief"
+  pass "fm-brief.sh: --target-design-intake rejects incompatible modes in either order"
+}
+
 # DESIGN_INTAKE and explicit SECONDMATE presence are tracked independently from
 # last-option-wins KIND so intervening or trailing --scout cannot bypass rejection.
 test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order() {
@@ -1499,5 +1584,7 @@ test_project_memory_says_nothing_when_absent
 test_scout_checklist_is_reduced
 test_scout_and_secondmate_scaffold
 test_design_intake_scaffold_is_read_only_and_bounded
+test_target_design_intake_scaffold_separates_questionnaire_from_audit
+test_target_design_intake_rejects_incompatible_modes
 test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order
 test_design_intake_preserves_nonship_brief_bytes

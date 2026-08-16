@@ -245,7 +245,8 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 
 When a game-development request arrives in natural or dictated language, load `companion-intake` before writing the task brief.
 When a natural or dictated request asks for the status or report of a resolved registered game itself, `companion-intake` takes precedence over generic status or report routing, while explicit `/bearings` and fleet, session, Firstmate, or work-status requests remain Bearings-owned even when they mention that game.
-When explicit design-question discovery is needed for a resolved registered game, launch the separate design-intake scout; loading `companion-intake` is not a substitute for that process.
+When the captain is collaboratively constructing or revising a broad game-design target, launch the target-design intake scout and follow `companion-intake`'s bulk-questionnaire path.
+When a concrete design ambiguity affects ordinary work now, launch the separate design-intake scout and follow its one-question decision-hold path; loading `companion-intake` is not a substitute for either discovery process.
 Purpose, doctrine, and design intent remain human-owned; never invent a missing value.
 The skill owns faithful cleanup, project-source pointers, pertinent ambiguity, corrections, and the cold-readable handoff.
 Before writing or materially changing any ship brief, load `delivery-doctrine`; it owns the two-field tier/outcome contract, conditional evidence depth, false-canon overlay, and role-specific review boundary.

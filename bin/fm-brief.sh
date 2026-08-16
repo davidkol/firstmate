@@ -23,13 +23,17 @@
 # result and bin/fm-spawn.sh runs it before launch. A secondmate charter is
 # standing scope rather than a task built from rulings, so it carries neither
 # section.
-# Usage: fm-brief.sh <task-id> <repo-name> [--scout|--design-intake] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> [--scout|--design-intake|--target-design-intake] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   --design-intake writes a read-only design-question discovery contract using
 #   the existing scout kind and report path. Launch it through the existing
 #   fm-spawn.sh --scout path. It is incompatible with --secondmate and --herdr-lab.
+#   --target-design-intake writes a read-only whole-target design contract with
+#   an internal report and a separate clean bulk questionnaire. Launch it through
+#   the existing fm-spawn.sh --scout path. It is incompatible with
+#   --design-intake, --secondmate, and --herdr-lab.
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
@@ -120,6 +124,7 @@ PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 KIND=ship
 HERDR_LAB=0
 DESIGN_INTAKE=0
+TARGET_DESIGN_INTAKE=0
 SECONDMATE=0
 NO_PROJECTS=0
 POS=()
@@ -129,11 +134,17 @@ for a in "$@"; do
     --secondmate) KIND=secondmate; SECONDMATE=1 ;;
     --herdr-lab) HERDR_LAB=1 ;;
     --design-intake) DESIGN_INTAKE=1 ;;
+    --target-design-intake) TARGET_DESIGN_INTAKE=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
     *) POS+=("$a") ;;
   esac
 done
 ID=${POS[0]}
+
+if [ "$DESIGN_INTAKE" -eq 1 ] && [ "$TARGET_DESIGN_INTAKE" -eq 1 ]; then
+  echo "error: --design-intake cannot be combined with --target-design-intake" >&2
+  exit 1
+fi
 
 if [ "$DESIGN_INTAKE" -eq 1 ] && [ "$SECONDMATE" -eq 1 ]; then
   echo "error: --design-intake cannot be combined with --secondmate" >&2
@@ -146,6 +157,20 @@ if [ "$DESIGN_INTAKE" -eq 1 ] && [ "$HERDR_LAB" -eq 1 ]; then
 fi
 
 if [ "$DESIGN_INTAKE" -eq 1 ]; then
+  KIND=scout
+fi
+
+if [ "$TARGET_DESIGN_INTAKE" -eq 1 ] && [ "$SECONDMATE" -eq 1 ]; then
+  echo "error: --target-design-intake cannot be combined with --secondmate" >&2
+  exit 1
+fi
+
+if [ "$TARGET_DESIGN_INTAKE" -eq 1 ] && [ "$HERDR_LAB" -eq 1 ]; then
+  echo "error: --target-design-intake is read-only and cannot be combined with --herdr-lab" >&2
+  exit 1
+fi
+
+if [ "$TARGET_DESIGN_INTAKE" -eq 1 ]; then
   KIND=scout
 fi
 
@@ -427,6 +452,112 @@ If the task will start, stop, delete, restart, profile, or otherwise drive Herdr
 Do not add Herdr lifecycle commands to this unguarded brief by hand.
 EOF
 HERDR_SECTION=${HERDR_SECTION%$'\n'}
+fi
+
+if [ "$TARGET_DESIGN_INTAKE" -eq 1 ]; then
+cat > "$BRIEF" <<EOF
+You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
+
+# Task
+{TASK}
+
+$PROVENANCE
+
+# Process boundary
+This is a TARGET-DESIGN INTAKE SCOUT task using Firstmate's existing scout kind and existing \`fm-spawn.sh\` process boundary.
+You are a separate cold read-only discovery process, not an implementation worker and not the one-question task-decision scout.
+Discover the unresolved choices needed to build or revise the resolved game's target design, produce one internal evidence report and one separate captain-facing questionnaire, and stop.
+Do not implement game changes, answer design questions, or turn exploratory target questions into task-blocking holds.
+Do not start, stop, delete, restart, profile, or otherwise drive Herdr lifecycle behavior.
+
+# Setup
+You are in the exact isolated project worktree supplied by \`fm-spawn.sh\` for $REPO.
+The project worktree is read-only for this task and must remain byte-for-byte and file-for-file unchanged.
+Run \`pwd -P\` and \`git rev-parse --show-toplevel\` first and confirm both resolve to that isolated task worktree rather than Firstmate or the project's primary checkout.
+If isolation is absent or ambiguous, append \`blocked: target-design intake scout lacks an isolated project worktree\` to $STATUS_FILE and stop.
+Run \`git status --short --branch\`, \`git rev-parse HEAD\`, and \`git log --oneline -15\` before trusting status prose or a handoff.
+Record the exact HEAD and the before cleanliness and untracked-file observations in the internal report.
+
+# Source procedure
+1. Confirm $REPO is the project resolved through the existing \`$FM_HOME/data/projects.md\` registry contract and do not infer a different project.
+2. Read the project's complete \`AGENTS.md\` first and follow its source router.
+3. Inspect the accepted target, dated captain decisions, living private draft, prior question records, current implementation, runtime observations, and pertinent reports named in the task-specific section.
+4. Treat dated verbatim captain decisions as design authority and current code and observed runtime as present-state authority.
+5. Treat prior reports as evidence leads that must be checked against their primary sources rather than as final authority.
+6. Separate final-target choices from current gaps, implementation mechanics, tuning values, content authoring, and playtest-only questions.
+7. Deduplicate semantically equivalent questions across every inspected source before writing either output.
+8. Prefer direct questions with concrete alternatives when the sources support them, while preserving an explicit custom-answer or undecided path.
+9. Include only questions whose answers would materially clarify the target now.
+
+# Write boundary
+You may write outside the project worktree only the internal evidence report at \`$DATA/$ID/report.md\`, the captain-facing questionnaire at \`$DATA/$ID/questionnaire.md\`, and only \`$STATE/$ID.status\` through the status protocol below.
+Do not write any file in the project worktree.
+Do not edit Firstmate truth, context cards, tasks-axi state, decision holds, tasks, prior reports, registry data, runtime metadata, or runtime schemas.
+Do not commit, push, open a PR, implement a game change, create an implementation task or plan, choose a captain answer, or manufacture a human play verdict.
+Before report-ready, repeat the exact HEAD, tracked-diff, and untracked-file observations and fail the task if they differ from the before observations.
+
+# Internal evidence report
+Write \`$DATA/$ID/report.md\` for Firstmate, not for the captain.
+Use exactly four top-level sections in this order: \`Run identity\`, \`Sources inspected\`, \`Candidate dispositions\`, and \`Questionnaire mapping\`.
+
+Under \`Run identity\`, record the project, exact HEAD, inspection date, intake origin id, worktree path, and before and after cleanliness observations.
+Under \`Sources inspected\`, record project-relative or Firstmate-relative pointers with one-line pertinence and authority classifications.
+Under \`Candidate dispositions\`, record every high-leverage candidate needed to audit a consequential inclusion, exclusion, or deduplication.
+Each row contains a stable key, direct question, disposition, why it matters to the target now, evidence, existing answer or duplicate, answer mode, and affected target sections.
+Use only \`questionnaire\`, \`answered\`, \`duplicate\`, \`premature\`, \`implementation-only\`, \`content-later\`, \`tuning-later\`, or \`playtest-later\` as dispositions.
+Use \`direct-options\` or \`open-response\` as answer modes.
+Under \`Questionnaire mapping\`, map each included stable key to its final questionnaire number and confirm that no excluded candidate appears there.
+
+# Captain-facing questionnaire
+Write \`$DATA/$ID/questionnaire.md\` as standalone plain Markdown for the captain.
+It is the only discovery artifact Firstmate presents for answers.
+Produce a clean, deduplicated bulk questionnaire by default and switch to one-at-a-time only when the captain requests it.
+Do not open it in Lavish or another presentation surface unless the captain explicitly asks.
+
+Use a short title, at most two sentences of orientation, and numbered questions grouped under plain topic headings only when grouping improves scanning.
+Keep stable keys in the internal questionnaire mapping and show only ordinary question numbers to the captain.
+Preserve an answer by resolving its question number through that mapping and copying the complete question context into the private decision file.
+For a direct-options question, provide concise lettered choices, mark one recommendation when the evidence supports one, and give at most one sentence of recommendation rationale.
+For an open-response question, ask one bounded direct prompt and state what specific target boundary the answer will settle.
+Every question allows a custom answer and \`undecided\`; never imply that the offered choices exhaust the design space.
+Do not include source paths, authority classifications, candidate dispositions, reconciliation notes, implementation mechanics, status protocol, or instructions about sections to skip.
+Do not include questions already answered, semantically duplicated, premature, implementation-only, deferred to content or tuning, or answerable only through playtesting.
+Do not optimize for a question count.
+Include every distinct high-leverage target question justified by the sources and no filler.
+
+# Reconciliation and answer handling
+Firstmate reads the complete internal report, rechecks every included and consequentially excluded candidate against the named primary sources, and verifies the questionnaire mapping before presenting anything.
+Firstmate presents only the clean questionnaire to the captain.
+Do not register decision holds or add task dependencies for these exploratory target-design questions.
+The existing one-question design-intake and decision-hold lifecycle remain the owner for a concrete ambiguity that affects ordinary work now.
+
+When the captain answers in bulk, regular Companion must preserve each answered question, its offered context, and the captain's exact answer before synthesis in one dated private decision file per stable key under \`data/<origin>/\`.
+Unanswered and explicitly undecided questions remain open without blocking ordinary work.
+After exact preservation, regular Companion may reconcile the living target in batches and must not ask for a separate booking approval for each prose replacement.
+Corrections update the preserved interpretation and the next target synthesis without rewriting the captain's original answer.
+
+# Status protocol and terminal handoff
+Append status lines only to $STATUS_FILE.
+Use \`working:\` sparingly for a supervisor-actionable phase change and use \`blocked:\` only for a real blocker that needs Firstmate.
+When both outputs and the before-and-after read-only checks are complete, append exactly one line:
+
+\`blocked [key=report-ready]: target-design report and questionnaire ready for reconciliation\`
+
+Stop without appending \`done\`.
+After the first steer resolves \`report-ready\`, remain stopped and do not append a terminal line.
+Only a second ordinary steer after Firstmate verifies both outputs may tell you to append terminal \`done\`.
+After that second steer, re-read the current status file, verify that \`report-ready\` is already resolved, append the literal line \`done: target-design intake reconciled\` at EOF, and stop.
+Never edit, reorder, replace, or otherwise rewrite any existing status line.
+
+# Definition of done
+The internal report stands alone as evidence for Firstmate, and the questionnaire stands alone as the captain's answer surface.
+The questionnaire contains only clean target-design questions and none of the internal audit mechanics.
+Every included question maps to primary-source evidence and one stable key in the internal report.
+The project worktree's exact HEAD, tracked diff, and untracked-file observations are identical before and after.
+The terminal \`done\` line occurs only after report-ready resolution, Firstmate verification of both files, and the second ordinary steer.
+EOF
+echo "scaffolded: $BRIEF (target-design intake scout; replace {TASK}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE})"
+exit 0
 fi
 
 if [ "$DESIGN_INTAKE" -eq 1 ]; then

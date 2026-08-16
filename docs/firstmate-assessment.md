@@ -16,6 +16,36 @@ The current version can judge the Martyrdome target-design and target-publicatio
 
 The successful delivery of one design target and one publication result is not evidence that Firstmate's untested later stages or cross-project repeatability work.
 
+## Process changes under test
+
+This is a lightweight history of corrections suggested by the trials.
+Each entry records what Firstmate intends to change, what actually changed, and what a later trial taught us.
+Those facts do not have to advance through a fixed workflow: a change may remain open, be revised, or be superseded when later evidence warrants it.
+
+### D1-C1 - Default to clean bulk design questions
+
+- **Planned:** Present one clean, deduplicated bulk questionnaire by default, while keeping one-at-a-time dialogue available when the captain requests it.
+- **Made:** On 2026-08-15, Firstmate added a separate `--target-design-intake` route that defaults to a clean bulk questionnaire and keeps one-at-a-time dialogue as an explicit captain choice; deterministic contract tests pass, but no later target-design trial has exercised it.
+- **Learned:** D1 found the late clean bulk sheet easier to read, but did not establish whether a bulk-first run would discover equally strong questions or produce equally useful dialogue.
+
+### D1-C2 - Separate captain material from internal reconciliation
+
+- **Planned:** Keep source reconciliation, candidate filtering, and audit mechanics out of the questionnaire the captain is expected to answer.
+- **Made:** D1 recovered by producing a separate clean seven-question sheet, and on 2026-08-15 the shared target-design scout contract made an internal report plus a separate plain Markdown questionnaire the default output pair; real-session use remains untested.
+- **Learned:** The clean sheet was readable, while the mixed internal report was not; repeatability remains untested.
+
+### D1-C3 - Preserve answers before reconciliation
+
+- **Planned:** Save each exact answer and its question context immediately, then reconcile prose and dependent artifacts in sensible batches instead of asking for repeated micro-approval.
+- **Made:** D1 adopted a private living target and exact answer records after the captain identified the compaction risk, and on 2026-08-15 the shared target-design contract required one dated private record per answered question before batched target reconciliation without per-replacement booking prompts; real-session use remains untested.
+- **Learned:** The durable records survived later compactions and supported clean worker handoffs, while 25 separate booking prompts added avoidable interaction cost.
+
+### S1-C1 - Enter overnight work through the verified launcher
+
+- **Planned:** Start the next unattended trial through the verified primary launcher so the owned away lifecycle can run and be observed.
+- **Made:** No launcher or away-mode behavior was changed in S1; the unverified session refused away mode and foreground supervision continued instead.
+- **Learned:** S1 proved the refusal boundary, not unattended operation or recovery.
+
 ## Human-owned evaluation standard
 
 The captain's stated goals and expectations are the evaluation standard.
@@ -263,6 +293,7 @@ Each entry should use the following shape.
 6. **Strengths and failures:** Preserve only reusable findings rather than chronology or transcript detail.
 7. **Correction and uncertainty:** Separate observed evidence, captain preference, recommendation, and unanswered empirical questions.
 8. **History rule:** Preserve prior dated entries, and annotate factual corrections with their date instead of silently rewriting earlier evidence.
+9. **Process-change evidence:** Reference any affected change ids above and update only the concrete `Made` or `Learned` facts supported by the trial.
 
 ## Later stage placeholders
 

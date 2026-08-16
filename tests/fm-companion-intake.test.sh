@@ -39,9 +39,9 @@ test_root_contract_assigns_narrow_game_status_precedence() {
     "Companion metadata does not preserve explicit and fleet-scoped Bearings ownership"
   assert_grep 'Purpose, doctrine, and design intent remain human-owned; never invent a missing value.' "$AGENTS" \
     "root Companion trigger lost the anti-invention boundary"
-  assert_grep 'When explicit design-question discovery is needed for a resolved registered game, launch the separate design-intake scout' "$AGENTS" \
-    "root intake contract does not launch separate design discovery"
-  assert_grep "loading \`companion-intake\` is not a substitute for that process" "$AGENTS" \
+  assert_grep 'When a concrete design ambiguity affects ordinary work now, launch the separate design-intake scout' "$AGENTS" \
+    "root intake contract does not launch separate task-ambiguity discovery"
+  assert_grep "loading \`companion-intake\` is not a substitute for either discovery process" "$AGENTS" \
     "root intake contract still permits regular Companion to substitute for separate discovery"
   assert_grep 'single owner of the Companion intake transformation' "$SKILL" \
     "Companion intake skill does not declare ownership"
@@ -57,7 +57,7 @@ test_skill_reuses_existing_owners() {
     'AGENTS.md` section 7' \
     '../ask-user-authority/SKILL.md' \
     '../decision-hold-lifecycle/SKILL.md' \
-    'separate design-intake scout discovers and filters grounded candidate questions' \
+    'separate `bin/fm-brief.sh --design-intake` scout discovers and filters grounded candidates' \
     'Regular Companion presents exactly one pertinent question' \
     'preserves exact answers and corrections' \
     'routes accepted answers into ordinary work through the existing owners' \
@@ -596,6 +596,39 @@ test_design_intake_contract_routes_without_new_machinery() {
   pass "design-intake static contract routes duplicate, axis, dependency, and handoff behavior through existing owners"
 }
 
+test_target_design_intake_routes_bulk_without_task_holds() {
+  local home brief
+  home="$TMP_ROOT/target-design-contract"
+  mkdir -p "$home/data" "$home/state"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-brief.sh" target-design-contract Martyrdome --target-design-intake >/dev/null 2>&1 \
+    || fail "could not generate the target-design intake contract"
+  brief="$home/data/target-design-contract/brief.md"
+
+  assert_grep 'When the captain is collaboratively constructing or revising a broad game-design target, launch the target-design intake scout' "$AGENTS" \
+    "root routing does not distinguish broad target design from task ambiguity"
+  assert_grep 'Broad target-design collaboration and concrete task ambiguity use separate paths' "$SKILL" \
+    "Companion does not own the target-design versus task-ambiguity split"
+  assert_grep 'bin/fm-brief.sh --target-design-intake' "$SKILL" \
+    "Companion does not route broad target design to its scaffold owner"
+  assert_grep 'clean bulk questionnaire by default' "$SKILL" \
+    "Companion does not carry the captain's default bulk presentation"
+  assert_grep 'one-at-a-time dialogue only when the captain requests it' "$SKILL" \
+    "Companion does not preserve the optional dialogue mode"
+  assert_grep 'Preserve each answered question, its offered context, and the exact answer before synthesis' "$SKILL" \
+    "Companion does not preserve bulk answers before synthesis"
+  assert_grep 'reconcile the living target in batches' "$SKILL" \
+    "Companion does not batch target prose reconciliation"
+
+  assert_grep 'captain-facing questionnaire' "$brief" \
+    "target-design scaffold lacks its separate captain surface"
+  assert_grep 'Do not register decision holds' "$brief" \
+    "target-design scaffold leaks questions into ordinary work holds"
+  assert_no_grep 'first still-valid new shortlist item' "$brief" \
+    "target-design scaffold inherited one-question presentation"
+  pass "target-design intake routes clean bulk Q&A separately from task-blocking ambiguity"
+}
+
 test_report_fields_execute_directly_and_answer_routing_is_nonblocking() {
   local home origin hold row existing_origin existing_hold show decision_file
   command -v tasks-axi >/dev/null 2>&1 || fail "tasks-axi is required for Companion intake routing evidence"
@@ -784,6 +817,7 @@ test_fixture_has_structured_intake_and_real_project_evidence
 test_authored_context_card_copy_is_byte_stable
 test_authored_expected_block_fits_existing_brief_format
 test_design_intake_contract_routes_without_new_machinery
+test_target_design_intake_routes_bulk_without_task_holds
 test_report_fields_execute_directly_and_answer_routing_is_nonblocking
 test_report_ready_requires_first_steer_then_completion_then_second_steer
 test_design_intake_verification_owner_reserves_model_discovery_for_cold_delivery
