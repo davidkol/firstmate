@@ -219,7 +219,7 @@ Each project entry has one top-level delivery-posture line followed immediately 
 
 ```text
 - Martyrdome [validated-main +yolo] - Godot action game
-  path: /Users/example/projects/Godot/Martyrdome
+  path: /home/example/projects/Godot/Martyrdome
 ```
 
 `bin/fm-project-lib.sh` resolves the project id, physical Git root, delivery mode, and yolo posture as one record.

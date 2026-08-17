@@ -15,7 +15,7 @@ The captain's working repository remained at an older commit, so the completion 
 ## Accepted decisions
 
 - Each project has exactly one canonical working repository path.
-- Martyrdome's canonical path is `/Users/davidkol/projects/Godot/Martyrdome`.
+- Martyrdome's canonical path is `~/projects/Godot/Martyrdome`.
 - A missing, moved, or invalid canonical repository stops work and never falls back to an internal clone.
 - Primary and peer homes use the canonical repository as the Treehouse anchor.
 - Firstmate may retain private per-project material, but that material is not a Git clone and is never presented as the project.
@@ -38,7 +38,7 @@ An entry has this shape:
 
 ```markdown
 - Martyrdome [validated-main +yolo] - Godot action game, boss encounters
-  path: /Users/davidkol/projects/Godot/Martyrdome
+  path: /home/example/projects/Godot/Martyrdome
 ```
 
 One central resolver owns project identity, canonical-path parsing, delivery mode, and autonomy posture.
@@ -100,7 +100,7 @@ It refuses while any in-flight task metadata names the old managed clone.
 It verifies the requested canonical repository and remote identity before atomically adding the registry path and changing the project's delivery mode.
 It does not infer a canonical path from a matching basename or remote URL.
 
-Martyrdome migrates to `/Users/davidkol/projects/Godot/Martyrdome` with `validated-main` delivery.
+Martyrdome migrates to `~/projects/Godot/Martyrdome` with `validated-main` delivery.
 Its existing untracked `notes.md` is preserved.
 Its retained managed clone becomes inactive because no registry-driven operation enumerates it.
 Deletion of that clone is a separate destructive action and is not part of this change.

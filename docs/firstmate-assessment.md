@@ -64,7 +64,7 @@ Those facts do not have to advance through a fixed workflow: a change may remain
 - **Planned:** Treat the remote repository, Firstmate-owned per-project storage, the captain's working repository, and each Treehouse worktree as different identified surfaces; never present the Firstmate-owned copy as the captain's local project, and report each relevant surface as verified, stale, or not identified.
 - **Made:** The isolated implementation branch now gives primary and peer homes one explicit canonical repository path, anchors Treehouse work to it, records and re-verifies task repository identity, ignores retained clones during fleet refresh, and preserves non-conflicting untracked files during guarded synchronization and landing.
   Secondmate clones and Orca worktree ownership remain explicit exceptions.
-  The change passed focused automated checks and a real Treehouse identity smoke, landed on Firstmate `main` as `e68553f`, was pushed to `origin/main`, and migrated the private Martyrdome registry to `/Users/davidkol/projects/Godot/Martyrdome` under `validated-main`.
+  The change passed focused automated checks and a real Treehouse identity smoke, landed on Firstmate `main` as `e68553f`, was pushed to `origin/main`, and migrated the private Martyrdome registry to `~/projects/Godot/Martyrdome` under `validated-main`.
   The first guarded canonical sync advanced that real checkout from `47e4db4` to `a5a8eda` while preserving its untracked `notes.md`; the retained managed clone was left untouched and inactive.
 - **Learned:** Repository identity must be executable state shared by intake, spawn, synchronization, landing, teardown, and reporting rather than a path inferred independently at each boundary.
   A real Martyrdome Treehouse lease produced a distinct worktree root with the same Git common directory while leaving `notes.md` untouched, so the required isolation does not require a duplicate primary clone.
@@ -306,9 +306,9 @@ The remote publication succeeded while the captain-facing local-delivery handoff
 ### Measured evidence
 
 - GitHub records Martyrdome PR 13 merged as commit `a5a8eda`, publishing one top-level target document and eleven focused target documents.
-- Firstmate verified commit `a5a8eda` only in `/Users/davidkol/fm-homes/martyrdome/projects/Martyrdome`, which is its managed clone.
+- Firstmate verified commit `a5a8eda` only in `~/fm-homes/martyrdome/projects/Martyrdome`, which is its managed clone.
 - The completion report said "Local Martyrdome `main` is clean and synchronized with `origin/main`" without qualifying that repository as Firstmate's managed clone.
-- When the captain could see only `target-design.md`, Firstmate linked `/Users/davidkol/fm-homes/martyrdome/projects/Martyrdome/docs/target-design` as though it were the captain's working folder.
+- When the captain could see only `target-design.md`, Firstmate linked `~/fm-homes/martyrdome/projects/Martyrdome/docs/target-design` as though it were the captain's working folder.
 - Firstmate had neither identified nor inspected the captain's actual Martyrdome checkout, so its local synchronization state was unknown.
 
 ### Verdict against the captain's goals

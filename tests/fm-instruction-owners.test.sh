@@ -64,7 +64,7 @@ test_project_management_owner_covers_guarded_operations() {
   assert_grep "single owner of Firstmate's project-management procedure" "$PROJECT" \
     "project-management skill does not declare ownership"
   for phrase in \
-    'bin/fm-project-mode.sh' \
+    'bin/fm-project-lib.sh' \
     '`no-mistakes`' \
     '`direct-PR`' \
     '`local-only`' \

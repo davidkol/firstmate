@@ -166,7 +166,7 @@ git commit -m "fix(git): preserve safe untracked files on landing"
 - Modify: `.agents/skills/project-management/SKILL.md`
 - Modify: `docs/configuration.md`
 - Modify: `README.md`
-- Modify outside the branch after code verification: `/Users/davidkol/fm-homes/martyrdome/data/projects.md`
+- Modify outside the branch after code verification: `~/fm-homes/martyrdome/data/projects.md`
 
 **Interfaces:**
 - Consumes: migration command from Task 1.
@@ -192,7 +192,7 @@ git commit -m "docs: define canonical project repository ownership"
 
 - [x] **Step 4: Migrate the private Martyrdome entry after the implementation is green**
 
-Run: `FM_HOME=/Users/davidkol/fm-homes/martyrdome bin/fm-project-path-set.sh Martyrdome /Users/davidkol/projects/Godot/Martyrdome --mode validated-main`
+Run: `FM_HOME=~/fm-homes/martyrdome bin/fm-project-path-set.sh Martyrdome ~/projects/Godot/Martyrdome --mode validated-main`
 Expected: the registry records the canonical path and validated-main mode while the old managed clone remains untouched.
 
 ### Task 5: Focused real workflow verification
@@ -216,7 +216,7 @@ Expected: identity checks pass and the scratch primary checkout remains unchange
 
 - [x] **Step 3: Verify the migrated Martyrdome binding read-only**
 
-Run: `FM_HOME=/Users/davidkol/fm-homes/martyrdome bin/fm-project-resolve.sh Martyrdome`
+Run: `FM_HOME=~/fm-homes/martyrdome bin/fm-project-resolve.sh Martyrdome`
 Expected: one record containing the canonical Godot path and `validated-main` mode.
 
 - [x] **Step 4: Stop before shared landing and push**

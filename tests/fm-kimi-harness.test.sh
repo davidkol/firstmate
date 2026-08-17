@@ -159,6 +159,7 @@ make_spawn_case() {
   fm_write_ship_brief "$home/data/$id/brief.md" T0
   printf 'kimi\n' > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
+  printf -- '- project [no-mistakes] - canonical test project\n  path: %s\n' "$proj" > "$home/data/projects.md"
   touch "$home/state/.last-watcher-beat"
   : > "$case_dir/launch.log"
   : > "$case_dir/pointer.log"

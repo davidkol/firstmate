@@ -21,6 +21,16 @@ DECISIONS="$ROOT/bin/fm-decision-hold.sh"
 SEND="$ROOT/bin/fm-send.sh"
 TMP_ROOT=$(fm_test_tmproot fm-companion-intake)
 
+# Every project-bound brief resolves its project through the canonical
+# registry, so a brief-generating home registers its fixture project with an
+# explicit repository path.
+write_project_registry() {  # <home> <project>
+  local home=$1 project=$2
+  mkdir -p "$home/data"
+  fm_git_init_commit "$home/repos/$project"
+  printf -- '- %s [no-mistakes] - companion fixture\n  path: %s\n' "$project" "$home/repos/$project" > "$home/data/projects.md"
+}
+
 test_root_contract_assigns_narrow_game_status_precedence() {
   local count
   assert_present "$SKILL" "Companion intake skill is missing"
@@ -314,6 +324,7 @@ test_authored_expected_block_fits_existing_brief_format() {
   home="$TMP_ROOT/brief-home"
   copied_card="$home/data/project-context/GrappleGame.md"
   mkdir -p "$home/data/project-context" "$home/state" "$TMP_ROOT/claude-config/projects"
+  write_project_registry "$home" GrappleGame
   cp "$AUTHORED_CONTEXT_CARD" "$copied_card"
   FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" CLAUDE_CONFIG_DIR="$TMP_ROOT/claude-config" \
     "$ROOT/bin/fm-brief.sh" companion-grapple GrappleGame >/dev/null 2>&1 \
@@ -571,6 +582,7 @@ test_design_intake_contract_routes_without_new_machinery() {
   local home brief
   home="$TMP_ROOT/design-contract"
   mkdir -p "$home/data" "$home/state"
+  write_project_registry "$home" Delivery
   FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     "$ROOT/bin/fm-brief.sh" design-contract Delivery --design-intake >/dev/null 2>&1 \
     || fail "could not generate the design-intake routing contract"
@@ -601,6 +613,7 @@ test_target_design_intake_routes_bulk_without_task_holds() {
   local home brief
   home="$TMP_ROOT/target-design-contract"
   mkdir -p "$home/data" "$home/state"
+  write_project_registry "$home" Martyrdome
   FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     "$ROOT/bin/fm-brief.sh" target-design-contract Martyrdome --target-design-intake >/dev/null 2>&1 \
     || fail "could not generate the target-design intake contract"

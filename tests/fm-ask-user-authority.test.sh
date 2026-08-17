@@ -129,6 +129,10 @@ test_primary_and_secondmate_instruction_generation() {
   local home ship charter
   home="$TMP_ROOT/home"
   mkdir -p "$home/data"
+  # A ship brief resolves its project through the canonical registry, so the
+  # fixture registers sample with an explicit repository path.
+  fm_git_init_commit "$home/repos/sample"
+  printf -- '- sample [no-mistakes] - authority fixture\n  path: %s\n' "$home/repos/sample" > "$home/data/projects.md"
 
   FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     "$BRIEF" authority-worker sample >/dev/null 2>&1

@@ -42,6 +42,7 @@ make_spawn_case() {
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" "$grok_home"
   fm_write_ship_brief "$home/data/$id/brief.md" T0
   fm_git_worktree "$proj" "$wt" "fm/$id"
+  printf -- '- project [no-mistakes] - canonical test project\n  path: %s\n' "$proj" > "$home/data/projects.md"
   touch "$home/state/.last-watcher-beat"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$grok_home|$id"
 }

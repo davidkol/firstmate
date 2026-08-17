@@ -11,8 +11,10 @@ make_scout() {
   local name=$1 dir home brief
   dir="$TMP_ROOT/$name"
   home="$dir/home"
-  mkdir -p "$home/data" "$home/state" "$dir/project" "$dir/worktree" "$dir/fakebin" "$dir/pipeline-tmp"
-  printf '%s\n' '- project [direct-PR] - promotion fixture (added 2026-08-12)' > "$home/data/projects.md"
+  mkdir -p "$home/data" "$home/state" "$dir/worktree" "$dir/fakebin" "$dir/pipeline-tmp"
+  # The canonical registry requires an explicit repository root for the project.
+  fm_git_init_commit "$dir/project"
+  printf -- '- project [direct-PR] - promotion fixture (added 2026-08-12)\n  path: %s\n' "$dir/project" > "$home/data/projects.md"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" \
     "$ROOT/bin/fm-brief.sh" scout-a project --scout >/dev/null \
     || fail "$name: could not generate the canonical scout brief"
@@ -62,7 +64,7 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
   local dir brief review_out validate_out inventory_line preserve_line base_line branch_line task_text context_text
   dir=$(make_scout success)
   brief="$dir/home/data/scout-a/brief.md"
-  printf '%s\n' '- project [local-only] - promotion fixture (added 2026-08-12)' > "$dir/home/data/projects.md"
+  printf -- '- project [local-only] - promotion fixture (added 2026-08-12)\n  path: %s\n' "$dir/project" > "$dir/home/data/projects.md"
 
   run_promote "$dir" \
     --task-tier T1 \
