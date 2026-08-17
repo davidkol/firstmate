@@ -2,7 +2,7 @@
 
 Firstmate's overall process is not yet assessed.
 This living assessment records dated, evidence-based stage trials without turning task history into a transcript.
-The current version can judge the Martyrdome target-design, target-publication, and target-to-current gap trials plus one unattended-away boundary observation.
+The current version can judge the Martyrdome target-design, target-publication, and target-to-current gap trials plus one unattended-away boundary observation and one repository-surface delivery failure.
 
 ## Assessment boundary
 
@@ -12,10 +12,11 @@ The current version can judge the Martyrdome target-design, target-publication, 
 - **Untested - Planning:** No implementation plan derived from the completed target has been assessed.
 - **Untested - Implementation:** No implementation of the completed target has been assessed.
 - **Partly tested - Review and validation:** Target publication received independent documentation review and bounded re-review, but implementation review, game-runtime validation, and player-outcome validation remain untested.
-- **Tested once - Publication or integration:** The accepted target was published into Martyrdome with its private audit excluded, stale authority claims corrected, and PR 12 merged.
+- **Tested twice - Publication or integration:** The accepted standalone target was published in PR 12 and its split focused-document form was published in PR 13, but the second delivery exposed a repository-surface identity failure in the captain-facing handoff.
+- **Failed once - Repository-surface identity:** Firstmate verified its managed clone, described that result as the local Martyrdome state, and linked the captain to that clone without identifying or verifying the captain's actual working repository.
 - **Partly tested - Supervision or recovery:** Foreground supervision continued in the active session, but the owned away-mode launcher refused to start, so the unattended-away boundary failed and recovery remains untested.
 
-The successful delivery of one design target and one publication result is not evidence that Firstmate's untested later stages or cross-project repeatability work.
+The successful remote publication results are not evidence that Firstmate's untested later stages, local delivery visibility, or cross-project repeatability work.
 
 ## Process changes under test
 
@@ -53,6 +54,12 @@ Those facts do not have to advance through a fixed workflow: a change may remain
 - **Made:** No shared behavior has changed yet; G1 registered a new slide-control decision even though the target-design trial already held the same choice under `martyrdome-target-design-draft-decision-slide-control-mapping-and-handling`.
 - **Learned:** Origin-scoped idempotency prevents duplicate registration within one report but does not prevent the same design question from reappearing when a later stage encounters it.
 
+### P2-C1 - Distinguish every repository surface before reporting delivery
+
+- **Planned:** Treat the remote repository, Firstmate-owned per-project storage, the captain's working repository, and each Treehouse worktree as different identified surfaces; never present the Firstmate-owned copy as the captain's local project, and report each relevant surface as verified, stale, or not identified.
+- **Made:** No project-management or delivery behavior has changed yet; this assessment now records the failure and the captain's requirement that Firstmate may keep per-project storage for its own material while actual project work uses Treehouse.
+- **Learned:** The managed clone protected the captain's working tree but immediately obscured repository identity, so a successful remote merge and a synchronized Firstmate clone were incorrectly communicated as local availability to the captain.
+
 ## Human-owned evaluation standard
 
 The captain's stated goals and expectations are the evaluation standard.
@@ -71,6 +78,7 @@ The trial is judged against these captain-owned criteria.
 - **Optimize for his process rather than a hypothetical user:** The captain said, "I just want the best possible process," and rejected the former goal of making Firstmate transferable to someone else (captain, 2026-08-08, canonical primary transcript).
 - **Default to clean bulk design questions:** The captain said, "i think the default should be the clean bulk and i have the option to go one at a time" (captain, 2026-08-15, canonical primary transcript).
 - **Maintain momentum while he is away:** The captain said, "great, im going to bed, do as much as you can overnight," making continued progress during his absence a specific criterion for this continuation (captain, 2026-08-15, canonical primary transcript).
+- **Keep actual work on the intended repository surface:** After Firstmate confused its managed clone with the real working repository, the captain said that a Firstmate-owned per-project folder was acceptable for Firstmate material but "for actual work it should just use the treehouse stuff" (captain, 2026-08-16, canonical primary transcript).
 
 ## Reproducible session inventory
 
@@ -95,6 +103,7 @@ The inventory records session date and contribution rather than private transcri
 5. **2026-08-13, Codex:** The captain dictated a large combat-system expansion, Firstmate converted it into design prose, published a standalone design addition, and then preserved the next sequence of runtime reconstruction, question audit, and human review.
 6. **2026-08-13, Codex:** Firstmate commissioned the runtime and transcript reconstruction plus the design-question audit, returned their reports, and began the first design question.
 7. **2026-08-13 to 2026-08-15, Codex:** The extended target-design session performed the main question-and-answer work, created the private living target, ran completeness and bulk-question passes, incorporated answers, closed the top-level target, created the first assessment entry, attempted away mode, supervised publication through merged Martyrdome PR 12, merged the resulting Firstmate intake correction, and commissioned and reviewed the target-to-current gap assessment.
+8. **2026-08-16, Codex:** The resumed Martyrdome target-design session completed the focused target modules, globally reconciled and published the split target through PR 13, then exposed that Firstmate had verified and linked only its managed clone rather than the captain's working repository.
 
 ### Exclusions and unavailable evidence
 
@@ -235,6 +244,57 @@ The initial reconciliation nevertheless missed `docs/handoff-combat-director.md`
 **Assessment recommendation:** Keep tracked branch and independent review ceremony for real project publications that change current authority, while keeping private draft durability outside that project-delivery ceremony.
 
 This trial does not show that publication will repeat successfully on another project or that Martyrdome's implementation matches the published target.
+
+## Publication observation P2 - Martyrdome repository-surface identity (2026-08-16)
+
+### Trial and boundary
+
+This observation begins after the focused Martyrdome target modules were reconciled, independently reviewed, and merged through PR 13.
+It covers remote publication, synchronization of Firstmate's managed project clone, the captain-facing completion report, and the captain's attempt to find the delivered files in his actual working folder.
+It does not decide the replacement project-storage architecture or claim that the captain's unidentified working repository was safe to update automatically.
+
+### Captain-owned criteria
+
+The existing criteria for durable repository truth, readable communication, proportional ceremony, and preserving the captain's work apply.
+After observing the failure, the captain said, "it immediately caused an issue where you didnt realize you are dealing with the clone and not the real repo" (captain, 2026-08-16, canonical primary transcript).
+The captain then clarified that a Firstmate-owned per-project folder may exist for Firstmate material, but "for actual work it should just use the treehouse stuff" (captain, 2026-08-16, canonical primary transcript).
+
+### Status and observed outcome
+
+**Failed once - Repository-surface identity:** The focused target documents reached GitHub and Firstmate's managed clone successfully, but Firstmate did not identify or verify the captain's actual Martyrdome working repository before reporting local availability.
+The remote publication succeeded while the captain-facing local-delivery handoff failed.
+
+### Measured evidence
+
+- GitHub records Martyrdome PR 13 merged as commit `a5a8eda`, publishing one top-level target document and eleven focused target documents.
+- Firstmate verified commit `a5a8eda` only in `/Users/davidkol/fm-homes/martyrdome/projects/Martyrdome`, which is its managed clone.
+- The completion report said "Local Martyrdome `main` is clean and synchronized with `origin/main`" without qualifying that repository as Firstmate's managed clone.
+- When the captain could see only `target-design.md`, Firstmate linked `/Users/davidkol/fm-homes/martyrdome/projects/Martyrdome/docs/target-design` as though it were the captain's working folder.
+- Firstmate had neither identified nor inspected the captain's actual Martyrdome checkout, so its local synchronization state was unknown.
+
+### Verdict against the captain's goals
+
+- **Preserve durable repository truth - Partly met:** The remote repository contains the accepted documents, but the handoff did not preserve a truthful distinction between remote state, Firstmate-owned local state, and the captain's local state.
+- **Keep captain-facing communication readable and accurate - Failed:** A concise completion message concealed the repository identity needed to interpret "local," and the later file link reinforced the wrong surface.
+- **Use proportional isolation - Not established:** The managed clone prevented direct interference with the captain's checkout, but this observation does not prove that duplicating the project repository was necessary once Treehouse worktree isolation was available.
+- **Maintain momentum - Failed at handoff:** Publication finished, but the captain could not immediately find the delivered files in the folder he actually uses.
+
+### Strengths and failures
+
+The remote merge and independent document validation remained valid.
+The failure was not missing content but incorrect repository identity in the operator model and completion report.
+Firstmate treated the only local repository it knew as if it were the captain's real project, even though its own architecture deliberately made that repository a managed clone.
+The isolation boundary therefore created an immediate visibility and truthfulness cost at delivery.
+
+### Correction and uncertainty
+
+**Observed evidence:** Firstmate can complete project work through Treehouse and GitHub while still misreporting where the landed work is visible locally.
+
+**Captain's stated preference:** Firstmate may retain per-project storage for its own material, but actual project work should use Treehouse rather than a duplicate working repository.
+
+**Assessment recommendation:** Design one explicit repository-surface model that identifies the captain's repository, keeps Firstmate-private material separate, makes Treehouse the project-work surface, and requires delivery reports to state which surfaces were actually verified.
+
+The exact role of the current managed clone, how an existing repository is registered safely, how Treehouse anchors to it, and whether local synchronization is offered or automated remain design questions.
 
 ## Gap-analysis trial G1 - Martyrdome target versus current implementation (2026-08-15)
 
@@ -385,7 +445,8 @@ Implementation review, runtime validation, and player-outcome validation remain 
 ### Publication or integration
 
 P1 records one successful Martyrdome target-publication result.
-General repeatability and implementation alignment remain untested.
+P2 records a second successful remote publication whose captain-facing local handoff failed because Firstmate confused its managed clone with the captain's working repository.
+General repeatability, repository-surface correction, and implementation alignment remain untested.
 
 ### Supervision or recovery
 
@@ -394,9 +455,10 @@ Away-mode operation and recovery remain unproven.
 
 ## Current assessment conclusion
 
-Firstmate has now produced one durable standalone game-design target, published it into Martyrdome through bounded review and merge, and completed one evidence-only target-to-current gap assessment.
+Firstmate has now produced one durable standalone game-design target, published both its standalone and split focused-document forms into Martyrdome through bounded review and merge, and completed one evidence-only target-to-current gap assessment.
 It still has not proved a concise, repeatable, end-to-end process, implementation-plan quality, implementation alignment, game-runtime validity, or player outcomes.
 The gap trial strengthened source-authority discipline, honest runtime evidence, and separation between investigation and planning while exposing cross-stage decision duplication as a new process failure.
-The publication trial strengthened durable repository truth, proportional project-delivery rigor, routine autonomy, and foreground momentum while preserving the design trial's earlier failures as historical findings.
+The publication trials strengthened remote repository truth, proportional project-delivery rigor, routine autonomy, and foreground momentum while preserving the design trial's earlier failures as historical findings.
+The second publication also exposed that Firstmate can land correct work remotely while misleading the captain about which local repository was verified and where the result is available.
 The supervision observation failed at the unattended-away boundary, and foreground continuation must not be credited as satisfying the captain's overnight request.
 The next assessment entry must evaluate a later process stage on its own evidence rather than extending either successful result into an assumed overall verdict.
