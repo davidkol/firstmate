@@ -17,13 +17,15 @@ It does not replace `secondmate-provisioning`, which owns project clones inside 
 
 ## Preconditions and registry
 
-Projects live flat under `projects/`, and `data/projects.md` is the private fleet registry.
-Use the registry format and parser contract owned by the header of `bin/fm-project-mode.sh`.
+Primary and peer projects use the captain's existing repository checkout as their one canonical path, recorded in `data/projects.md`.
+Use the registry format and resolver contract owned by `bin/fm-project-lib.sh` and `docs/configuration.md`.
+Never infer a repository from `$FM_HOME/projects/<name>` in a primary or peer home, even when such a retained clone exists.
+Secondmate homes are the explicit exception: `secondmate-provisioning` owns their provisioned clones.
 Keep each registry description useful for identifying the project, but keep delivery posture, captain-private state, and detailed project knowledge in their existing designated homes.
 Do not turn the registry into project documentation.
 
-Resolve the project name, destination, delivery mode, and autonomy posture before changing local or remote state.
-Keep a newly added clone and its registry entry consistent, and roll back only artifacts created by the incomplete operation when a later initialization step fails and that rollback is safe.
+Resolve the project name, canonical absolute Git root, delivery mode, and autonomy posture before changing local or remote state.
+Keep a newly added repository and its registry entry consistent, and roll back only artifacts created by the incomplete operation when a later initialization step fails and that rollback is safe.
 Do not overwrite or repurpose an existing path.
 
 ## Delivery posture
@@ -48,8 +50,10 @@ Default it off, and enable it only on the captain's explicit instruction.
 
 ## Add or clone an existing project
 
-Confirm the source URL, local project name, delivery mode, and autonomy posture.
-Clone into `projects/<name>` and add the registry entry only after the destination is known to be unused.
+Confirm the source URL or existing checkout, project name, canonical absolute path, delivery mode, and autonomy posture.
+When the repository is not already present, clone it to the captain-approved project path outside Firstmate's managed `projects/` directory.
+Add the registry entry only after that canonical destination is known to be unused and is verified as the repository root.
+When migrating an existing pathless entry, use `bin/fm-project-path-set.sh`; it compares the existing managed checkout's `origin` identity with the requested canonical checkout, refuses physical aliases used by in-flight task metadata, and leaves unrelated pathless entries untouched.
 A `no-mistakes` or `validated-main` project must have an `origin` remote and must complete the initialization procedure below.
 A `direct-PR` project needs an `origin` remote and drives the pipeline's review step, so it needs the same local gate; its first task initializes it lazily through the generated brief's `no-mistakes doctor` step, so an add that skips the procedure below still works.
 A `local-only` project runs the review step too, and its gate initializes from an `origin` pointing at a local filesystem path, which is what a clone of a local repository already has; its first task initializes it lazily the same way.
@@ -60,9 +64,9 @@ A `local-only` project with no `origin` remote at all cannot run the review, bec
 Creating a GitHub repository is outward-facing.
 Before making that remote change, propose the repository name, owner or organization, visibility, and delivery mode, defaulting visibility to private and delivery mode to `no-mistakes`, then obtain the captain's explicit consent for those values.
 Use `gh-axi` for the approved GitHub operation and consult its current help rather than relying on remembered flags.
-After remote creation succeeds, clone it locally, add the registry entry, and initialize it according to its delivery mode.
+After remote creation succeeds, clone it at the captain-approved canonical path, add the registry entry, and initialize it according to its delivery mode.
 
-For a purely `local-only` project, create a local Git repository under its unused `projects/<name>` path, add the registry entry, and make no GitHub call.
+For a purely `local-only` project, create a local Git repository at the captain-approved canonical path outside Firstmate's managed `projects/` directory, add the registry entry, and make no GitHub call.
 The captain's request to create that local project authorizes this local initialization, but it does not authorize an unmentioned remote repository.
 A repository created this way has no `origin` remote at all, which is exactly the case that cannot run the review, so record the named gap the add-or-clone section above requires rather than dispatching work that ships unread.
 
@@ -71,7 +75,7 @@ A repository created this way has no `origin` remote at all, which is exactly th
 Run no-mistakes initialization for every project with an `origin` remote, because every delivery mode now drives at least the pipeline's review step:
 
 ```sh
-cd projects/<name> && no-mistakes init && no-mistakes doctor
+cd /canonical/project/path && no-mistakes init && no-mistakes doctor
 ```
 
 Initialization configures the local gate and does not vendor a no-mistakes skill into the project.
@@ -85,7 +89,7 @@ It is a reconciliation, not an install: every project that has been worked on al
 Seeding a fresh set over the top adds one more surface to the pile, which is the problem this exists to reduce.
 `bin/fm-project-reconcile.sh` owns the mechanics; its header and `--help` own the exact flags, report-line prefixes and exit codes.
 
-Run the read-only report against the project clone first.
+Run the read-only report against the canonical project checkout first.
 Reading a project is always allowed, so firstmate runs this itself.
 Then route what it reports:
 
@@ -121,4 +125,4 @@ Never issue a raw removal command from Firstmate.
 First obtain the captain's explicit removal decision, then inspect the current digest and authoritative repositories for in-flight or queued work, registered secondmate clones, linked worktrees, dirty files, unpushed commits, and any other unlanded work.
 If any dependency or unlanded work exists, stop and report it before changing the registry.
 Until a guarded removal helper and corresponding prime-directive exception exist, report that implementation gap instead of bypassing the project-write boundary.
-When a clone has already been removed through an approved guarded path, or the registry is provably stale because no clone exists, remove its registry line so navigation matches reality.
+When a canonical checkout has already been removed through an approved guarded path, or the registry is provably stale because that checkout no longer exists, remove its registry entry so navigation matches reality.

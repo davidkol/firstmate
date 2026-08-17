@@ -214,13 +214,78 @@ test_help_includes_entire_header() {
 # Registry with one project per delivery mode, so each ship-mode DOD branch is
 # exercised. A project absent from the registry defaults to no-mistakes.
 write_registry() {
-  local home=$1
-  mkdir -p "$home/data"
-  cat > "$home/data/projects.md" <<'EOF'
+  local home=$1 project
+  mkdir -p "$home/data" "$home/repos"
+  for project in default-proj direct-proj local-proj main-proj no-registry-proj some-proj firstmate sample Widget Dungeon Gadget Martyrdome Delivery foreign; do
+    [ -d "$home/repos/$project/.git" ] || fm_git_init_commit "$home/repos/$project"
+  done
+  cat > "$home/data/projects.md" <<EOF
+- default-proj [no-mistakes] - fixture for default mode (added 2026-07-01)
+  path: $home/repos/default-proj
 - direct-proj [direct-PR] - fixture for direct-PR mode (added 2026-07-01)
+  path: $home/repos/direct-proj
 - local-proj [local-only] - fixture for local-only mode (added 2026-07-01)
+  path: $home/repos/local-proj
 - main-proj [validated-main] - fixture for validated-main mode (added 2026-07-28)
+  path: $home/repos/main-proj
+- no-registry-proj [no-mistakes] - fixture for default full mode
+  path: $home/repos/no-registry-proj
+- some-proj [no-mistakes] - shared prose fixture
+  path: $home/repos/some-proj
+- firstmate [no-mistakes] - shared Firstmate fixture
+  path: $home/repos/firstmate
+- sample [no-mistakes] - shared scout fixture
+  path: $home/repos/sample
+- Widget [no-mistakes] - shared memory fixture
+  path: $home/repos/Widget
+- Dungeon [no-mistakes] - shared memory fixture
+  path: $home/repos/Dungeon
+- Gadget [no-mistakes] - shared memory fixture
+  path: $home/repos/Gadget
+- Martyrdome [no-mistakes] - shared target-design fixture
+  path: $home/repos/Martyrdome
+- Delivery [no-mistakes] - shared target-design fixture
+  path: $home/repos/Delivery
+- foreign [no-mistakes] - foreign-root fixture
+  path: $home/repos/foreign
 EOF
+}
+
+write_project_registry() {
+  local home=$1 project=$2 mode=${3:-no-mistakes} repo
+  repo=${4:-$home/repos/$project}
+  mkdir -p "$home/data"
+  [ -d "$repo/.git" ] || fm_git_init_commit "$repo"
+  printf -- '- %s [%s] - focused fixture\n  path: %s\n' "$project" "$mode" "$repo" > "$home/data/projects.md"
+}
+
+write_project_registry "$BRIEF_HOME" alpha
+
+test_scout_refuses_unmigrated_project_before_writing_brief() {
+  local home missing out rc
+  home="$TMP_ROOT/unmigrated-scout-home"
+  mkdir -p "$home/data"
+  printf '%s\n' '- Legacy [direct-PR] - missing canonical path' > "$home/data/projects.md"
+  if out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" no-brief Legacy --scout 2>&1); then
+    rc=0
+  else
+    rc=$?
+  fi
+  expect_code 1 "$rc" "scout brief for unmigrated project"
+  assert_contains "$out" 'PROJECT_PATH_REQUIRED: Legacy' "scout refusal did not name the canonical-path gap"
+  assert_absent "$home/data/no-brief/brief.md" "scout brief was written despite failed canonical resolution"
+
+  missing="$TMP_ROOT/missing-registry-scout-home"
+  mkdir -p "$missing/data"
+  if out=$(FM_HOME="$missing" "$ROOT/bin/fm-brief.sh" no-registry Unknown --scout 2>&1); then
+    rc=0
+  else
+    rc=$?
+  fi
+  expect_code 1 "$rc" "scout brief without a project registry"
+  assert_contains "$out" 'PROJECT_REGISTRY_MISSING' "missing-registry refusal was not explicit"
+  assert_absent "$missing/data/no-registry/brief.md" "scout brief bypassed an absent project registry"
+  pass "fm-brief.sh: every project-bound brief requires canonical resolution"
 }
 
 # fm-brief.sh must exit 0 and produce a brief with no unreplaced shell
@@ -233,7 +298,7 @@ test_ship_modes_generate_clean_briefs() {
   home="$TMP_ROOT/ship-home"
   write_registry "$home"
 
-  for id_proj in "brief-nomistakes-a1:no-registry-proj" "brief-directpr-a2:direct-proj" "brief-localonly-a3:local-proj" "brief-validatedmain-a5:main-proj"; do
+  for id_proj in "brief-nomistakes-a1:default-proj" "brief-directpr-a2:direct-proj" "brief-localonly-a3:local-proj" "brief-validatedmain-a5:main-proj"; do
     id=${id_proj%%:*}
     proj=${id_proj##*:}
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" >/dev/null 2>&1; status=$?
@@ -484,6 +549,7 @@ test_no_mistakes_dod_wording() {
   local home id brief
   home="$TMP_ROOT/wording-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" some-proj
   id="brief-wording-b1"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
@@ -515,6 +581,7 @@ test_no_mistakes_dod_no_checks_is_ready() {
   local home id brief emitted
   home="$TMP_ROOT/no-checks-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" some-proj
   id="brief-no-checks-d1"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
@@ -549,6 +616,7 @@ test_ship_project_memory_wording() {
   local home id brief
   home="$TMP_ROOT/project-memory-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" some-proj
   id="brief-memory-c1"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
@@ -566,6 +634,7 @@ test_herdr_lab_contract_is_explicit_and_complete() {
   local home id brief
   home="$TMP_ROOT/herdr-lab-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" firstmate
   id="brief-herdr-lab-d1"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" firstmate --herdr-lab >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
@@ -598,6 +667,7 @@ test_herdr_lab_contract_quotes_foreign_firstmate_path() {
   home="$TMP_ROOT/herdr-lab-foreign-home"
   foreign_root="$TMP_ROOT/firstmate helper's root"
   mkdir -p "$home/data"
+  write_project_registry "$home" foreign
   id="brief-herdr-lab-foreign-d2"
   helper=$(printf '%s' "$foreign_root/bin/fm-herdr-lab.sh" | sed "s/'/'\\\\''/g")
   helper="'$helper'"
@@ -614,6 +684,7 @@ test_herdr_lab_omission_is_loud_for_ship_and_scout() {
   local home id brief
   home="$TMP_ROOT/herdr-gate-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" firstmate
   for kind in ship scout; do
     id="brief-herdr-gate-$kind"
     if [ "$kind" = scout ]; then
@@ -721,6 +792,7 @@ test_herdr_lab_contract_applies_to_scouts_but_not_secondmates() {
   local home brief status=0
   home="$TMP_ROOT/herdr-kind-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" firstmate
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" herdr-scout firstmate --scout --herdr-lab >/dev/null 2>&1
   brief="$home/data/herdr-scout/brief.md"
   assert_grep "# Herdr isolation - HARD SAFETY CONTRACT" "$brief" \
@@ -737,6 +809,7 @@ test_pause_verb_override_renders_all_brief_scaffolds() {
   local home kind id brief
   home="$TMP_ROOT/pause-verb-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" firstmate
 
   for kind in ship scout secondmate; do
     id="brief-pause-verb-$kind"
@@ -844,6 +917,7 @@ test_scout_and_secondmate_load_decision_hold_policy() {
   local home scout charter
   home="$TMP_ROOT/decision-policy-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" sample
   FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     "$ROOT/bin/fm-brief.sh" sample-investigation sample --scout >/dev/null 2>&1
   scout="$home/data/sample-investigation/brief.md"
@@ -869,6 +943,7 @@ test_provenance_split_separates_rulings_from_inference() {
   local home id brief kind
   home="$TMP_ROOT/provenance-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" some-proj
   for kind in ship scout; do
     id="brief-provenance-$kind"
     if [ "$kind" = scout ]; then
@@ -914,6 +989,7 @@ test_ship_checklist_is_in_the_brief() {
   local home id brief
   home="$TMP_ROOT/checklist-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" some-proj
   id="brief-checklist-e1"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
@@ -956,11 +1032,7 @@ test_ship_checklist_is_in_the_brief() {
 test_ship_checklist_omits_unsatisfiable_items() {
   local home id brief
   home="$TMP_ROOT/checklist-omissions-home"
-  mkdir -p "$home/data"
-  cat > "$home/data/projects.md" <<'EOF'
-- direct-proj [direct-PR] - fixture for direct-PR mode (added 2026-07-01)
-- local-proj [local-only] - fixture for local-only mode (added 2026-07-01)
-EOF
+  write_registry "$home"
   for id_proj in "brief-omit-nomistakes:no-registry-proj" "brief-omit-directpr:direct-proj" "brief-omit-localonly:local-proj"; do
     id=${id_proj%%:*}
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "${id_proj##*:}" >/dev/null 2>&1
@@ -980,10 +1052,7 @@ EOF
 test_checklist_evidence_depth_is_proportional() {
   local home id brief
   home="$TMP_ROOT/checklist-fixes-home"
-  mkdir -p "$home/data"
-  cat > "$home/data/projects.md" <<'EOF'
-- local-proj [local-only] - fixture for a repo with no remote (added 2026-07-01)
-EOF
+  write_registry "$home"
   id="brief-checklist-fixes-e2"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
@@ -1002,6 +1071,7 @@ test_orientation_step_precedes_the_work() {
   local home brief kind id
   home="$TMP_ROOT/orient-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" some-proj
   for kind in ship scout; do
     id="brief-orient-$kind"
     if [ "$kind" = scout ]; then
@@ -1030,9 +1100,8 @@ test_orientation_step_precedes_the_work() {
 # Curated notes are stored per session location, under a directory named by
 # mangling that location's absolute path (every non-alphanumeric becomes "-").
 # A crewmate worktree has a different absolute path, so it loads none of them
-# unless the brief names them. Both locations this scaffold can derive exactly -
-# the firstmate clone, and the clone's origin when that origin is a local path -
-# are named.
+# unless the brief names them. The canonical checkout and its local-path origin
+# are the only locations this scaffold may derive exactly.
 test_project_memory_paths_are_named_when_they_exist() {
   local home store captain clone brief id
   home="$TMP_ROOT/memory-home"
@@ -1042,6 +1111,7 @@ test_project_memory_paths_are_named_when_they_exist() {
   mkdir -p "$home/data" "$home/projects"
   fm_git_init_commit "$captain"
   git clone --quiet "$captain" "$clone"
+  printf -- '- Widget [validated-main] - canonical widget\n  path: %s\n' "$captain" > "$home/data/projects.md"
   mkdir -p "$store/projects/$(store_key_for "$captain")/memory"
   mkdir -p "$store/projects/$(store_key_for "$clone")/memory"
   mkdir -p "$store/projects/-Users-someone-projects-Godot-OtherThing/memory"
@@ -1055,8 +1125,8 @@ test_project_memory_paths_are_named_when_they_exist() {
     "brief did not explain why the notes are invisible to this copy"
   assert_grep "$store/projects/$(store_key_for "$captain")/memory" "$brief" \
     "brief missed the notes under the captain checkout the clone points at"
-  assert_grep "$store/projects/$(store_key_for "$clone")/memory" "$brief" \
-    "brief missed the notes under the firstmate clone"
+  assert_no_grep "$store/projects/$(store_key_for "$clone")/memory" "$brief" \
+    "brief offered notes from the retained managed clone"
   assert_no_grep "OtherThing" "$brief" "brief offered another project's notes"
 
   # Scouts read repositories too, so they get the same pointer.
@@ -1077,12 +1147,14 @@ test_project_memory_paths_are_named_when_they_exist() {
 # Handing over the wrong project's owner-level context is the failure that must
 # never happen; finding nothing is the acceptable outcome.
 test_project_memory_never_resolves_to_another_project() {
-  local home store clone brief id
+  local home store clone brief id canonical
   home="$TMP_ROOT/memory-collision-home"
   store="$TMP_ROOT/memory-collision-store"
   clone="$home/projects/Dungeon"
+  canonical="$TMP_ROOT/memory-collision-canonical/Dungeon"
   mkdir -p "$home/data" "$home/projects"
-  fm_git_init_commit "$clone"
+  fm_git_init_commit "$canonical"
+  printf -- '- Dungeon [validated-main] - canonical dungeon\n  path: %s\n' "$canonical" > "$home/data/projects.md"
   mkdir -p "$store/projects/-captain-projects-Godot-Gacha-Dungeon/memory"
   seed_store_transcript "$store/projects/-captain-projects-Godot-Gacha-Dungeon" \
     "/captain/projects/Godot/Gacha Dungeon"
@@ -1099,10 +1171,11 @@ test_project_memory_never_resolves_to_another_project() {
   # real directory named exactly for the project; anything else is unproven.
   home="$TMP_ROOT/memory-foreign-origin-home"
   store="$TMP_ROOT/memory-foreign-origin-store"
-  clone="$home/projects/Widget"
+  clone="$TMP_ROOT/memory-foreign-canonical/Widget"
   mkdir -p "$home/data" "$home/projects"
   fm_git_init_commit "$TMP_ROOT/memory-foreign-origin/Widgets"
   git clone --quiet "$TMP_ROOT/memory-foreign-origin/Widgets" "$clone"
+  printf -- '- Widget [validated-main] - canonical widget\n  path: %s\n' "$clone" > "$home/data/projects.md"
   mkdir -p "$store/projects/$(store_key_for "$TMP_ROOT/memory-foreign-origin/Widgets")/memory"
 
   id="brief-memory-collision-i2"
@@ -1119,12 +1192,15 @@ test_project_memory_never_resolves_to_another_project() {
 # `mkdir -p`, or anything that never became a clone - would otherwise hand back
 # firstmate's OWN origin and offer that home's notes as the project's.
 test_project_memory_ignores_an_ancestor_repository_origin() {
-  local home store captain brief id
+  local home store captain canonical brief id
   home="$TMP_ROOT/memory-ancestor-home"
   store="$TMP_ROOT/memory-ancestor-store"
   captain="$TMP_ROOT/memory-ancestor-origin/Widget"
+  canonical="$TMP_ROOT/memory-ancestor-canonical/Widget"
   mkdir -p "$home/data" "$home/projects/Widget" "$captain"
   fm_git_init_commit "$home"
+  fm_git_init_commit "$canonical"
+  printf -- '- Widget [validated-main] - canonical widget\n  path: %s\n' "$canonical" > "$home/data/projects.md"
   git -C "$home" remote add origin "$captain"
   mkdir -p "$store/projects/$(store_key_for "$captain")/memory"
 
@@ -1147,12 +1223,13 @@ test_project_memory_confirms_a_candidate_by_its_recorded_cwd() {
   local home store clone owner brief id
   home="$TMP_ROOT/memory-cwd-home"
   store="$TMP_ROOT/memory-cwd-store"
-  clone="$home/projects/Widget"
+  clone="$TMP_ROOT/memory-cwd-canonical/Widget"
   # The owner's checkout is not on this machine at all - only the store knows it.
   owner="/captain/projects/Godot/Widget"
   mkdir -p "$home/data" "$home/projects"
   fm_git_init_commit "$clone"
   git -C "$clone" remote add origin "https://github.com/someone/Widget.git"
+  printf -- '- Widget [validated-main] - canonical widget\n  path: %s\n' "$clone" > "$home/data/projects.md"
   mkdir -p "$store/projects/$(mangle_path "$owner")/memory"
   seed_store_transcript "$store/projects/$(mangle_path "$owner")" "$owner"
 
@@ -1174,11 +1251,12 @@ test_project_memory_drops_a_candidate_with_no_recorded_cwd() {
   local home store clone owner brief id
   home="$TMP_ROOT/memory-nocwd-home"
   store="$TMP_ROOT/memory-nocwd-store"
-  clone="$home/projects/Widget"
+  clone="$TMP_ROOT/memory-nocwd-canonical/Widget"
   owner="/captain/projects/Godot/Widget"
   mkdir -p "$home/data" "$home/projects"
   fm_git_init_commit "$clone"
   git -C "$clone" remote add origin "https://github.com/someone/Widget.git"
+  printf -- '- Widget [validated-main] - canonical widget\n  path: %s\n' "$clone" > "$home/data/projects.md"
   # Notes that suffix-match the project, with no transcript to confirm them.
   mkdir -p "$store/projects/$(mangle_path "$owner")/memory"
 
@@ -1210,9 +1288,10 @@ test_project_memory_says_nothing_when_absent() {
   local home store clone brief id
   home="$TMP_ROOT/memory-absent-home"
   store="$TMP_ROOT/memory-absent-store"
-  clone="$home/projects/Gadget"
+  clone="$TMP_ROOT/memory-absent-canonical/Gadget"
   mkdir -p "$home/data" "$home/projects"
   fm_git_init_commit "$clone"
+  printf -- '- Gadget [validated-main] - canonical gadget\n  path: %s\n' "$clone" > "$home/data/projects.md"
   mkdir -p "$store/projects/-Users-someone-projects-Godot-Widget/memory"
 
   id="brief-memory-absent-g1"
@@ -1247,6 +1326,7 @@ test_scout_checklist_is_reduced() {
   local home brief id
   home="$TMP_ROOT/scout-checklist-home"
   mkdir -p "$home/data"
+  write_project_registry "$home" some-proj
   id="brief-scout-checklist-h1"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
@@ -1296,6 +1376,7 @@ test_design_intake_scaffold_is_read_only_and_bounded() {
   home="$TMP_ROOT/design-intake-home"
   id="delivery-design-intake"
   mkdir -p "$home/data" "$home/state"
+  write_project_registry "$home" Delivery
 
   help=$("$ROOT/bin/fm-brief.sh" --help)
   assert_contains "$help" "--design-intake" "fm-brief.sh help omitted --design-intake"
@@ -1358,6 +1439,7 @@ test_target_design_intake_scaffold_separates_questionnaire_from_audit() {
   home="$TMP_ROOT/target-design-intake-home"
   id="martyrdome-target-design-intake"
   mkdir -p "$home/data" "$home/state"
+  write_project_registry "$home" Martyrdome
 
   help=$("$ROOT/bin/fm-brief.sh" --help)
   assert_contains "$help" "--target-design-intake" \
@@ -1500,6 +1582,7 @@ test_design_intake_preserves_nonship_brief_bytes() {
   base_root="$TMP_ROOT/design-intake-approved-base"
   home="$TMP_ROOT/design-intake-byte-home"
   mkdir -p "$base_root" "$home/data" "$home/state"
+  write_project_registry "$home" Delivery
   cp -R "$ROOT/bin" "$base_root/bin"
   git -C "$ROOT" show "$approved:bin/fm-brief.sh" > "$base_root/bin/fm-brief.sh" \
     || fail "could not read the approved Companion fm-brief.sh baseline"
@@ -1550,6 +1633,7 @@ test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
+test_scout_refuses_unmigrated_project_before_writing_brief
 test_ship_brief_scaffolds_only_two_core_doctrine_fields
 test_doctrine_contract_is_proportional_and_allows_one_shared_oracle
 test_doctrine_contract_ignores_fenced_examples

@@ -135,7 +135,7 @@ family_for_basename() {
     fm-kimi-harness.test.sh|fm-herdr-lab.test.sh|fm-instruction-owners.test.sh|\
     fm-learning-promote.test.sh|fm-promote.test.sh|fm-lint.test.sh|\
     fm-install-herdr.test.sh|fm-nm-test-contract.test.sh|fm-no-mistakes-ownership.test.sh|\
-    fm-operational-input.test.sh|fm-peer-home.test.sh|fm-pi-primary-types.test.sh|\
+    fm-operational-input.test.sh|fm-peer-home.test.sh|fm-pi-primary-types.test.sh|fm-project-path.test.sh|\
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|fm-stow-contract.test.sh|\
     fm-subagent-pretool-check.test.sh|\
     fm-supervision-instructions.test.sh|fm-tmux-submit-busy.test.sh|fm-transition-lib.test.sh|\
@@ -181,7 +181,7 @@ family_for_basename() {
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
       ;;
-    fm-pr-check-security.test.sh|fm-pr-merge.test.sh|fm-merge-main.test.sh|\
+    fm-pr-check-security.test.sh|fm-pr-merge.test.sh|fm-merge-main.test.sh|fm-merge-local.test.sh|\
     fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge
       ;;
@@ -697,6 +697,17 @@ families_for_changed_path() {
     bin/fm-config-inherit-lib.sh|bin/fm-config-push.sh|bin/fm-shared*)
       printf '%s\n' secondmate
       ;;
+    bin/fm-project-lib.sh|bin/fm-project-mode.sh|bin/fm-project-path-set.sh|bin/fm-project-resolve.sh)
+      printf '%s\n' pure-contract-unit
+      printf '%s\n' session-bootstrap
+      printf '%s\n' backend-dispatch
+      printf '%s\n' secondmate
+      printf '%s\n' pr-forge
+      ;;
+    bin/fm-git-worktree-lib.sh)
+      printf '%s\n' session-bootstrap
+      printf '%s\n' pr-forge
+      ;;
     bin/fm-session-start.sh|bin/fm-bootstrap.sh|bin/fm-fleet-sync.sh|\
     bin/fm-sessionstart-nudge.sh|bin/fm-tangle*|bin/fm-update.sh|\
     bin/fm-gate-refuse*|bin/fm-lock*)
@@ -754,7 +765,7 @@ families_for_changed_path() {
     bin/fm-brief.sh|bin/fm-doctrine-contract.sh|bin/fm-ensure-agents-md.sh|bin/fm-crew-state.sh|bin/fm-learning-promote.sh|\
     bin/fm-decision-hold.sh|bin/fm-supervision*|bin/fm-transition-lib.sh|\
     bin/fm-tmux-lib.sh|bin/fm-marker-lib.sh|bin/fm-operational-input.sh|bin/fm-tasks-axi-lib.sh|\
-    bin/fm-primary-scope-lib.sh|bin/fm-project-mode.sh|bin/fm-promote.sh|bin/fm-validate.sh|\
+    bin/fm-primary-scope-lib.sh|bin/fm-promote.sh|bin/fm-validate.sh|\
     bin/fm-ff-lib.sh|bin/fm-gotmp*|bin/fm-codex-*|bin/*pretool*)
       printf '%s\n' pure-contract-unit
       ;;

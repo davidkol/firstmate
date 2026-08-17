@@ -38,23 +38,23 @@
 - Produces: `fm-project-resolve.sh <project-id>` printing `id<TAB>path<TAB>mode<TAB>yolo`.
 - Produces: `fm-project-path-set.sh <project-id> <absolute-repository-path> [--mode <mode>]` for an atomic private-registry migration.
 
-- [ ] **Step 1: Write the failing resolver tests**
+- [x] **Step 1: Write the failing resolver tests**
 
 Create literal registry fixtures for a valid canonical path, missing path, relative path, non-root path, duplicate id, duplicate physical path, and a primary-home path inside `FM_HOME/projects`.
 Assert that a secondmate-marked fixture retains its clone-path exception.
 
-- [ ] **Step 2: Run the resolver test and verify the expected failures**
+- [x] **Step 2: Run the resolver test and verify the expected failures**
 
 Run: `bash tests/fm-project-path.test.sh`
 Expected: FAIL because the resolver and migration commands do not exist.
 
-- [ ] **Step 3: Implement the minimal resolver and migration commands**
+- [x] **Step 3: Implement the minimal resolver and migration commands**
 
 Parse top-level project entries plus one following indented `path:` field.
 Canonicalize with `pwd -P`, require `git rev-parse --show-toplevel` to equal the path, reject duplicate physical identities, and make `fm-project-mode.sh` consume the same parsed mode and yolo result.
 Make migration use a temporary file plus atomic rename and refuse while any live task metadata names the prior path.
 
-- [ ] **Step 4: Run the focused resolver test**
+- [x] **Step 4: Run the focused resolver test**
 
 Run: `bash tests/fm-project-path.test.sh`
 Expected: PASS with every refusal leaving the registry byte-identical.
@@ -81,21 +81,21 @@ git commit -m "feat(projects): resolve canonical repositories"
 
 **Interfaces:**
 - Consumes: `fm_project_resolve` and `fm_project_common_dir` from Task 1.
-- Produces: task metadata fields `project_id=`, `project=`, and `project_git_common=`.
+- Produces: task metadata fields `project_id=` and `project=`, plus a launch-time Git common-directory identity assertion.
 
-- [ ] **Step 1: Add failing consumer tests**
+- [x] **Step 1: Add failing consumer tests**
 
 Assert that briefing and synchronization use the registered external path while a retained `$FM_HOME/projects/<id>` clone is ignored.
 Assert that a peer spawn records the canonical id, path, and Git common directory.
 Assert that a Treehouse result with a different Git common directory is rejected before worker launch.
 Assert that secondmate fixtures continue using their provisioned clones.
 
-- [ ] **Step 2: Run only the affected tests and verify the failures**
+- [x] **Step 2: Run only the affected tests and verify the failures**
 
 Run: `bash tests/fm-brief.test.sh && bash tests/fm-fleet-sync.test.sh && bash tests/fm-spawn-worktree-settle.test.sh && bash tests/fm-peer-home.test.sh`
 Expected: FAIL where scripts still infer `$FM_HOME/projects/<id>`.
 
-- [ ] **Step 3: Replace path inference with the resolver**
+- [x] **Step 3: Replace path inference with the resolver**
 
 Make bare project ids resolve centrally.
 Make no-argument fleet synchronization enumerate registry ids instead of directory entries for primary and peer homes.
@@ -103,7 +103,7 @@ Preserve current clone enumeration for marked secondmate homes.
 Make peer seeding write canonical path bindings rather than clone projects.
 Add the Git common-directory identity assertion after Treehouse acquisition and before launch.
 
-- [ ] **Step 4: Re-run the affected tests**
+- [x] **Step 4: Re-run the affected tests**
 
 Run: `bash tests/fm-brief.test.sh && bash tests/fm-fleet-sync.test.sh && bash tests/fm-spawn-worktree-settle.test.sh && bash tests/fm-peer-home.test.sh`
 Expected: PASS.
@@ -118,7 +118,7 @@ git commit -m "feat(projects): anchor work to canonical repositories"
 ### Task 3: Preserve non-conflicting untracked files during guarded updates
 
 **Files:**
-- Create: `bin/fm-git-update-lib.sh`
+- Create: `bin/fm-git-worktree-lib.sh`
 - Modify: `bin/fm-fleet-sync.sh`
 - Modify: `bin/fm-merge-main.sh`
 - Modify: `bin/fm-merge-local.sh`
@@ -126,28 +126,28 @@ git commit -m "feat(projects): anchor work to canonical repositories"
 - Modify: `tests/fm-merge-main.test.sh`
 
 **Interfaces:**
-- Produces: `fm_git_require_clean_tracked <repository>`.
-- Produces: `fm_git_preflight_tree_update <repository> <current-treeish> <target-treeish>` using a temporary index and `git read-tree -n -m -u`.
-- Produces: `fm_git_verify_task_project_identity <meta-file>` for canonical-path and common-directory checks before landing.
+- Produces: `fm_git_has_tracked_changes <repository>`.
+- Produces: `fm_git_update_preflight <repository> <target-treeish>` using `git read-tree -n -m -u`.
+- Produces: `fm_project_verify_task_identity <project-id> <recorded-project> <worktree>` for exact canonical-path and common-directory checks before landing or teardown.
 
-- [ ] **Step 1: Add failing update tests**
+- [x] **Step 1: Add failing update tests**
 
 In real local Git fixtures, prove that a non-conflicting `notes.md` survives synchronization and landing.
 Prove that tracked, staged, unmerged, wrong-branch, divergence, remote-moved, exact untracked-file collision, and file-directory collision cases refuse without changing `HEAD`, index bytes, or working-file hashes.
 
-- [ ] **Step 2: Run the focused update tests and verify the failures**
+- [x] **Step 2: Run the focused update tests and verify the failures**
 
 Run: `bash tests/fm-fleet-sync.test.sh && bash tests/fm-merge-main.test.sh`
 Expected: FAIL because current scripts reject every untracked file and do not bind landing to registry identity.
 
-- [ ] **Step 3: Implement the shared guarded-update helpers**
+- [x] **Step 3: Implement the shared guarded-update helpers**
 
 Separate tracked and index dirt from untracked files.
-Initialize a temporary index from the current tree and use Git's dry-run read-tree update against the actual worktree to detect both exact and structural collisions.
+Use Git's dry-run read-tree update against the actual index and worktree to detect both exact and structural collisions without changing either.
 Use the same helpers in synchronization and both local landing paths.
 Before validated-main landing, re-resolve `project_id` and require the metadata path and common directory to match the current canonical repository.
 
-- [ ] **Step 4: Re-run the focused update tests**
+- [x] **Step 4: Re-run the focused update tests**
 
 Run: `bash tests/fm-fleet-sync.test.sh && bash tests/fm-merge-main.test.sh`
 Expected: PASS with untracked preservation and refusal invariants proven.
@@ -155,7 +155,7 @@ Expected: PASS with untracked preservation and refusal invariants proven.
 - [ ] **Step 5: Commit the guarded-update unit**
 
 ```bash
-git add bin/fm-git-update-lib.sh bin/fm-fleet-sync.sh bin/fm-merge-main.sh bin/fm-merge-local.sh tests/fm-fleet-sync.test.sh tests/fm-merge-main.test.sh
+git add bin/fm-git-worktree-lib.sh bin/fm-fleet-sync.sh bin/fm-merge-main.sh bin/fm-merge-local.sh tests/fm-fleet-sync.test.sh tests/fm-merge-main.test.sh tests/fm-merge-local.test.sh
 git commit -m "fix(git): preserve safe untracked files on landing"
 ```
 
@@ -164,24 +164,21 @@ git commit -m "fix(git): preserve safe untracked files on landing"
 **Files:**
 - Modify: `AGENTS.md`
 - Modify: `.agents/skills/project-management/SKILL.md`
-- Modify: `.agents/skills/secondmate-provisioning/SKILL.md`
-- Modify: `docs/architecture.md`
 - Modify: `docs/configuration.md`
-- Modify: `docs/scripts.md`
-- Modify: `docs/documentation-audiences.json`
+- Modify: `README.md`
 - Modify outside the branch after code verification: `/Users/davidkol/fm-homes/martyrdome/data/projects.md`
 
 **Interfaces:**
 - Consumes: migration command from Task 1.
 - Produces: one documented canonical repository model and an explicit secondmate exception.
 
-- [ ] **Step 1: Update the single owners**
+- [x] **Step 1: Update the single owners**
 
 Replace primary and peer clone language with canonical repository language.
 Keep exact parser and mutation mechanics in the resolver and migration script headers.
 Keep AGENTS.md to trigger, safety, and ownership statements, with conditional detail in the project-management skill.
 
-- [ ] **Step 2: Run maintained-document checks**
+- [x] **Step 2: Run maintained-document checks**
 
 Run: `bin/fm-doc-audience-check.sh && git diff --check`
 Expected: both commands exit zero.
@@ -207,12 +204,12 @@ Expected: the registry records the canonical path and validated-main mode while 
 - Consumes: the completed canonical resolver, Treehouse anchoring, and guarded landing path.
 - Produces: direct evidence that the captain's approved workflow works without a pull request.
 
-- [ ] **Step 1: Run the focused automated set**
+- [x] **Step 1: Run the focused automated set**
 
 Run: `bash tests/fm-project-path.test.sh && bash tests/fm-spawn-worktree-settle.test.sh && bash tests/fm-fleet-sync.test.sh && bash tests/fm-merge-main.test.sh && bin/fm-doc-audience-check.sh && bin/fm-lint.sh && git diff --check`
 Expected: every command exits zero.
 
-- [ ] **Step 2: Run one real Treehouse identity smoke**
+- [x] **Step 2: Run one real Treehouse identity smoke**
 
 Acquire a temporary Treehouse worktree from a scratch repository, verify distinct worktree roots and equal physical Git common directories, then return it through Treehouse.
 Expected: identity checks pass and the scratch primary checkout remains unchanged.

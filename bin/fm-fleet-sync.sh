@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Refresh project clones: fast-forward the checked-out local default branch to
+# Refresh canonical project checkouts: fast-forward the checked-out local default branch to
 # origin/<default> when safe, and prune local branches whose upstream tracking
 # branch is gone (the remote branch was deleted, i.e. its PR merged) and that no
 # worktree still needs.
@@ -19,20 +19,18 @@
 # killed mid-write - e.g. a timed-out bootstrap sync or a teardown process kill),
 # it is retried with a bounded wait and removed only when provably stale; see
 # fetch_with_packed_refs_lock_guard and the FM_FLEET_SYNC_PACKED_REFS_LOCK_* knobs.
-# Usage: fm-fleet-sync.sh [<project-dir-or-name>]
-# The single-project form accepts either a path (absolute, or relative to the
-# caller's cwd) or a bare "<name>"/"projects/<name>" form, resolved against
-# this home's projects dir ($FM_HOME/projects, or $FM_PROJECTS_OVERRIDE).
-# Bare names and "projects/<name>" forms prefer this home's projects dir before
-# falling back to an explicit path. Example: from anywhere,
-# `fm-fleet-sync.sh dotfiles-private` syncs just that one clone, same as
-# passing its full projects/dotfiles-private path.
+# Usage: fm-fleet-sync.sh [<project-id-or-path>]
+# Every form resolves through data/projects.md. The no-argument form enumerates
+# only registered projects, so a retained managed clone is inert after migration.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
+# shellcheck source=bin/fm-project-lib.sh
+. "$SCRIPT_DIR/fm-project-lib.sh"
+# shellcheck source=bin/fm-git-worktree-lib.sh
+. "$SCRIPT_DIR/fm-git-worktree-lib.sh"
 # shellcheck source=bin/fm-lock-lib.sh
 . "$SCRIPT_DIR/fm-lock-lib.sh"
 FM_LOCK_LOG_PREFIX=fleet-sync
@@ -55,7 +53,7 @@ if ! [[ "$FLEET_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS" =~ ^([0-9]+([.][0-9]*)?|[
 fi
 
 usage() {
-  echo "usage: fm-fleet-sync.sh [<project-dir-or-name>]" >&2
+  echo "usage: fm-fleet-sync.sh [<project-id-or-path>]" >&2
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -63,49 +61,6 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   exit 0
 fi
 [ $# -le 1 ] || { usage; exit 1; }
-
-project_label() {
-  case "$PROJ" in
-    "$PROJECTS"/*) basename "$PROJ" ;;
-    projects/*) basename "$PROJ" ;;
-    *) printf '%s\n' "$PROJ" ;;
-  esac
-}
-
-# resolve_project_arg <arg>: accept a path (used as-is when it already exists)
-# or a bare/"projects/<name>" project name, resolved against $PROJECTS. Falls
-# back to the original argument unresolved so a genuinely bad path still hits
-# sync_project's existing "not a directory" skip.
-resolve_project_arg() {
-  local arg=$1 candidate
-  case "$arg" in
-    projects/*)
-      candidate="$PROJECTS/${arg#projects/}"
-      if [ -d "$candidate" ]; then
-        printf '%s\n' "$candidate"
-        return 0
-      fi
-      ;;
-    */*)
-      if [ -d "$arg" ]; then
-        printf '%s\n' "$arg"
-        return 0
-      fi
-      ;;
-    *)
-      candidate="$PROJECTS/$arg"
-      if [ -d "$candidate" ]; then
-        printf '%s\n' "$candidate"
-        return 0
-      fi
-      if [ -d "$arg" ]; then
-        printf '%s\n' "$arg"
-        return 0
-      fi
-      ;;
-  esac
-  printf '%s\n' "$arg"
-}
 
 default_branch() {
   local ref branch
@@ -286,29 +241,21 @@ stuck_state() {
 report_stuck() {
   local state=$1 behind
   behind=$(git -C "$PROJ" rev-list --count "HEAD..$BASE" 2>/dev/null) || behind="?"
-  echo "$label: STUCK: on $state, $behind commits behind $BASE - needs attention"
+  echo "$label: STUCK: on $state, $behind commits behind $BASE - needs attention at $PROJ"
 }
 
 sync_project() {
-  PROJ=$1
-  label=$(project_label)
-
-  if [ ! -d "$PROJ" ]; then
-    echo "$label: skipped: not a directory"
-    return 0
-  fi
-  if ! git -C "$PROJ" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo "$label: skipped: not a git repo"
-    return 0
-  fi
-  mode_line=$("$FM_ROOT/bin/fm-project-mode.sh" "$label" 2>/dev/null || echo "no-mistakes off")
-  mode=${mode_line%% *}
+  local project_id=$1
+  fm_project_resolve "$project_id" || return 1
+  PROJ=$FM_PROJECT_PATH
+  label=$FM_PROJECT_ID
+  mode=$FM_PROJECT_MODE
   if [ "$mode" = "local-only" ]; then
-    echo "$label: skipped: local-only project"
+    echo "$label: skipped: local-only project at $PROJ"
     return 0
   fi
   if ! git -C "$PROJ" remote get-url origin >/dev/null 2>&1; then
-    echo "$label: skipped: no origin remote"
+    echo "$label: skipped: no origin remote at $PROJ"
     return 0
   fi
 
@@ -317,25 +264,25 @@ sync_project() {
     if [ -n "$FETCH_OUTPUT" ]; then
       reason="$reason: $(first_line "$FETCH_OUTPUT")"
     fi
-    echo "$label: skipped: $reason"
+    echo "$label: skipped: $reason at $PROJ"
     return 0
   fi
 
   prune_gone_branches || true
 
   DEFAULT=$(default_branch) || {
-    echo "$label: skipped: cannot determine default branch"
+    echo "$label: skipped: cannot determine default branch at $PROJ"
     return 0
   }
   BASE="origin/$DEFAULT"
   if ! git -C "$PROJ" rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
-    echo "$label: skipped: $BASE does not exist"
+    echo "$label: skipped: $BASE does not exist at $PROJ"
     return 0
   fi
 
   cur=$(git -C "$PROJ" symbolic-ref --short HEAD 2>/dev/null || echo "")
   dirty=no
-  [ -z "$(git -C "$PROJ" status --porcelain 2>/dev/null | head -1)" ] || dirty=yes
+  fm_git_has_tracked_changes "$PROJ" && dirty=yes
   recovered=no
 
   if [ "$cur" != "$DEFAULT" ]; then
@@ -368,23 +315,23 @@ sync_project() {
   fi
 
   if ! git -C "$PROJ" rev-parse --verify --quiet "$DEFAULT^{commit}" >/dev/null; then
-    echo "$label: skipped: local $DEFAULT does not exist"
+    echo "$label: skipped: local $DEFAULT does not exist at $PROJ"
     return 0
   fi
 
   local_rev=$(git -C "$PROJ" rev-parse "$DEFAULT") || {
-    echo "$label: skipped: cannot read local $DEFAULT"
+    echo "$label: skipped: cannot read local $DEFAULT at $PROJ"
     return 0
   }
   remote_rev=$(git -C "$PROJ" rev-parse "$BASE") || {
-    echo "$label: skipped: cannot read $BASE"
+    echo "$label: skipped: cannot read $BASE at $PROJ"
     return 0
   }
   if [ "$local_rev" = "$remote_rev" ]; then
     if [ "$recovered" = yes ]; then
-      echo "$label: recovered: re-attached $DEFAULT (already current)"
+      echo "$label: recovered: re-attached $DEFAULT (already current) at $PROJ"
     else
-      echo "$label: already current"
+      echo "$label: already current at $PROJ"
     fi
     return 0
   fi
@@ -394,37 +341,51 @@ sync_project() {
   fi
 
   before=$(git -C "$PROJ" rev-parse --short "$DEFAULT") || {
-    echo "$label: skipped: cannot read local $DEFAULT"
+    echo "$label: skipped: cannot read local $DEFAULT at $PROJ"
     return 0
   }
+  if ! preflight=$(fm_git_update_preflight "$PROJ" "$BASE" 2>&1); then
+    reason="untracked working-tree collision"
+    if [ -n "$preflight" ]; then
+      reason="$reason: $(first_line "$preflight")"
+    fi
+    echo "$label: skipped: $reason at $PROJ"
+    return 0
+  fi
   if ! merge_output=$(git -C "$PROJ" merge --ff-only "$BASE" 2>&1); then
     reason="fast-forward failed"
     if [ -n "$merge_output" ]; then
       reason="$reason: $(first_line "$merge_output")"
     fi
-    echo "$label: skipped: $reason"
+    echo "$label: skipped: $reason at $PROJ"
     return 0
   fi
   after=$(git -C "$PROJ" rev-parse --short "$DEFAULT") || {
-    echo "$label: skipped: fast-forward completed but cannot read local $DEFAULT"
+    echo "$label: skipped: fast-forward completed but cannot read local $DEFAULT at $PROJ"
     return 0
   }
   if [ "$recovered" = yes ]; then
-    echo "$label: recovered: re-attached $DEFAULT, synced $before..$after"
+    echo "$label: recovered: re-attached $DEFAULT, synced $before..$after at $PROJ"
   else
-    echo "$label: synced $before..$after"
+    echo "$label: synced $before..$after at $PROJ"
   fi
   return 0
 }
 
 if [ $# -eq 1 ]; then
-  sync_project "$(resolve_project_arg "$1")"
-  exit 0
+  fm_project_resolve_arg "$1" || exit 1
+  sync_project "$FM_PROJECT_ID"
+  exit $?
 fi
 
-[ -d "$PROJECTS" ] || exit 0
-for proj in "$PROJECTS"/*; do
-  [ -e "$proj" ] || continue
-  [ -d "$proj" ] || continue
-  sync_project "$proj"
-done
+fm_project_init
+[ -f "$FM_PROJECT_REGISTRY" ] || exit 0
+records=$(fm_project_records)
+rc=0
+while IFS="$(printf '\034')" read -r project_id _; do
+  [ -n "$project_id" ] || continue
+  sync_project "$project_id" || rc=1
+done <<EOF
+$records
+EOF
+exit "$rc"

@@ -38,7 +38,7 @@ BRANCH="fm/$TASK"
 make_case() {
   local name=$1 mode=${2:-validated-main} case_dir
   case_dir="$TMP_ROOT/$name"
-  mkdir -p "$case_dir/state"
+  mkdir -p "$case_dir/state" "$case_dir/home/data" "$case_dir/home/projects"
 
   git init -q -b main "$case_dir/seed"
   printf 'seed\n' > "$case_dir/seed/README.md"
@@ -52,10 +52,14 @@ make_case() {
   git -C "$case_dir/project" add task.txt
   git -C "$case_dir/project" commit -qm 'task: implement'
   git -C "$case_dir/project" checkout -q main
+  git -C "$case_dir/project" worktree add --quiet "$case_dir/wt" "$BRANCH"
+
+  printf -- '- fixture [validated-main] - test project\n  path: %s\n' "$case_dir/project" > "$case_dir/home/data/projects.md"
 
   fm_write_meta "$case_dir/state/$TASK.meta" \
     "window=fm-$TASK" \
     "worktree=$case_dir/wt" \
+    "project_id=fixture" \
     "project=$case_dir/project" \
     "kind=ship" \
     "mode=$mode"
@@ -70,11 +74,9 @@ publish_branch() {
 # Add one commit to the task branch without publishing it.
 commit_on_branch() {
   local case_dir=$1 text=$2
-  git -C "$case_dir/project" checkout -q "$BRANCH"
-  printf '%s\n' "$text" > "$case_dir/project/extra.txt"
-  git -C "$case_dir/project" add extra.txt
-  git -C "$case_dir/project" commit -qm "task: $text"
-  git -C "$case_dir/project" checkout -q main
+  printf '%s\n' "$text" > "$case_dir/wt/extra.txt"
+  git -C "$case_dir/wt" add extra.txt
+  git -C "$case_dir/wt" commit -qm "task: $text"
 }
 
 # Advance the host's default branch from a separate clone, so the project's
@@ -91,6 +93,7 @@ advance_remote_main() {
 run_merge_main() {
   local case_dir=$1; shift
   FM_ROOT_OVERRIDE="$ROOT" \
+  FM_HOME="$case_dir/home" \
   FM_STATE_OVERRIDE="$case_dir/state" \
     "$MERGE_MAIN" "$@"
 }
@@ -190,8 +193,6 @@ test_landing_keeps_worktree_work_provably_landed() {
   case_dir=$(make_case worktree-landed)
   publish_branch "$case_dir"
   wt="$case_dir/wt"
-  git -C "$case_dir/project" worktree add --quiet "$wt" "$BRANCH"
-
   run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr" \
     || fail "worktree-landed: fm-merge-main should succeed"
 
@@ -398,11 +399,82 @@ test_refuses_dirty_project() {
   set -e
 
   expect_code 1 "$rc" "dirty-project: fm-merge-main should refuse a dirty checkout"
-  assert_grep 'dirty working tree' "$case_dir/stderr" \
+  assert_grep 'tracked, staged, or unmerged' "$case_dir/stderr" \
     "dirty-project: the refusal should name the dirty working tree"
   [ "$(remote_main_sha "$case_dir")" = "$before" ] \
     || fail "dirty-project: the host's main must not move on a refusal"
   pass "fm-merge-main refuses a dirty project checkout"
+}
+
+test_preserves_nonconflicting_untracked_file() {
+  local case_dir rc branch_sha
+  case_dir=$(make_case untracked-safe)
+  publish_branch "$case_dir"
+  branch_sha=$(git -C "$case_dir/project" rev-parse "$BRANCH")
+  printf 'captain notes\n' > "$case_dir/project/notes.md"
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "untracked-safe: nonconflicting untracked file should survive landing"
+  [ "$(cat "$case_dir/project/notes.md")" = "captain notes" ] || fail "untracked-safe: notes.md was changed"
+  [ "$(git -C "$case_dir/project" rev-parse main)" = "$branch_sha" ] || fail "untracked-safe: main did not land"
+  pass "fm-merge-main preserves a nonconflicting untracked file while landing"
+}
+
+test_refuses_exact_untracked_collision_without_mutation() {
+  local case_dir rc before index_before index_bytes_before
+  case_dir=$(make_case untracked-exact-collision)
+  printf 'tracked task version\n' > "$case_dir/wt/collision.txt"
+  git -C "$case_dir/wt" add collision.txt
+  git -C "$case_dir/wt" commit -qm 'task: add collision target'
+  publish_branch "$case_dir"
+  printf 'captain local version\n' > "$case_dir/project/collision.txt"
+  before=$(git -C "$case_dir/project" rev-parse HEAD)
+  index_before=$(git -C "$case_dir/project" write-tree)
+  index_bytes_before=$(cksum "$case_dir/project/.git/index")
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "untracked-exact-collision: landing should refuse"
+  assert_grep 'untracked' "$case_dir/stderr" "untracked-exact-collision: refusal did not identify the collision class"
+  [ "$(git -C "$case_dir/project" rev-parse HEAD)" = "$before" ] || fail "untracked-exact-collision: HEAD moved"
+  [ "$(git -C "$case_dir/project" write-tree)" = "$index_before" ] || fail "untracked-exact-collision: index changed"
+  [ "$(cksum "$case_dir/project/.git/index")" = "$index_bytes_before" ] || fail "untracked-exact-collision: index bytes changed"
+  [ "$(cat "$case_dir/project/collision.txt")" = "captain local version" ] || fail "untracked-exact-collision: local file changed"
+  pass "fm-merge-main refuses an exact untracked collision without mutation"
+}
+
+test_refuses_untracked_file_directory_collision_without_mutation() {
+  local case_dir rc before index_before index_bytes_before
+  case_dir=$(make_case untracked-directory-collision)
+  mkdir -p "$case_dir/wt/nest"
+  printf 'tracked task version\n' > "$case_dir/wt/nest/file.txt"
+  git -C "$case_dir/wt" add nest/file.txt
+  git -C "$case_dir/wt" commit -qm 'task: add nested file'
+  publish_branch "$case_dir"
+  printf 'captain local file\n' > "$case_dir/project/nest"
+  before=$(git -C "$case_dir/project" rev-parse HEAD)
+  index_before=$(git -C "$case_dir/project" write-tree)
+  index_bytes_before=$(cksum "$case_dir/project/.git/index")
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "untracked-directory-collision: landing should refuse"
+  assert_grep 'untracked' "$case_dir/stderr" "untracked-directory-collision: refusal did not identify the collision class"
+  [ "$(git -C "$case_dir/project" rev-parse HEAD)" = "$before" ] || fail "untracked-directory-collision: HEAD moved"
+  [ "$(git -C "$case_dir/project" write-tree)" = "$index_before" ] || fail "untracked-directory-collision: index changed"
+  [ "$(cksum "$case_dir/project/.git/index")" = "$index_bytes_before" ] || fail "untracked-directory-collision: index bytes changed"
+  [ "$(cat "$case_dir/project/nest")" = "captain local file" ] || fail "untracked-directory-collision: local file changed"
+  pass "fm-merge-main refuses a file-directory untracked collision without mutation"
 }
 
 test_refuses_project_without_origin() {
@@ -421,6 +493,24 @@ test_refuses_project_without_origin() {
   pass "fm-merge-main refuses a validated-main project that has no origin remote"
 }
 
+test_refuses_mismatched_canonical_identity() {
+  local case_dir rc before
+  case_dir=$(make_case identity-mismatch)
+  publish_branch "$case_dir"
+  sed -i.bak "s|^project=.*|project=$case_dir/wt|" "$case_dir/state/$TASK.meta"
+  before=$(git -C "$case_dir/project" rev-parse HEAD)
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "identity-mismatch: landing should refuse"
+  assert_grep 'PROJECT_IDENTITY_MISMATCH' "$case_dir/stderr" "identity-mismatch: refusal did not name repository identity"
+  [ "$(git -C "$case_dir/project" rev-parse HEAD)" = "$before" ] || fail "identity-mismatch: project HEAD moved"
+  pass "fm-merge-main refuses a linked-worktree path in place of the canonical checkout"
+}
+
 test_lands_published_head_and_pushes
 test_landing_keeps_worktree_work_provably_landed
 test_rejected_push_reports_and_preserves
@@ -433,4 +523,8 @@ test_refuses_diverged_branch
 test_refuses_when_host_main_moved
 test_lands_local_branch_when_nothing_published
 test_refuses_dirty_project
+test_preserves_nonconflicting_untracked_file
+test_refuses_exact_untracked_collision_without_mutation
+test_refuses_untracked_file_directory_collision_without_mutation
 test_refuses_project_without_origin
+test_refuses_mismatched_canonical_identity

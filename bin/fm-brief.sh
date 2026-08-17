@@ -120,7 +120,8 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
+# shellcheck source=bin/fm-project-lib.sh
+. "$SCRIPT_DIR/fm-project-lib.sh"
 KIND=ship
 HERDR_LAB=0
 DESIGN_INTAKE=0
@@ -285,6 +286,10 @@ exit 0
 fi
 
 REPO=${POS[1]}
+RESOLVED_PROJECT_PATH=
+fm_project_resolve "$REPO"
+REPO=$FM_PROJECT_ID
+RESOLVED_PROJECT_PATH=$FM_PROJECT_PATH
 
 # Reads back the absolute path a store directory's sessions actually ran in, from
 # the first `cwd` field of one of its session transcripts.
@@ -315,11 +320,11 @@ store_recorded_cwd() {
 # "Dungeon" to the notes of ".../Godot/Gacha Dungeon".
 # So a suffix match only selects candidates, and a candidate is offered only
 # once it is confirmed by one of two proofs.
-# The first proof is exact derivation: firstmate's clone at $PROJECTS/<repo>,
-# and that clone's origin when the origin is a local filesystem path rather than
+# The first proof is exact derivation from the canonical registry checkout,
+# and that checkout's origin when the origin is a local filesystem path rather than
 # a URL. Each must be a real directory whose basename is exactly the project
 # name.
-# $PROJECTS/<repo> must itself be a repository root, not merely a directory
+# The registered checkout must itself be a repository root, not merely a directory
 # inside one: `git -C` walks up to the nearest ancestor repository, and this
 # home's own `projects/` sits inside the firstmate repo, so a project directory
 # left as a plain directory would answer with firstmate's OWN origin.
@@ -338,7 +343,8 @@ project_memory_dirs() {
   [ -d "$base" ] || return 0
   clone_abs=""
   origin=""
-  clone="$PROJECTS/$repo"
+  clone=""
+  clone=$RESOLVED_PROJECT_PATH
   if [ -d "$clone" ] &&
      clone_abs=$(cd "$clone" && pwd -P) &&
      toplevel=$(git -C "$clone" rev-parse --show-toplevel 2>/dev/null) &&

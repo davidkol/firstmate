@@ -76,6 +76,7 @@ make_settle_case() {
   printf 'codex\n' > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   fm_git_init_commit "$stale"
+  printf -- '- project [validated-main] - canonical test project\n  path: %s\n' "$proj" > "$home/data/projects.md"
   mkdir -p "$home/data/$id"
   fm_write_ship_brief "$home/data/$id/brief.md" T0 \
     "tests/fm-spawn-worktree-settle.test.sh#$id => spawn launches the isolated task worktree"
@@ -116,6 +117,8 @@ test_single_stale_first_read_is_not_accepted() {
   assert_contains "$out" "spawned $id" "spawn did not report success"
   assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
     "meta did not record the settled worktree"
+  assert_grep "project_id=project" "$HOME_DIR/state/$id.meta" \
+    "meta did not record the canonical project id"
   assert_no_grep "worktree=$STALE_DIR" "$HOME_DIR/state/$id.meta" \
     "meta wrongly recorded the transient stale path as the worktree"
   pass "a single transient stale pane_current_path read is not accepted as the worktree"
@@ -142,7 +145,25 @@ test_already_settled_pane_costs_one_confirm_sleep() {
   pass "an already-settled pane confirms via the existing inter-poll sleep, not an extra full cycle"
 }
 
+test_path_argument_uses_registered_id_not_checkout_basename() {
+  local rec id out status
+  id=settle-registered-id-z3
+  rec=$(make_settle_case settle-registered-id "$id" 0)
+  read_settle_record "$rec"
+  sed -i.bak 's/^- project /- StableId /' "$HOME_DIR/data/projects.md"
+  rm -f "$HOME_DIR/data/projects.md.bak"
+
+  out=$(run_settle_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "spawn from differently named canonical checkout"
+  assert_contains "$out" "spawned $id" "spawn did not accept the registered canonical path"
+  assert_grep 'project_id=StableId' "$HOME_DIR/state/$id.meta" \
+    "spawn inferred project identity from the checkout basename"
+  pass "spawn path arguments preserve the exact registered project id"
+}
+
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_sleep
+test_path_argument_uses_registered_id_not_checkout_basename
 
 echo "# all fm-spawn-worktree-settle tests passed"

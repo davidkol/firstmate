@@ -12,7 +12,8 @@ This section is the single owner of the top-level operational-home layout; produ
 The tracked code root contains the shared instruction, skill, documentation, workflow, and `bin/` surfaces, while each effective `FM_HOME` contains private operational directories.
 `data/` holds durable private fleet records such as the project and secondmate registries, captain preferences, optional shared captain preferences, learnings, backlog, briefs, and scout reports.
 `state/` holds volatile runtime records such as task metadata, append-only status events, endpoint signals, watcher and wake-queue coordination, away-mode state, generated X-mode artifacts, private secondmate config-reread generations with their retry and quarantine state, and parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
-`config/` holds local gitignored operating choices, and `projects/` holds the local project clones that Firstmate reads but changes only through the guarded exceptions in `AGENTS.md`.
+`config/` holds local gitignored operating choices, and `data/projects.md` binds each registered project to its canonical repository checkout.
+Primary and peer `projects/` directories may contain inactive retained clones, while secondmate `projects/` directories contain their provisioned clone exception.
 
 `bin/fm-spawn.sh` owns the base task-metadata fields it emits, while the runtime-backend section below owns backend-specific fields and selector interpretation.
 The producing PR and X helpers own the fields they append, `bin/fm-classify-lib.sh` owns status-event vocabulary, and `bin/fm-crew-state.sh` owns current-state reconciliation.
@@ -198,9 +199,10 @@ A home root carries at most one marker file, and that marker is what tells the k
 
 - The **primary home** is the tracked code root itself, used when `FM_HOME` is unset.
   It carries no marker.
-- A **peer home** is an ordinary directory holding only `data/`, `state/`, `config/`, and `projects/`, plus a `.fm-peer-home` marker naming its id.
+- A **peer home** is an ordinary directory holding only `data/`, `state/`, `config/`, and an otherwise unused `projects/`, plus a `.fm-peer-home` marker naming its id.
   It has no copy of this repo, no charter, and no route in any `data/secondmates.md`, because it is not a direct report: the captain opens it directly with [`bin/fm-open.sh`](../bin/fm-open.sh) and talks to it as a peer.
-  A peer session is a full firstmate over its own backlog, project clones, crew, and session lock, exactly as [`AGENTS.md`](../AGENTS.md) describes with nothing overlaid.
+  A peer session is a full firstmate over its own backlog, canonical project registrations, crew, and session lock, exactly as [`AGENTS.md`](../AGENTS.md) describes with nothing overlaid.
+  It reuses the same canonical repository checkout as the primary home and creates isolated task worktrees from that checkout.
   Because `bin/fm-open.sh` runs it against this tracked code root through `FM_HOME`, a peer home never holds scripts or instructions that can drift, and `/updatefirstmate` reaches every peer home by updating this one repo.
 - A **secondmate home** is a checkout or leased worktree of this repo carrying `.fm-secondmate-home`, `data/charter.md`, and a route in its parent's `data/secondmates.md`.
   It is idle by default and works only on what its parent routes down; [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md) owns its whole lifecycle.
@@ -209,6 +211,24 @@ Peer homes deliberately share one `FM_ROOT`, so the marker is the only thing tha
 Session-provider adapters whose container namespace is machine-global therefore derive their per-home label from that marker, prefixing `firstmate`, `peer-<id>`, or `2ndmate-<id>`; [`bin/fm-backend-hometag-lib.sh`](../bin/fm-backend-hometag-lib.sh) and herdr's `fm_backend_herdr_workspace_label` own that derivation.
 [`bin/fm-home-seed.sh`](../bin/fm-home-seed.sh) provisions peer and secondmate homes and owns their exact seeding mechanics and refusals.
 Move existing backlog items into a new peer home with `tasks-axi mv <id>... --to <home>/data/backlog.md`, since [`bin/fm-backlog-handoff.sh`](../bin/fm-backlog-handoff.sh) stays the secondmate-only route helper.
+
+### Canonical project repositories
+
+`data/projects.md` is the source of truth for project identity in primary and peer homes.
+Each project entry has one top-level delivery-posture line followed immediately by an indented absolute path:
+
+```text
+- Martyrdome [validated-main +yolo] - Godot action game
+  path: /Users/example/projects/Godot/Martyrdome
+```
+
+`bin/fm-project-lib.sh` resolves the project id, physical Git root, delivery mode, and yolo posture as one record.
+It refuses missing, relative, nonexistent, non-root, duplicate, or primary/peer managed-directory paths rather than falling back to a similarly named clone.
+Secondmate homes may omit `path:` because their explicit exception resolves to the provisioned clone under that secondmate's own `projects/<id>`.
+`bin/fm-project-path-set.sh` migrates one primary or peer entry atomically, requires the old and requested checkouts to resolve to the same `origin` identity, and refuses while any in-flight task metadata physically names the prior checkout.
+The old clone is left untouched and becomes inactive after migration; deleting it is a separate explicit operation.
+Spawn records both `project_id=` and the resolved canonical `project=` path, then verifies that the allocated task worktree shares the canonical checkout's Git common directory.
+Landing and teardown repeat that identity proof before acting.
 
 ## Harness support
 
@@ -318,7 +338,7 @@ An absent or incompatible `tasks-axi` reports `MISSING: tasks-axi (install: npm 
 An absent `quota-axi` reports `MISSING: quota-axi (install: npm install -g quota-axi)`; firstmate cannot resolve a profile array until current quota output is available for every candidate.
 Bootstrap also reports a `TANGLE:` line when `FM_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
 In a read-only session that did not get the fleet lock, the same line is advisory and omits the checkout command.
-The locked session-start bootstrap step also runs a best-effort project clone refresh through `fm-fleet-sync.sh`.
+The locked session-start bootstrap step also runs a best-effort canonical project refresh through `fm-fleet-sync.sh`.
 It emits `FLEET_SYNC:` for skipped refreshes that may matter, recovered self-heals, and `STUCK:` alarms.
 Normal completed runs keep local-only and no-origin skips silent.
 If bootstrap kills a timed-out refresh, it replays any completed `fm-fleet-sync.sh` output before the aggregate timeout skip so no finished result is lost.

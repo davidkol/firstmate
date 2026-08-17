@@ -135,25 +135,52 @@ SH
   printf '%s\n' "$fake_root"
 }
 
+test_fleet_sync_failure_is_reported() {
+  local case_dir home fake_root fakebin out
+  case_dir="$TMP_ROOT/fleet-sync-failure"
+  home="$case_dir/home"
+  fake_root="$case_dir/fake-root"
+  fakebin=$(make_fake_toolchain "$case_dir/tools")
+  mkdir -p "$home/data" "$fake_root/bin"
+  printf '%s\n' '- Legacy [validated-main] - missing canonical path' > "$home/data/projects.md"
+  cat > "$fake_root/bin/fm-fleet-sync.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' 'PROJECT_PATH_REQUIRED: Legacy needs an explicit canonical repository path' >&2
+exit 1
+SH
+  chmod +x "$fake_root/bin/fm-fleet-sync.sh"
+
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$fake_root" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh" 2>/dev/null)
+  assert_contains "$out" \
+    'FLEET_SYNC: PROJECT_PATH_REQUIRED: Legacy needs an explicit canonical repository path' \
+    "bootstrap hid a canonical repository failure"
+  pass "bootstrap surfaces canonical fleet-sync failures"
+}
+
 add_origin_backed_projects() {
   local home=$1 count=$2 i repo
-  mkdir -p "$home/projects"
+  mkdir -p "$home/projects" "$home/data"
+  : > "$home/.fm-secondmate-home"
   i=1
   while [ "$i" -le "$count" ]; do
     repo=$(printf '%s/projects/repo-%02d' "$home" "$i")
     git init -q "$repo"
     git -C "$repo" remote add origin "file://$home/remotes/repo-$i.git"
+    printf -- '- repo-%02d [validated-main] - timeout fixture\n' "$i" >> "$home/data/projects.md"
     i=$((i + 1))
   done
 }
 
 add_no_origin_projects() {
   local home=$1 count=$2 i repo
-  mkdir -p "$home/projects"
+  mkdir -p "$home/projects" "$home/data"
+  : > "$home/.fm-secondmate-home"
   i=1
   while [ "$i" -le "$count" ]; do
     repo=$(printf '%s/projects/local-%02d' "$home" "$i")
     git init -q "$repo"
+    printf -- '- local-%02d [validated-main] - timeout fixture\n' "$i" >> "$home/data/projects.md"
     i=$((i + 1))
   done
 }
@@ -814,6 +841,7 @@ test_cmux_bundled_cli_satisfies_dependency
 test_unknown_backend_reports_invalid_configuration
 test_json_backends_require_jq_not_tmux
 test_treehouse_lease_check_follows_resolved_backend
+test_fleet_sync_failure_is_reported
 test_fleet_sync_timeout_scales_with_origin_backed_project_count
 test_fleet_sync_timeout_floor_preserves_small_fleets
 test_fleet_sync_timeout_explicit_override_wins

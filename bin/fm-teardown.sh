@@ -147,6 +147,8 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
+# shellcheck source=bin/fm-project-lib.sh
+. "$SCRIPT_DIR/fm-project-lib.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
@@ -168,8 +170,19 @@ BACKEND=$FM_BACKEND_VALIDATED_BACKEND
 T=$FM_BACKEND_VALIDATED_TARGET
 WT=$(fm_meta_get "$META" worktree)
 PROJ=$(fm_meta_get "$META" project)
+PROJECT_ID=$(fm_meta_get "$META" project_id)
 T_ORCA=
 [ "$BACKEND" != orca ] || T_ORCA=$T
+KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
+[ -n "$KIND" ] || KIND=ship
+if [ "$KIND" != secondmate ]; then
+  if [ -n "$PROJECT_ID" ]; then
+    fm_project_verify_task_identity "$PROJECT_ID" "$PROJ" "$WT" || exit 1
+  elif fm_project_legacy_task_requires_identity "$PROJ"; then
+    echo "PROJECT_IDENTITY_MISSING: task $ID has no project_id metadata" >&2
+    exit 1
+  fi
+fi
 "$FM_ROOT/bin/fm-guard.sh" || true
 HOME_PATH=$(grep '^home=' "$META" | cut -d= -f2- || true)
 PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
@@ -183,8 +196,6 @@ fi
 ORCA_WORKTREE_ID=$(fm_meta_get "$META" orca_worktree_id)
 ORCA_PATH_MATCH_VERIFIED=0
 
-KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
-[ -n "$KIND" ] || KIND=ship
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ -n "$MODE" ] || MODE=no-mistakes
 

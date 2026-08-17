@@ -101,7 +101,6 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
@@ -119,17 +118,23 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-x-lib.sh"
 # shellcheck source=bin/fm-backend.sh disable=SC1091
 . "$SCRIPT_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-project-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-project-lib.sh"
 
 fleet_sync_origin_backed_project_count() {
-  local count proj
+  local count records project_id
   count=0
-  [ -d "$PROJECTS" ] || { echo 0; return 0; }
-  for proj in "$PROJECTS"/*; do
-    [ -d "$proj" ] || continue
-    git -C "$proj" rev-parse --git-dir >/dev/null 2>&1 || continue
-    git -C "$proj" remote get-url origin >/dev/null 2>&1 || continue
+  fm_project_init
+  [ -f "$FM_PROJECT_REGISTRY" ] || { echo 0; return 0; }
+  records=$(fm_project_records)
+  while IFS="$(printf '\034')" read -r project_id _; do
+    [ -n "$project_id" ] || continue
+    fm_project_resolve "$project_id" >/dev/null 2>&1 || continue
+    git -C "$FM_PROJECT_PATH" remote get-url origin >/dev/null 2>&1 || continue
     count=$((count + 1))
-  done
+  done <<EOF
+$records
+EOF
   echo "$count"
 }
 
@@ -153,8 +158,8 @@ fleet_sync_relay_filtered_output() {
   local tmp=$1 line
   while IFS= read -r line; do
     case "$line" in
-      *': skipped: local-only project') ;;
-      *': skipped: no origin remote') ;;
+      *': skipped: local-only project'|*': skipped: local-only project at '*) ;;
+      *': skipped: no origin remote'|*': skipped: no origin remote at '*) ;;
       *': skipped:'*) echo "FLEET_SYNC: $line" ;;
       *': STUCK:'*) echo "FLEET_SYNC: $line" ;;
       *': recovered:'*) echo "FLEET_SYNC: $line" ;;
@@ -171,15 +176,16 @@ fleet_sync_relay_all_output() {
 }
 
 fleet_sync() {
+  local tmp timeout monitor_was_on pid start elapsed sync_rc
   [ -x "$FM_ROOT/bin/fm-fleet-sync.sh" ] || return 0
-  [ -d "$PROJECTS" ] || return 0
+  [ -f "$DATA/projects.md" ] || return 0
 
   tmp=$(mktemp "${TMPDIR:-/tmp}/fm-fleet-sync.XXXXXX" 2>/dev/null) || return 0
   timeout=$(fleet_sync_bootstrap_timeout)
   monitor_was_on=0
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m 2>/dev/null || true
-  "$FM_ROOT/bin/fm-fleet-sync.sh" >"$tmp" 2>/dev/null &
+  "$FM_ROOT/bin/fm-fleet-sync.sh" >"$tmp" 2>&1 &
   pid=$!
 
   start=$SECONDS
@@ -196,10 +202,15 @@ fleet_sync() {
     fi
     sleep 1
   done
-  wait "$pid" 2>/dev/null || true
+  sync_rc=0
+  wait "$pid" 2>/dev/null || sync_rc=$?
   [ "$monitor_was_on" -eq 1 ] || set +m 2>/dev/null || true
 
-  fleet_sync_relay_filtered_output "$tmp"
+  if [ "$sync_rc" -eq 0 ]; then
+    fleet_sync_relay_filtered_output "$tmp"
+  else
+    fleet_sync_relay_all_output "$tmp"
+  fi
   rm -f "$tmp"
 }
 

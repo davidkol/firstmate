@@ -29,14 +29,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+# shellcheck source=bin/fm-git-worktree-lib.sh
+. "$SCRIPT_DIR/fm-git-worktree-lib.sh"
+# shellcheck source=bin/fm-project-lib.sh
+. "$SCRIPT_DIR/fm-project-lib.sh"
 "$FM_ROOT/bin/fm-guard.sh" || true
 ID=${1:?usage: fm-merge-main.sh <task-id>}
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
 
 PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
+PROJECT_ID=$(grep '^project_id=' "$META" | cut -d= -f2- || true)
+WT=$(grep '^worktree=' "$META" | cut -d= -f2- || true)
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ "$MODE" = validated-main ] || { echo "error: task $ID is mode=$MODE, not validated-main; land local-only tasks with bin/fm-merge-local.sh and PR tasks with bin/fm-pr-merge.sh <id> <PR url>" >&2; exit 1; }
+[ -n "$PROJECT_ID" ] || { echo "PROJECT_IDENTITY_MISSING: task $ID has no project_id metadata" >&2; exit 1; }
+fm_project_verify_task_identity "$PROJECT_ID" "$PROJ" "$WT" || exit 1
 
 default_branch() {
   local ref branch
@@ -67,8 +75,8 @@ git -C "$PROJ" remote get-url origin >/dev/null 2>&1 || { echo "error: $PROJ has
 # fast-forward lands predictably (firstmate never writes here otherwise).
 cur=$(git -C "$PROJ" symbolic-ref --short HEAD 2>/dev/null || echo "")
 [ "$cur" = "$DEFAULT" ] || { echo "error: $PROJ is on '$cur', expected default branch '$DEFAULT'; cannot merge safely" >&2; exit 1; }
-if [ -n "$(git -C "$PROJ" status --porcelain 2>/dev/null | head -1)" ]; then
-  echo "error: $PROJ has a dirty working tree; refusing to merge into it" >&2
+if fm_git_has_tracked_changes "$PROJ"; then
+  echo "error: $PROJ has tracked, staged, or unmerged working-tree changes; refusing to merge into it" >&2
   exit 1
 fi
 
@@ -152,6 +160,12 @@ if ! git -C "$PROJ" merge-base --is-ancestor "refs/remotes/origin/$DEFAULT" "$SO
   exit 1
 fi
 
+if ! preflight=$(fm_git_update_preflight "$PROJ" "$SOURCE" 2>&1); then
+  echo "REFUSED: untracked working-tree files collide with $SOURCE_DESC; the checkout was not changed." >&2
+  [ -z "$preflight" ] || printf '%s\n' "$preflight" >&2
+  exit 1
+fi
+
 before=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
 git -C "$PROJ" merge --ff-only "$SOURCE" >/dev/null
 after=$(git -C "$PROJ" rev-parse --short "$DEFAULT")
@@ -169,7 +183,7 @@ git -C "$PROJ" push --quiet origin "$DEFAULT" || {
   echo "Re-run bin/fm-merge-main.sh $ID to retry the push once the cause is resolved; do not tear the task down first." >&2
   exit 1
 }
-echo "landed $SOURCE_DESC on $DEFAULT ($before -> $after) and pushed to origin in $PROJ"
+echo "landed $SOURCE_DESC as $LANDED on $DEFAULT ($before -> $after) and pushed to origin in $PROJ"
 
 # Retiring the published branch is cleanup, not a discard - but only once another
 # remote ref provably contains its commits. The task worktree is a linked worktree

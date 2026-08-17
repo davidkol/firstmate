@@ -57,10 +57,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 REG="$DATA/secondmates.md"
 SUB_HOME_MARKER=".fm-secondmate-home"
 PEER_HOME_MARKER=".fm-peer-home"
+# shellcheck source=bin/fm-project-lib.sh
+. "$SCRIPT_DIR/fm-project-lib.sh"
 # Noun for the path-boundary, operational-directory, and rollback validators the
 # two home kinds share. seed_home sets it once per run so a peer seed's refusals
 # name a peer home, while every secondmate message stays byte-identical to what
@@ -663,13 +664,10 @@ local_only_refusal() {
 
 clone_project() {
   local project=$1 home=$2 kind=${3:-secondmate} src dst url dst_url mode
-  src="$PROJECTS/$project"
+  fm_project_resolve "$project" || return 1
+  src=$FM_PROJECT_PATH
+  mode=$FM_PROJECT_MODE
   dst=$(validate_project_destination "$home" "$project") || return 1
-  [ -d "$src" ] || { echo "error: project $project not found at $src" >&2; return 1; }
-  git -C "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: project $project is not a git repo" >&2; return 1; }
-  read -r mode _ <<EOF
-$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
-EOF
   if [ "$mode" = local-only ]; then
     local_only_refusal "$project" "$kind"
     return 1
@@ -691,12 +689,9 @@ EOF
 
 validate_seed_project() {
   local project=$1 kind=${2:-secondmate} src mode url
-  src="$PROJECTS/$project"
-  [ -d "$src" ] || { echo "error: project $project not found at $src" >&2; return 1; }
-  git -C "$src" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "error: project $project is not a git repo" >&2; return 1; }
-  read -r mode _ <<EOF
-$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
-EOF
+  fm_project_resolve "$project" || return 1
+  src=$FM_PROJECT_PATH
+  mode=$FM_PROJECT_MODE
   if [ "$mode" = local-only ]; then
     local_only_refusal "$project" "$kind"
     return 1
@@ -885,8 +880,8 @@ EOF
 }
 
 sync_project_registry() {
-  local home=$1 sub_reg tmp project line today names
-  shift
+  local home=$1 kind=$2 sub_reg tmp project line today names
+  shift 2
   sub_reg="$home/data/projects.md"
   tmp="$sub_reg.tmp.$$"
   names=$(printf '%s\n' "$@" | awk '{ printf "%s%s", sep, $0; sep="\034" }')
@@ -896,7 +891,9 @@ sync_project_registry() {
         split(names, a, "\034")
         for (i in a) selected[a[i]]=1
       }
-      !($1=="-" && ($2 in selected)) { print }
+      $1=="-" { drop=($2 in selected) }
+      drop { next }
+      { print }
     ' "$sub_reg" > "$tmp"
   else
     : > "$tmp"
@@ -908,6 +905,10 @@ sync_project_registry() {
       line="- $project - cloned project (added $today)"
     fi
     printf '%s\n' "$line" >> "$tmp"
+    if [ "$kind" = peer ]; then
+      fm_project_resolve "$project" || return 1
+      printf '  path: %s\n' "$FM_PROJECT_PATH" >> "$tmp"
+    fi
   done
   mv "$tmp" "$sub_reg"
 }
@@ -1177,20 +1178,28 @@ seed_home() {
     }
   fi
 
-  for project in "$@"; do
-    project_dst=$(validate_project_destination "$home" "$project") || return 1
-    [ -e "$project_dst" ] || printf '%s\n' "$project_dst" >> "$SEED_CREATED_PROJECTS_FILE"
-    clone_project "$project" "$home" "$SEED_HOME_NOUN"
-  done
-  sync_project_registry "$home" "$@"
-  for project in "$@"; do
-    project_dst=$(validate_project_destination "$home" "$project") || return 1
-    if seed_project_was_created "$project_dst"; then
-      initialize_no_mistakes_project "$home" "$project" 1
-    else
-      initialize_no_mistakes_project "$home" "$project" 0
-    fi
-  done
+  if [ "$peer" -eq 0 ]; then
+    for project in "$@"; do
+      project_dst=$(validate_project_destination "$home" "$project") || return 1
+      [ -e "$project_dst" ] || printf '%s\n' "$project_dst" >> "$SEED_CREATED_PROJECTS_FILE"
+      clone_project "$project" "$home" "$SEED_HOME_NOUN"
+    done
+    # The secondmate resolver's clone exception is marker-gated. Publish the
+    # transactional marker before mode-driven initialization reads this home's
+    # registry; the rollback journal above restores or removes it on failure.
+    printf '%s\n' "$id" > "$home/$SUB_HOME_MARKER"
+  fi
+  sync_project_registry "$home" "$SEED_HOME_NOUN" "$@"
+  if [ "$peer" -eq 0 ]; then
+    for project in "$@"; do
+      project_dst=$(validate_project_destination "$home" "$project") || return 1
+      if seed_project_was_created "$project_dst"; then
+        initialize_no_mistakes_project "$home" "$project" 1
+      else
+        initialize_no_mistakes_project "$home" "$project" 0
+      fi
+    done
+  fi
 
   if [ "$peer" -eq 1 ]; then
     printf '%s\n' "$id" > "$home/$PEER_HOME_MARKER"

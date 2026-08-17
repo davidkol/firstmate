@@ -16,14 +16,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-"$FM_ROOT/bin/fm-guard.sh" || true
+# shellcheck source=bin/fm-git-worktree-lib.sh
+. "$SCRIPT_DIR/fm-git-worktree-lib.sh"
+# shellcheck source=bin/fm-project-lib.sh
+. "$SCRIPT_DIR/fm-project-lib.sh"
 ID=${1:?usage: fm-merge-local.sh <task-id>}
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
 
 PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
+PROJECT_ID=$(grep '^project_id=' "$META" | cut -d= -f2- || true)
+WT=$(grep '^worktree=' "$META" | cut -d= -f2- || true)
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ "$MODE" = local-only ] || { echo "error: task $ID is mode=$MODE, not local-only; merge PR tasks with bin/fm-pr-merge.sh <id> <PR url> after approval" >&2; exit 1; }
+[ -n "$PROJECT_ID" ] || { echo "PROJECT_IDENTITY_MISSING: task $ID has no project_id metadata" >&2; exit 1; }
+fm_project_verify_task_identity "$PROJECT_ID" "$PROJ" "$WT" || exit 1
+"$FM_ROOT/bin/fm-guard.sh" || true
 
 default_branch() {
   local ref branch
@@ -50,8 +58,8 @@ DEFAULT=$(default_branch) || { echo "error: cannot determine default branch for 
 # fast-forward lands predictably (firstmate never writes here otherwise).
 cur=$(git -C "$PROJ" symbolic-ref --short HEAD 2>/dev/null || echo "")
 [ "$cur" = "$DEFAULT" ] || { echo "error: $PROJ is on '$cur', expected default branch '$DEFAULT'; cannot merge safely" >&2; exit 1; }
-if [ -n "$(git -C "$PROJ" status --porcelain 2>/dev/null | head -1)" ]; then
-  echo "error: $PROJ has a dirty working tree; refusing to merge into it" >&2
+if fm_git_has_tracked_changes "$PROJ"; then
+  echo "error: $PROJ has tracked, staged, or unmerged working-tree changes; refusing to merge into it" >&2
   exit 1
 fi
 
@@ -59,6 +67,12 @@ fi
 if ! git -C "$PROJ" merge-base --is-ancestor "$DEFAULT" "$BRANCH"; then
   echo "REFUSED: $BRANCH is not a fast-forward of $DEFAULT (it has diverged)." >&2
   echo "Have the crewmate rebase $BRANCH onto $DEFAULT, then retry." >&2
+  exit 1
+fi
+
+if ! preflight=$(fm_git_update_preflight "$PROJ" "$BRANCH" 2>&1); then
+  echo "REFUSED: untracked working-tree files collide with $BRANCH; the checkout was not changed." >&2
+  [ -z "$preflight" ] || printf '%s\n' "$preflight" >&2
   exit 1
 fi
 

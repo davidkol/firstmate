@@ -38,7 +38,8 @@ HOME_N=0
 new_home() {
   HOME_N=$((HOME_N + 1))
   local h="$TMP_ROOT/home-$HOME_N"
-  mkdir -p "$h/projects"
+  mkdir -p "$h/projects" "$h/data"
+  : > "$h/.fm-secondmate-home"
   printf '%s\n' "$h"
 }
 
@@ -69,6 +70,7 @@ build_pair() {
   git -C "$work" push -q -u origin main
 
   git clone --quiet "file://$remote_abs" "$clone"
+  printf -- '- %s [validated-main] - test project\n' "$name" >> "$home/data/projects.md"
   printf '%s\n' "$clone"
 }
 
@@ -114,6 +116,7 @@ build_packed_prunable() {
   git -C "$work" push -q origin main:refs/heads/feature
 
   git clone --quiet "file://$remote_abs" "$clone"
+  printf -- '- %s [validated-main] - test project\n' "$name" >> "$home/data/projects.md"
   git -C "$clone" branch -q feature origin/feature
   commit_file "$work" file.txt v1 C1
   git -C "$work" push -q origin main
@@ -347,6 +350,7 @@ test_no_origin_skipped() {
   git init -q "$clone"
   git -C "$clone" symbolic-ref HEAD refs/heads/main
   commit_file "$clone" file.txt v0 C0
+  printf -- '- theta [validated-main] - test project\n' >> "$home/data/projects.md"
 
   out=$(run_sync "$home" "$clone")
 
@@ -397,41 +401,48 @@ test_single_project_by_bare_name_ignores_cwd_shadow() {
   pass "single-project bare name resolution is not cwd-sensitive"
 }
 
-test_single_project_by_projects_relative_name_resolves() {
-  local home out
+test_single_project_by_projects_relative_name_refuses_ambiguous_alias() {
+  local home out rc
   home=$(new_home)
   build_pair "$home" lambda >/dev/null
   advance_origin "$home" lambda C1
 
-  out=$(run_sync "$home" "projects/lambda")
+  set +e
+  out=$(run_sync "$home" "projects/lambda"); rc=$?
+  set -e
 
-  assert_contains "$out" "lambda: synced" "projects/<name> form resolves against the home's projects dir"
-  pass "single-project form accepts a projects/<name> relative name"
+  expect_code 1 "$rc" "projects/<name> alias"
+  pass "single-project form refuses an ambiguous projects/<name> alias"
 }
 
-test_single_project_by_projects_relative_name_ignores_cwd_shadow() {
-  local home cwd out
+test_single_project_by_projects_relative_name_refuses_cwd_shadow() {
+  local home cwd out rc
   home=$(new_home)
   build_pair "$home" nu >/dev/null
   advance_origin "$home" nu C1
   cwd="$home/shadow"
   mkdir -p "$cwd/projects/nu"
 
-  out=$(cd "$cwd" && run_sync "$home" "projects/nu")
+  set +e
+  out=$(cd "$cwd" && run_sync "$home" "projects/nu"); rc=$?
+  set -e
 
-  assert_contains "$out" "nu: synced" "projects/<name> form prefers the home's projects dir"
-  assert_not_contains "$out" "skipped: not a git repo" "projects/<name> form ignores a cwd shadow directory"
-  pass "single-project projects/<name> resolution is not cwd-sensitive"
+  expect_code 1 "$rc" "cwd-relative projects/<name> shadow"
+  pass "single-project form refuses an unregistered cwd-relative shadow"
 }
 
 test_single_project_unresolvable_name_still_skips() {
-  local home out
+  local home out rc
   home=$(new_home)
 
+  set +e
   out=$(run_sync "$home" "does-not-exist")
+  rc=$?
+  set -e
 
-  assert_contains "$out" "skipped: not a directory" "an unresolvable name still hits the existing not-a-directory skip"
-  pass "single-project form leaves a genuinely bad name unresolved"
+  expect_code 1 "$rc" "unregistered project"
+  [ -z "$out" ] || fail "unregistered project unexpectedly produced a sync result"
+  pass "single-project form refuses an unregistered project"
 }
 
 test_whole_fleet_form() {
@@ -540,7 +551,7 @@ test_live_git_cwd_in_clone_dir_blocks_removal() {
   out="$home/out-lockcwd"; err="$home/err-lockcwd"
 
   set +e
-  FLEET_TEST_LIVE_DIR="$clone" \
+  FLEET_TEST_LIVE_DIR="$(cd "$clone" && pwd -P)" \
   FM_FLEET_SYNC_PACKED_REFS_LOCK_RETRIES=2 \
   FM_FLEET_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS=0 \
   FM_FLEET_SYNC_PACKED_REFS_LOCK_AGE_SECS=0 \
@@ -603,6 +614,68 @@ test_non_signature_fetch_failure_is_not_retried() {
   pass "a non-packed-refs.lock fetch failure keeps today's behavior (no retry)"
 }
 
+test_registry_canonical_path_ignores_retained_clone() {
+  local home managed canonical retained_before canonical_before out
+  home=$(new_home)
+  managed=$(build_pair "$home" registry-canonical)
+  mkdir -p "$home/canonical"
+  canonical="$home/canonical/registry-canonical"
+  mv "$managed" "$canonical"
+  fm_git_init_commit "$managed"
+  printf '%s\n' retained > "$managed/retained-only.txt"
+  retained_before=$(head_sha "$managed")
+  canonical_before=$(head_sha "$canonical")
+  advance_origin "$home" registry-canonical C1
+  mkdir -p "$home/data"
+  cat > "$home/data/projects.md" <<EOF
+- registry-canonical [validated-main] - canonical external checkout
+  path: $canonical
+EOF
+
+  out=$(run_sync "$home")
+
+  [ "$(head_sha "$canonical")" != "$canonical_before" ] || fail "registry canonical checkout did not fast-forward"
+  [ "$(head_sha "$managed")" = "$retained_before" ] || fail "retained managed clone was changed"
+  assert_contains "$out" "registry-canonical: synced" "canonical registry project was not reported"
+  assert_not_contains "$out" "no origin remote" "retained clone remained active in whole-fleet enumeration"
+  pass "whole-fleet sync follows the canonical registry and ignores a retained clone"
+}
+
+test_nonconflicting_untracked_file_survives_sync() {
+  local home clone out
+  home=$(new_home)
+  clone=$(build_pair "$home" untracked-safe)
+  advance_origin "$home" untracked-safe C1
+  printf 'captain notes\n' > "$clone/notes.md"
+
+  out=$(run_sync "$home" untracked-safe)
+
+  assert_contains "$out" "untracked-safe: synced" "nonconflicting untracked file blocked sync"
+  [ "$(cat "$clone/notes.md")" = "captain notes" ] || fail "sync changed the untracked notes file"
+  pass "fleet sync preserves a nonconflicting untracked file"
+}
+
+test_untracked_collision_refuses_without_mutation() {
+  local home clone out before index_before
+  home=$(new_home)
+  clone=$(build_pair "$home" untracked-collision)
+  printf 'remote tracked version\n' > "$home/work-untracked-collision/collision.txt"
+  git -C "$home/work-untracked-collision" add collision.txt
+  git -C "$home/work-untracked-collision" commit -qm 'remote: add collision target'
+  git -C "$home/work-untracked-collision" push -q origin main
+  printf 'captain local version\n' > "$clone/collision.txt"
+  before=$(git -C "$clone" rev-parse HEAD)
+  index_before=$(git -C "$clone" write-tree)
+
+  out=$(run_sync "$home" untracked-collision)
+
+  assert_contains "$out" "untracked working-tree collision" "sync did not identify the untracked collision"
+  [ "$(git -C "$clone" rev-parse HEAD)" = "$before" ] || fail "collision sync moved HEAD"
+  [ "$(git -C "$clone" write-tree)" = "$index_before" ] || fail "collision sync changed the index"
+  [ "$(cat "$clone/collision.txt")" = "captain local version" ] || fail "collision sync changed the local file"
+  pass "fleet sync refuses an untracked collision without mutation"
+}
+
 test_detached_clean_ancestor_recovers
 test_detached_unique_commit_is_stuck_untouched
 test_detached_clean_ancestor_with_diverged_local_default_is_stuck_untouched
@@ -615,8 +688,8 @@ test_no_origin_skipped
 test_local_only_skipped
 test_single_project_by_bare_name_resolves
 test_single_project_by_bare_name_ignores_cwd_shadow
-test_single_project_by_projects_relative_name_resolves
-test_single_project_by_projects_relative_name_ignores_cwd_shadow
+test_single_project_by_projects_relative_name_refuses_ambiguous_alias
+test_single_project_by_projects_relative_name_refuses_cwd_shadow
 test_single_project_unresolvable_name_still_skips
 test_whole_fleet_form
 test_bootstrap_relays_recovered_and_stuck
@@ -625,3 +698,6 @@ test_live_packed_refs_lock_is_never_removed
 test_live_git_cwd_in_clone_dir_blocks_removal
 test_transient_packed_refs_lock_self_clears
 test_non_signature_fetch_failure_is_not_retried
+test_registry_canonical_path_ignores_retained_clone
+test_nonconflicting_untracked_file_survives_sync
+test_untracked_collision_refuses_without_mutation

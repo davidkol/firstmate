@@ -57,8 +57,13 @@ Those facts do not have to advance through a fixed workflow: a change may remain
 ### P2-C1 - Distinguish every repository surface before reporting delivery
 
 - **Planned:** Treat the remote repository, Firstmate-owned per-project storage, the captain's working repository, and each Treehouse worktree as different identified surfaces; never present the Firstmate-owned copy as the captain's local project, and report each relevant surface as verified, stale, or not identified.
-- **Made:** No project-management or delivery behavior has changed yet; this assessment now records the failure and the captain's requirement that Firstmate may keep per-project storage for its own material while actual project work uses Treehouse.
-- **Learned:** The managed clone protected the captain's working tree but immediately obscured repository identity, so a successful remote merge and a synchronized Firstmate clone were incorrectly communicated as local availability to the captain.
+- **Made:** The isolated implementation branch now gives primary and peer homes one explicit canonical repository path, anchors Treehouse work to it, records and re-verifies task repository identity, ignores retained clones during fleet refresh, and preserves non-conflicting untracked files during guarded synchronization and landing.
+  Secondmate clones and Orca worktree ownership remain explicit exceptions.
+  The change has focused automated and real Treehouse evidence but is not yet landed, pushed, or applied to the private Martyrdome registry.
+- **Learned:** Repository identity must be executable state shared by intake, spawn, synchronization, landing, teardown, and reporting rather than a path inferred independently at each boundary.
+  A real Martyrdome Treehouse lease produced a distinct worktree root with the same Git common directory while leaving `notes.md` untouched, so the required isolation does not require a duplicate primary clone.
+  The first independent implementation review found six rollout defects, including cross-project migration blocking and absent remote-identity proof; the correction review found two more fail-open reporting paths before the final review returned `SHIP` with no findings.
+  The useful review boundary was therefore not ceremonial: it prevented a locally green implementation from making incremental migration unsafe or invisible at startup.
 
 ## Human-owned evaluation standard
 

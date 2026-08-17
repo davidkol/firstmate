@@ -10,7 +10,7 @@
 # distinction from a secondmate home.
 #
 # Coverage:
-#   - seed shape: marker, operational dirs, cloned project and registry, and the
+#   - seed shape: marker, operational dirs, canonical project registry, and the
 #     deliberate absence of a repo copy, a charter, and a secondmates.md route
 #   - seed refusals: leased-worktree form, bad id, missing project signal,
 #     nesting inside another home, overlap with a registered secondmate home, a
@@ -47,8 +47,8 @@ mkdir -p "$CLAUDE_CONFIG_DIR/projects"
 
 # --- world -------------------------------------------------------------------
 
-# new_main_home <name> [mode]: an active firstmate home holding one origin-backed
-# project clone named "hookgame". Echoes the home path.
+# new_main_home <name> [mode]: an active firstmate home registered against one
+# canonical origin-backed project named "hookgame". Echoes the home path.
 new_main_home() {
   local name=$1 mode=${2:-direct-PR} home src
   home="$TMP_ROOT/$name/main-home"
@@ -56,8 +56,7 @@ new_main_home() {
   mkdir -p "$home/data" "$home/state" "$home/config" "$home/projects"
   fm_git_init_commit "$src"
   fm_git_add_origin "$src" "$TMP_ROOT/$name/remote-hookgame.git"
-  git clone --quiet "$(git -C "$src" remote get-url origin)" "$home/projects/hookgame"
-  printf -- '- hookgame [%s] - the hook game (added 2026-07-28)\n' "$mode" > "$home/data/projects.md"
+  printf -- '- hookgame [%s] - the hook game (added 2026-07-28)\n  path: %s\n' "$mode" "$src" > "$home/data/projects.md"
   printf '%s\n' "$home"
 }
 
@@ -94,12 +93,13 @@ test_seed_shape() {
   assert_absent "$home/.fm-secondmate-home" "peer home was marked as a secondmate home"
   assert_absent "$main/data/secondmates.md" "peer seed wrote a secondmate route"
 
-  # Its own project clone and its own registry line, carried over from the
-  # active home so the delivery mode survives.
-  assert_present "$home/projects/hookgame/.git" "peer home did not receive its project clone"
+  # It reuses the captain's canonical project instead of creating another clone.
+  assert_absent "$home/projects/hookgame" "peer home created a duplicate project clone"
   assert_grep '- hookgame [direct-PR] - the hook game' "$home/data/projects.md" \
     "peer project registry did not carry the source registry line"
-  pass "peer seed provisions a marked, repo-free home with its own project and registry"
+  assert_grep "  path: $TMP_ROOT/shape/src/hookgame" "$home/data/projects.md" \
+    "peer project registry did not retain the canonical repository path"
+  pass "peer seed provisions a marked, repo-free home against the canonical project"
 }
 
 test_seed_projectless() {
@@ -120,7 +120,7 @@ test_seed_reseed_is_idempotent() {
   printf 'captain note\n' > "$home/data/captain.md"
   out=$(seed_peer "$main" hookgame "$home" --peer hookgame) || fail "re-seed failed: $out"
   assert_present "$home/data/captain.md" "re-seed destroyed home-local data"
-  [ "$(grep -c 'hookgame' "$home/data/projects.md")" = 1 ] || fail "re-seed duplicated the project registry line"
+  [ "$(grep -c '^- hookgame ' "$home/data/projects.md")" = 1 ] || fail "re-seed duplicated the project registry line"
   pass "re-seeding the same peer home is idempotent and preserves its data"
 }
 
@@ -198,35 +198,18 @@ test_seed_refuses_local_only_project() {
   pass "peer seed refuses a local-only project, which has no shared upstream to clone through"
 }
 
-test_seed_rolls_back() {
-  local main home pre out leftover
+test_seed_does_not_depend_on_remote_clone() {
+  local main home out
   main=$(new_main_home rollback)
-  # A registered, origin-backed project whose origin has since disappeared: this
-  # survives pre-flight validation and fails inside clone_project, after the
-  # rollback trap is armed.
+  # A peer shares the canonical checkout, so an unavailable remote must not make
+  # it create or require a second clone.
   rm -rf "$TMP_ROOT/rollback/remote-hookgame.git"
   home="$TMP_ROOT/rollback/homes/hookgame"
-  out=$(seed_peer "$main" hookgame "$home" --peer hookgame) && fail "peer seed survived an unclonable project"
-  assert_absent "$home" "failed peer seed left its created home behind"
-  assert_absent "$main/data/secondmates.md" "failed peer seed wrote a secondmate route"
-
-  # An empty directory the captain pre-created is a documented target, so the
-  # rollback must undo exactly the operational dirs the seed added and nothing
-  # the captain put there - otherwise the path is stranded half-built and every
-  # retry is refused as "not empty and is not a peer home".
-  pre="$TMP_ROOT/rollback/homes/precreated"
-  mkdir -p "$pre"
-  out=$(seed_peer "$main" precreated "$pre" --peer hookgame) && fail "peer seed survived an unclonable project"
-  assert_present "$pre" "failed peer seed deleted the directory the captain created"
-  leftover=$(ls -A "$pre")
-  [ -z "$leftover" ] || fail "failed peer seed left the captain's directory half-built: $leftover"
-
-  # Same target, same command, once the origin is reachable again.
-  git clone --quiet --bare "$TMP_ROOT/rollback/src/hookgame" "$TMP_ROOT/rollback/remote-hookgame.git"
-  out=$(seed_peer "$main" precreated "$pre" --peer hookgame) \
-    || fail "a rolled-back peer home target was not seedable again: $out"
-  assert_present "$pre/.fm-peer-home" "retry did not seed the pre-created target"
-  pass "a failed peer seed rolls back to exactly what it found, leaving the target seedable"
+  out=$(seed_peer "$main" hookgame "$home" --peer hookgame) || fail "peer seed required the unavailable remote: $out"
+  assert_absent "$home/projects/hookgame" "peer seed cloned despite canonical-path sharing"
+  assert_grep "  path: $TMP_ROOT/rollback/src/hookgame" "$home/data/projects.md" \
+    "peer seed lost the canonical path while the remote was unavailable"
+  pass "peer seeding shares the canonical checkout and does not depend on cloning its remote"
 }
 
 # --- launcher ----------------------------------------------------------------
@@ -420,7 +403,7 @@ test_seed_reseed_is_idempotent
 test_seed_refusals
 test_seed_refuses_secondmate_nested_in_peer_home
 test_seed_refuses_local_only_project
-test_seed_rolls_back
+test_seed_does_not_depend_on_remote_clone
 test_open_launches_against_the_code_root
 test_open_refusals
 test_open_clears_inherited_directory_overrides
