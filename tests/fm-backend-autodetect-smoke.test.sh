@@ -28,6 +28,9 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# shellcheck source=tests/lib.sh
+. "$ROOT/tests/lib.sh"
+
 fail() { printf 'not ok - %s\n' "$1" >&2; exit 1; }
 pass() { printf 'ok - %s\n' "$1"; }
 assert_contains_local() {  # <haystack> <needle> <msg>
@@ -79,7 +82,7 @@ trap on_exit EXIT
 
 STATE="$TMP_ROOT/state"; DATA="$TMP_ROOT/data"; CONFIG="$TMP_ROOT/config"
 mkdir -p "$STATE" "$DATA/$ID" "$CONFIG"
-printf 'trivial autodetect-smoke brief: nothing to do.\n' > "$DATA/$ID/brief.md"
+fm_write_ship_brief "$DATA/$ID/brief.md"
 
 PROJ="$TMP_ROOT/scratch-project"
 mkdir -p "$PROJ"
