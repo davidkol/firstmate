@@ -34,35 +34,49 @@ TASK=task-m1
 BRANCH="fm/$TASK"
 
 # Build one sandbox: a bare remote, a project clone on main, a task branch with one
-# commit, and a task meta. Echoes the case dir. Args: name [mode]
+# commit, and a task meta. Echoes the case dir. Args: name [mode] [legacy]
+# "legacy" reproduces a task recorded before the canonical-repository change:
+# the project is the home's managed clone projects/fixture, the registry entry
+# has no path:, and the task meta has no project_id=.
 make_case() {
-  local name=$1 mode=${2:-validated-main} case_dir
+  local name=$1 mode=${2:-validated-main} layout=${3:-canonical} case_dir project
   case_dir="$TMP_ROOT/$name"
   mkdir -p "$case_dir/state" "$case_dir/home/data" "$case_dir/home/projects"
+  project="$case_dir/project"
+  [ "$layout" != legacy ] || project="$case_dir/home/projects/fixture"
 
   git init -q -b main "$case_dir/seed"
   printf 'seed\n' > "$case_dir/seed/README.md"
   git -C "$case_dir/seed" add README.md
   git -C "$case_dir/seed" commit -qm initial
   git clone --quiet --bare "$case_dir/seed" "$case_dir/remote.git"
-  git clone --quiet "$case_dir/remote.git" "$case_dir/project"
+  git clone --quiet "$case_dir/remote.git" "$project"
 
-  git -C "$case_dir/project" checkout -q -b "$BRANCH"
-  printf 'task work\n' > "$case_dir/project/task.txt"
-  git -C "$case_dir/project" add task.txt
-  git -C "$case_dir/project" commit -qm 'task: implement'
-  git -C "$case_dir/project" checkout -q main
-  git -C "$case_dir/project" worktree add --quiet "$case_dir/wt" "$BRANCH"
+  git -C "$project" checkout -q -b "$BRANCH"
+  printf 'task work\n' > "$project/task.txt"
+  git -C "$project" add task.txt
+  git -C "$project" commit -qm 'task: implement'
+  git -C "$project" checkout -q main
+  git -C "$project" worktree add --quiet "$case_dir/wt" "$BRANCH"
 
-  printf -- '- fixture [validated-main] - test project\n  path: %s\n' "$case_dir/project" > "$case_dir/home/data/projects.md"
-
-  fm_write_meta "$case_dir/state/$TASK.meta" \
-    "window=fm-$TASK" \
-    "worktree=$case_dir/wt" \
-    "project_id=fixture" \
-    "project=$case_dir/project" \
-    "kind=ship" \
-    "mode=$mode"
+  if [ "$layout" = legacy ]; then
+    printf -- '- fixture [validated-main] - test project\n' > "$case_dir/home/data/projects.md"
+    fm_write_meta "$case_dir/state/$TASK.meta" \
+      "window=fm-$TASK" \
+      "worktree=$case_dir/wt" \
+      "project=$project" \
+      "kind=ship" \
+      "mode=$mode"
+  else
+    printf -- '- fixture [validated-main] - test project\n  path: %s\n' "$project" > "$case_dir/home/data/projects.md"
+    fm_write_meta "$case_dir/state/$TASK.meta" \
+      "window=fm-$TASK" \
+      "worktree=$case_dir/wt" \
+      "project_id=fixture" \
+      "project=$project" \
+      "kind=ship" \
+      "mode=$mode"
+  fi
   printf '%s\n' "$case_dir"
 }
 
@@ -511,6 +525,40 @@ test_refuses_mismatched_canonical_identity() {
   pass "fm-merge-main refuses a linked-worktree path in place of the canonical checkout"
 }
 
+test_lands_legacy_task_while_entry_is_pathless() {
+  local case_dir rc branch_sha
+  case_dir=$(make_case legacy-pathless validated-main legacy)
+  branch_sha=$(git -C "$case_dir/home/projects/fixture" rev-parse "$BRANCH")
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "legacy-pathless: fm-merge-main should land on the recorded project path"
+  [ "$(remote_main_sha "$case_dir")" = "$branch_sha" ] \
+    || fail "legacy-pathless: the host's main was not updated"
+  pass "fm-merge-main lands a task recorded without project_id while its entry is still pathless"
+}
+
+test_refuses_legacy_task_once_entry_is_migrated() {
+  local case_dir rc before
+  case_dir=$(make_case legacy-migrated validated-main legacy)
+  git clone --quiet "$case_dir/remote.git" "$case_dir/canonical"
+  printf -- '- fixture [validated-main] - test project\n  path: %s\n' "$case_dir/canonical" > "$case_dir/home/data/projects.md"
+  before=$(remote_main_sha "$case_dir")
+
+  set +e
+  run_merge_main "$case_dir" "$TASK" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "legacy-migrated: landing should refuse"
+  assert_grep 'PROJECT_IDENTITY_MISSING' "$case_dir/stderr" "legacy-migrated: refusal did not name the missing identity"
+  [ "$(remote_main_sha "$case_dir")" = "$before" ] || fail "legacy-migrated: the host's main moved"
+  pass "fm-merge-main refuses a task recorded without project_id once its project has a canonical path"
+}
+
 test_lands_published_head_and_pushes
 test_landing_keeps_worktree_work_provably_landed
 test_rejected_push_reports_and_preserves
@@ -528,3 +576,5 @@ test_refuses_exact_untracked_collision_without_mutation
 test_refuses_untracked_file_directory_collision_without_mutation
 test_refuses_project_without_origin
 test_refuses_mismatched_canonical_identity
+test_lands_legacy_task_while_entry_is_pathless
+test_refuses_legacy_task_once_entry_is_migrated

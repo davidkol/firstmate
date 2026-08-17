@@ -244,8 +244,10 @@ fm_project_remote_identity() {
 }
 
 # Returns success only when a task recorded without project_id belongs to a
-# project that has since acquired an explicit canonical path. This keeps legacy
-# teardown compatibility scoped to the specific unmigrated project.
+# project that has since acquired an explicit canonical path. fm-teardown.sh,
+# fm-merge-local.sh, and fm-merge-main.sh share this check so a task recorded
+# before migration can still land and tear down while its entry is pathless;
+# docs/configuration.md "Canonical project repositories" owns that rule.
 fm_project_legacy_task_requires_identity() {
   local recorded=$1 records id path _mode _yolo recorded_physical candidate
   fm_project_init

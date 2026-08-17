@@ -54,6 +54,7 @@ Confirm the source URL or existing checkout, project name, canonical absolute pa
 When the repository is not already present, clone it to the captain-approved project path outside Firstmate's managed `projects/` directory.
 Add the registry entry only after that canonical destination is known to be unused and is verified as the repository root.
 When migrating an existing pathless entry, use `bin/fm-project-path-set.sh`; it compares the existing managed checkout's `origin` identity with the requested canonical checkout, refuses physical aliases used by in-flight task metadata, and leaves unrelated pathless entries untouched.
+Land and clean up in-flight tasks recorded before migration first; [`docs/configuration.md` "Canonical project repositories"](../../../docs/configuration.md#canonical-project-repositories) owns that rule.
 A `no-mistakes` or `validated-main` project must have an `origin` remote and must complete the initialization procedure below.
 A `direct-PR` project needs an `origin` remote and drives the pipeline's review step, so it needs the same local gate; its first task initializes it lazily through the generated brief's `no-mistakes doctor` step, so an add that skips the procedure below still works.
 A `local-only` project runs the review step too, and its gate initializes from an `origin` pointing at a local filesystem path, which is what a clone of a local repository already has; its first task initializes it lazily the same way.

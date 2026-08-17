@@ -229,6 +229,7 @@ Secondmate homes may omit `path:` because their explicit exception resolves to t
 The old clone is left untouched and becomes inactive after migration; deleting it is a separate explicit operation.
 Spawn records both `project_id=` and the resolved canonical `project=` path, then verifies that the allocated task worktree shares the canonical checkout's Git common directory.
 Landing and teardown repeat that identity proof before acting.
+A task recorded before migration carries no `project_id=` and can still land and tear down on its recorded path while its entry is pathless, but is refused with `PROJECT_IDENTITY_MISSING` once that project has a canonical path; migrate a project only when it has no in-flight tasks, which is exactly what `bin/fm-project-path-set.sh`'s refusal enforces.
 
 ## Harness support
 
