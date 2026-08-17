@@ -288,6 +288,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/superpowers/plans/2026-08-16-canonical-project-repositories.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/superpowers/specs/2026-08-16-canonical-project-repositories-design.md",
       "audience": "maintainer-architecture"
     },
