@@ -70,7 +70,8 @@ Those facts do not have to advance through a fixed workflow: a change may remain
   A real Martyrdome Treehouse lease produced a distinct worktree root with the same Git common directory while leaving `notes.md` untouched, so the required isolation does not require a duplicate primary clone.
   The first independent implementation review found six rollout defects, including cross-project migration blocking and absent remote-identity proof; the correction review found two more fail-open reporting paths before the final review returned `SHIP` with no findings.
   The useful review boundary was therefore not ceremonial: it prevented a locally green implementation from making incremental migration unsafe or invisible at startup.
-  On 2026-08-17, the rollout deadlocked in the DANU peer home: the guarded local landing refused a pathless entry with `PROJECT_IDENTITY_MISSING` while migration refused with a task in flight, so recovery needed one captain question, one authorized direct fast-forward landing, migration onto the captain's own checkout, and a rebuild of the isolated pool; the private learning names a candidate fix in which the merge scripts reuse teardown's scoped legacy fallback.
+  On 2026-08-17, the rollout deadlocked in the DANU peer home: the guarded local landing refused a pathless entry with `PROJECT_IDENTITY_MISSING` while migration refused with a task in flight, so recovery needed one captain question, one authorized direct fast-forward landing, migration onto the captain's own checkout, and a rebuild of the isolated pool.
+  The current compatibility rule is owned by [Canonical project repositories](configuration.md#canonical-project-repositories).
 
 ### N1-C1 - Bound review rounds on heuristic-parser work
 
