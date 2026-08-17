@@ -2,21 +2,24 @@
 
 Firstmate's overall process is not yet assessed.
 This living assessment records dated, evidence-based stage trials without turning task history into a transcript.
-The current version can judge the Martyrdome target-design, target-publication, and target-to-current gap trials plus one unattended-away boundary observation and one repository-surface delivery failure.
+The current version can judge the Martyrdome target-design, target-publication, and target-to-current gap trials plus one unattended-away boundary observation and one repository-surface delivery failure, and it carries a dated snapshot of the ongoing DANU new-project trial that reached a landed first implementation step.
 
 ## Assessment boundary
 
 - **Tested - Design:** One Martyrdome trial reached a durable, standalone whole-game target through discovery, question-and-answer work, drafting, and a bounded completeness audit.
 - **Partly tested - Design mode and repeatability:** One-at-a-time dialogue was used extensively, while clean bulk discovery was tried only near the end on questions already shaped by earlier work.
 - **Tested once - Gap analysis:** One Martyrdome scout compared all 77 accepted target elements with current code, scenes, tests, and bounded runtime observations without writing an implementation plan.
-- **Untested - Planning:** No implementation plan derived from the completed target has been assessed.
-- **Untested - Implementation:** No implementation of the completed target has been assessed.
-- **Partly tested - Review and validation:** Target publication received independent documentation review and bounded re-review, but implementation review, game-runtime validation, and player-outcome validation remain untested.
+- **Tested once - New-project onboarding:** One fresh peer home attached, reconciled, and began work on DANU, a repository with no prior Firstmate history, without project writes.
+- **Tested once - Planning:** One DANU planning scout produced an eight-step architecture plan from the captain's verbatim rulings and it landed in the project; no Martyrdome plan has been assessed and plan quality in play is untested.
+- **Tested once - Implementation:** DANU's first plan step and four smaller ships landed on the project's local default branch; no Martyrdome implementation has been assessed and no playable outcome has been observed.
+- **Partly tested - Review and validation:** Target publication received independent documentation review and bounded re-review, and DANU's light-path implementation review caught real defects on every ship at the cost of long fix loops on parser work, but game-runtime validation and player-outcome validation remain untested.
 - **Tested twice - Publication or integration:** The accepted standalone target was published in PR 12 and its split focused-document form was published in PR 13, but the second delivery exposed a repository-surface identity failure in the captain-facing handoff.
 - **Failed once - Repository-surface identity:** Firstmate verified its managed clone, described that result as the local Martyrdome state, and linked the captain to that clone without identifying or verifying the captain's actual working repository.
-- **Partly tested - Supervision or recovery:** Foreground supervision continued in the active session, but the owned away-mode launcher refused to start, so the unattended-away boundary failed and recovery remains untested.
+- **Failed once - Canonical landing rollout:** The canonical-repository correction deadlocked DANU's guarded local landing for a pathless peer-home entry with a task in flight, and recovery found the captain's own checkout 36 commits behind Firstmate's home clone.
+- **Failed once, then corrected - Designer-intent authority:** Firstmate repeated agent-authored DANU doctrine as designer intent in a captain-facing recommendation until the captain corrected it.
+- **Partly tested - Supervision or recovery:** Foreground supervision continued in the active session, but the owned away-mode launcher refused to start, so the unattended-away boundary failed; one DANU context reset was a non-event, while unattended-away operation remains untested.
 
-The successful remote publication results are not evidence that Firstmate's untested later stages, local delivery visibility, or cross-project repeatability work.
+The successful remote publication results and the single DANU chain are not evidence that Firstmate's later stages, local delivery visibility, or cross-project repeatability work in general.
 
 ## Process changes under test
 
@@ -29,6 +32,7 @@ Those facts do not have to advance through a fixed workflow: a change may remain
 - **Planned:** Present one clean, deduplicated bulk questionnaire by default, while keeping one-at-a-time dialogue available when the captain requests it.
 - **Made:** On 2026-08-15, Firstmate added a separate `--target-design-intake` route that defaults to a clean bulk questionnaire and keeps one-at-a-time dialogue as an explicit captain choice; deterministic contract tests pass, but no later target-design trial has exercised it.
 - **Learned:** D1 found the late clean bulk sheet easier to read, but did not establish whether a bulk-first run would discover equally strong questions or produce equally useful dialogue.
+  On 2026-08-16, N1 presented three DANU design questions as one sheet and eight research questions with defaults in one message, and the captain answered each sheet in one message; four later questions were answered only after he asked for the observed situation behind each, so sheet length should track situational need rather than a fixed budget.
 
 ### D1-C2 - Separate captain material from internal reconciliation
 
@@ -41,6 +45,7 @@ Those facts do not have to advance through a fixed workflow: a change may remain
 - **Planned:** Save each exact answer and its question context immediately, then reconcile prose and dependent artifacts in sensible batches instead of asking for repeated micro-approval.
 - **Made:** D1 adopted a private living target and exact answer records after the captain identified the compaction risk, and on 2026-08-15 the shared target-design contract required one dated private record per answered question before batched target reconciliation without per-replacement booking prompts; real-session use remains untested.
 - **Learned:** The durable records survived later compactions and supported clean worker handoffs, while 25 separate booking prompts added avoidable interaction cost.
+  On 2026-08-16, N1 created its private trial record before the first ship, kept every DANU ruling in a dated decision file and context card, and resumed supervision after a context reset with no captain input.
 
 ### S1-C1 - Enter overnight work through the verified launcher
 
@@ -65,6 +70,31 @@ Those facts do not have to advance through a fixed workflow: a change may remain
   A real Martyrdome Treehouse lease produced a distinct worktree root with the same Git common directory while leaving `notes.md` untouched, so the required isolation does not require a duplicate primary clone.
   The first independent implementation review found six rollout defects, including cross-project migration blocking and absent remote-identity proof; the correction review found two more fail-open reporting paths before the final review returned `SHIP` with no findings.
   The useful review boundary was therefore not ceremonial: it prevented a locally green implementation from making incremental migration unsafe or invisible at startup.
+  On 2026-08-17, the rollout deadlocked in the DANU peer home: the guarded local landing refused a pathless entry with `PROJECT_IDENTITY_MISSING` while migration refused with a task in flight, so recovery needed one captain question, one authorized direct fast-forward landing, migration onto the captain's own checkout, and a rebuild of the isolated pool; the private learning names a candidate fix in which the merge scripts reuse teardown's scoped legacy fallback.
+
+### N1-C1 - Bound review rounds on heuristic-parser work
+
+- **Planned:** Put a review-round bound in the brief from the start for heuristic-parser and similar edge-case-rich work, limiting later rounds to errors and regressions while deferring warnings into a known-limitations catalogue.
+- **Made:** No brief scaffold or pipeline behavior has changed; on 2026-08-16 and 2026-08-17 Firstmate imposed the bound mid-run by steer at round 6 of the DANU vocabulary fold and round 9 of Step 1.
+- **Learned:** Both loops converged after the bound, in four and six further rounds, and the fold's tenth round still caught a real parse-time regression, so the bound reduced cost without silencing the reviewer.
+
+### N1-C2 - Review light-path work against the local default branch
+
+- **Planned:** Have the validation wrapper pass the project's local default branch as the review base for `local-only` work so an unpushed home does not diff against a stale `origin/main`.
+- **Made:** No shared behavior has changed; N1 answered the resulting scope re-ask by approving the local base on each affected run.
+- **Learned:** The re-ask recurred on both review runs of DANU exploration batch 1 and produced one data-versus-base mismatch, so it costs at least one decision round per task in a `local-only` home until fixed.
+
+### N1-C3 - Append steer receipts at steer time
+
+- **Planned:** When a mid-task steer adds owner words that a worker will land as project authority, append the verbatim receipt to the brief's captain-decided section at steer time.
+- **Made:** No scaffold or steer behavior has changed; on 2026-08-16 Firstmate appended the receipt only after an independent review objected that a DANU decision-record row quoting the captain's ruling had no receipt in the brief.
+- **Learned:** The receipts check then passed and the row stood, so the objection was legitimate and the fix was mechanical.
+
+### N1-C4 - Placeholder under standing autonomy, then answer by exception
+
+- **Planned:** No change is proposed yet; the loop is recorded so a later trial can judge whether a wrong placeholder ever lands before the captain reads it.
+- **Made:** On 2026-08-17 Firstmate chose the smallest reversible placeholders for two DANU Step 1 gate questions that brushed game behavior, reported them in one line each, and the captain overruled both in one message; both rulings were recorded verbatim, relayed after the active run's terminal outcome, applied, and re-reviewed.
+- **Learned:** The loop cost the captain one message and no waiting in this instance, and its risk of a wrong placeholder landing before he reads it did not materialize here.
 
 ## Human-owned evaluation standard
 
@@ -85,6 +115,8 @@ The trial is judged against these captain-owned criteria.
 - **Default to clean bulk design questions:** The captain said, "i think the default should be the clean bulk and i have the option to go one at a time" (captain, 2026-08-15, canonical primary transcript).
 - **Maintain momentum while he is away:** The captain said, "great, im going to bed, do as much as you can overnight," making continued progress during his absence a specific criterion for this continuation (captain, 2026-08-15, canonical primary transcript).
 - **Keep actual work on the intended repository surface:** After Firstmate confused its managed clone with the real working repository, the captain said that a Firstmate-owned per-project folder was acceptable for Firstmate material but "for actual work it should just use the treehouse stuff" (captain, 2026-08-16, canonical primary transcript).
+- **Operate well on a brand-new repository and concept:** The captain framed the DANU work as "a test run of how firstmate operates on a brand new repo and game concept" and asked "how well does it steer the project in the direction i want per the firstmate principles of intent -> design -> implementation -> playable game" (captain, 2026-08-16, danurepo peer-home session).
+- **Build systems and architecture, not design or balance:** The captain said, "You let me handle game balancing. All you need to do is build the systems and architecture" (captain, 2026-08-16, danurepo peer-home session).
 
 ## Reproducible session inventory
 
@@ -413,6 +445,101 @@ The core failure is that the owned unattended lifecycle was unavailable at the m
 
 This observation does not establish whether away mode would work from the verified wrapper, whether recovery works, or how much work an unattended cycle can complete.
 
+## New-project trial N1 - DANU intake and first implementation (2026-08-16 to 2026-08-17, ongoing)
+
+### Trial and boundary
+
+This entry is a dated snapshot of a trial that was still running on 2026-08-17; it does not close the trial, and later facts belong in dated annotations rather than rewrites.
+The trial covers Firstmate operating on a brand-new repository and game concept, DANU, a private TypeScript project with two commits at trial start, from a fresh peer home registered `local-only` with routine autonomy on 2026-08-16 by captain instruction.
+It includes peer-home bring-up, project add and reconcile, Firstmate's read of the repository's own handoff, the next-step recommendation, the first ship task, captain and agent playtests, design-intake and research scouts, an eight-step architecture plan, its first implementation step, local landing, and one context reset.
+It excludes design-target work in the Martyrdome sense, the Director, UI, the C# port, unattended-away supervision, and cross-project repeatability, none of which was observed.
+Unlike D1, P1, G1, and S1, this trial tested an existing process on a project that had no prior Firstmate history.
+
+### Captain-owned criteria
+
+- The captain framed the trial as "a test run of how firstmate operates on a brand new repo and game concept" and asked "how well does it steer the project in the direction i want per the firstmate principles of intent -> design -> implementation -> playable game" (captain, 2026-08-16, danurepo peer-home session).
+- Inside DANU the captain had set "Project goal for now is to find out whether the idea works, not to ship" (DANU `docs/DECISIONS.md`, 2026-08-16), and the repository's own `AGENTS.md` demands ask-don't-guess, layperson language, owner-supplied plan goals, and strict status hygiene.
+- Mid-trial the captain drew the role line explicitly: "You let me handle game balancing. All you need to do is build the systems and architecture" (captain, 2026-08-16, danurepo peer-home session).
+- The captain set the design goal as the most robust interpretation system and asked Firstmate to choose options by that criterion, and later stated the whole-game target as Pax Historia without LLMs at play time (captain, 2026-08-16, closely attributed from voice).
+- The standing criteria for the full chain, quick and easy operation, attention only where it matters, readable material, direct questions, accepted work durable outside chat, proportional ceremony, clean bulk questions, and optimizing for this captain apply as dated above.
+
+### Status and outcome
+
+**Tested once - New-project onboarding:** A fresh peer home attached, cloned, gate-initialized, and reconciled DANU with no project commits, and Firstmate relayed the repository's own honest handoff instead of dispatching discovery.
+**Tested once - Planning:** A planning scout produced an eight-step architecture plan in the repository's own plan shape with the captain's verbatim goals, and it landed as `docs/plans/world-memory.md` on local `main`.
+Plan quality in play is untested.
+**Tested once - Implementation:** The first plan step, world memory, landed on local `main` after two review runs; the vocabulary fold, ladder fixes, exploration batch, and input-logging ships also landed.
+Whether the idea works remains the captain's open project question and is not answered by this trial.
+**Partly tested - Review and validation:** The light path's single reviewer caught real defects on every ship, but heuristic-parser work needed ten to fifteen fix rounds until Firstmate imposed a round bound.
+**Partly tested - Publication or integration:** Local landing worked repeatedly, then the canonical-repository rollout deadlocked the guarded landing for a peer home with a task in flight.
+**Partly tested - Supervision or recovery:** A context reset was a non-event, but stale-worker alarms fired falsely while pipelines applied fixes, and unattended-away supervision was not observed.
+The observable result on 2026-08-17 was that all four chain links, intent, design, architecture, and implementation, had durable artifacts produced within one day on a fresh repository, with the false-canon and landing failures recorded below.
+
+### Measured evidence
+
+- Onboarding: the reconcile report found the entry-point `AGENTS.md`, handoff `STATUS.md`, decision record `docs/DECISIONS.md`, check `npm test`, and setup `npm ci` with no collision, disagreement, or gap, and `no-mistakes init` plus `doctor` created no commits.
+- Firstmate-side ceremony at bring-up was three tool-blocked shell attempts, none captain-facing.
+- The first ship's contract validation refused once because the outcome pointer was prose instead of a receipted `captain decision <id>`; the receipt validators then passed first time on the next two briefs, and one honest mis-tier was caught on a later scorer brief.
+- A bare `tasks-axi add` in the peer home wrote its item into the main home's backlog until corrected with an explicit backlog file.
+- The captain's first playtest was 24 commands, saved verbatim with a labeled provisional tally of 7 patterns.
+- The design-intake scout replayed those 24 lines at HEAD with the same seed and reproduced the transcript word for word, then classified 10 candidate rows as 3 shortlisted, 1 premature, 3 implementation-only, 1 answered by the decision record, and 2 duplicates of routed work.
+- The output-persistence scout ran 5 novel orders across seeds 1 to 8 and two rulesets and found that nothing a player says persists in world state; it classified 12 rows as 3 shortlisted, 1 answered, 1 stale, 2 premature, 4 implementation-only, and 1 duplicate.
+- The Pax Historia research scout observed the live game, dumped twelve production prompts and a serialized world state, verified every prior-art quote at source finding one misattribution and one paraphrase-as-quote, produced a 16-item functional checklist, and registered 8 owner questions.
+- The bear test in Pax on Normal difficulty absorbed the order into 11 of 16 events and then rescinded it within the first month, with no rule deciding which outcome occurs.
+- Exploration batch 1 landed 399 authored inputs as `b5087cc` after two review runs and five decision rounds; its headline was 145 of 333 orders read wrongly plus 21 non-orders read as orders, explore tier 67.3 percent top-1 versus 72.5 percent overall.
+- The vocabulary fold landed as `223a492` with the captain's own player tier at 17 of 17 from 14, explore 224 to 286 of 333, hard 8 to 12 of 18, varied 143 to 168 of 176, plain unchanged, and 53 tests, after ten review rounds and about 2 hours 20 minutes on a 28-file parser change; round 10 still caught a parse-time regression from 0.66 to 6 to 8 milliseconds.
+- Step 1 landed after a first run of 15 fix rounds, of which 8 keyed decisions were answered by Firstmate under standing autonomy and 2 were escalated as design questions, and a second run of 3 rounds, with 21 commits and 103 tests; Firstmate imposed a round bound at round 9 and the loop converged in 6 more rounds.
+- Two ask-user review findings on the first ship were decided fast: the first by Firstmate under standing autonomy within minutes of the finding and without waking the captain, and the second by the captain typing directly into the worker's window before Firstmate's identical decision was sent.
+- Captain question sheets: three design questions presented as one sheet were answered in one message, eight research questions with defaults were answered in one message, and four later questions were answered in one line only after the captain asked for observed context on each; the number of open captain questions peaked at 10 and reached zero on 2026-08-16.
+- Firstmate asked no clarifying question back in any recorded segment; the captain's decisions arrived through the bulk sheets above plus one two-part landing-fork question answered "1A 2 yes".
+- About 12 false worker-gone-quiet alarms fired across two tasks while pipelines applied fixes, each costing one wake turn.
+- The wake drain printed an empty open-decisions section while two keyed decisions were open in one status log.
+- The guarded local landing refused after the canonical-repository update with `PROJECT_IDENTITY_MISSING` while migration refused with a task in flight; recovery fast-forwarded 36 commits onto the captain's own checkout that he had never pulled and rebuilt the isolated pool by removing five clean scratch worktrees.
+- After the context reset, the re-emitted digest, backlog, and status logs were enough to resume supervision with no captain input.
+- One worker showed a mid-task model switch banner not caused by Firstmate and still finished; recorded because it affects repeatability claims.
+
+### Verdict against the captain's goals
+
+- **Test Firstmate on a brand-new repository and concept - Tested once, succeeded at onboarding:** The peer home attached and reconciled the repository without writes, and the first ship, playtest, and fold loop ran; repeatability on another fresh repository is unavailable evidence.
+- **Steer the project intent -> design -> implementation -> playable game - Partly met:** All four links gained durable artifacts within one day, and the plan applied the captain's rulings, but no playable outcome was observed and the project's own "does the idea work" question stays open.
+- **Build systems and architecture, leave design and balancing to the captain - Failed once, then corrected:** Firstmate repeated agent-authored "rhetoric is not an input" doctrine as the project's thesis in a captain-facing recommendation, the captain corrected it, and it was routed as a false-canon correction with the ruling recorded verbatim.
+- **Facilitate the complete chain - Met for this boundary:** Firstmate captured rulings verbatim in a context card and decision records, escalated real design forks to evidence scouts instead of building on its own read, and dispatched the plan and Step 1 without adding approval ceremony the captain had not asked for.
+- **Make the process quick and easy - Partly met:** Bulk-by-exception answers and zero-question segments kept his cost low, but the review loops on parser work, the recurring local-only base re-ask, and the landing deadlock added hours of pipeline time and one avoidable question.
+- **Use his attention only where it matters - Met, with one open measure:** Most ask-user findings were decided under standing autonomy without waking him, and his two overrules of Firstmate's placeholders cost one message; the record leaves "decisions requested versus genuinely needed" as an open observation.
+- **Keep captain-facing material readable - Met, with a learned nuance:** Short one-sentence-with-default sheets were enough for eight questions, but four questions needed observed situational context before he could answer, so length should track situational need rather than a fixed budget.
+- **Ask direct design questions - Met:** Each question carried options and a default, and the captain answered by criterion and delegation, by letter, or by one-line correction.
+- **Preserve accepted work outside chat - Met:** The private trial record existed before the first ship, every ruling has a dated decision file, and the context reset test passed on the first wake after it.
+- **Avoid ceremony that does not serve the work - Partly met:** Guards refused real defects with one retry each, but the local-only review base, the mid-task steer receipt objection, and the peer-home backlog mis-write were Firstmate-side costs of Firstmate's own machinery.
+- **Default to clean bulk design questions - Met:** Three sheets were presented in bulk with defaults and answered in one message each.
+- **Keep actual work on the intended repository surface - Partly met:** Work landed on Firstmate's home clone for a day while the captain's own checkout was 36 commits behind, and the canonical migration deadlocked before it recovered onto his checkout.
+- **Maintain momentum while he is away - Unavailable evidence:** Unattended-away supervision was excluded from this trial.
+
+### Strengths and failures
+
+Firstmate relayed the repository's own honest handoff instead of rediscovering it, sequenced one small enabling ship in front of the captain's playtest, and kept the in-flight worker unsteered when the playtest arrived early.
+Evidence scouts corrected Firstmate's own inference twice before the captain was asked a wrong question: the vocabulary-mismatch finding replaced Firstmate's proposed missing-content fork, and the persistence scout verified the bear case empirically.
+The light-path review earned its keep, catching an EOF confirmation defect, Firstmate's own narrowing of the logged parse, and a late parse-time regression.
+Direct captain intervention in a worker window was tolerated cleanly because the decision key closed and Firstmate's duplicate steer was refused.
+The rulings-to-context-card-to-decision-file path is the durable slot for intent-to-design knowledge that earlier trials lacked.
+
+The reusable failures are these.
+Firstmate reproduced agent-authored canon as designer intent in a captain-facing recommendation, the exact failure earlier findings warned about.
+The light path's single reviewer keeps finding edge cases on heuristic-parser work until a round bound is imposed, so the bound belongs in the brief from the start.
+A mid-task steer that adds owner words needs its receipt appended to the brief at steer time, or review objects later.
+Local-only landing without a pushed origin makes the review base re-ask recur on every task in the home.
+Peer-home defaults resolved against the primary home for the backlog writer, and the canonical-repository rollout did not cover a pathless peer-home entry with a task in flight.
+False stale-worker alarms during pipeline fix rounds and an empty open-decisions section on a log with two open keys cost wake turns without captain impact.
+
+### Correction and uncertainty
+
+**Observed evidence:** One fresh repository went from onboarding to a landed first architecture step in one day, with all captain-facing questions batched by exception, one false-canon recommendation corrected by the captain, and several Firstmate-side mechanics defects surfaced by supervision.
+
+**Captain's stated preference:** Firstmate builds the systems and architecture while he owns design and balancing, question length should carry the situational context each question needs, and the trial's own criteria are how Firstmate operates on a brand-new repository and how well it steers toward a playable game (captain, 2026-08-16, danurepo peer-home session).
+
+**Assessment recommendation:** Keep the ruling capture, evidence-scout, and bulk-by-exception loop; put a review-round bound in heuristic-parser briefs from the start; append steer receipts at steer time; fix the local-only review base and the peer-home defaults in Firstmate rather than paying the extra round per task; and cover the pathless peer-home case in the canonical migration.
+
+**Open empirical questions:** Whether the plan and Step 1 make the idea work in play, whether decisions requested matched decisions genuinely needed, whether the captain experienced the scout-first routing of design forks as momentum or delay, whether the delegated design choice read to him as served or invented, whether the local-only landing plus captain playtest loop is quick and easy in practice, and whether onboarding repeats on another fresh repository all remain unanswered by this record.
+
 ## Future stage entries
 
 Later trials should extend this document with one bounded entry under the applicable stage rather than rewriting the design-stage history.
@@ -437,27 +564,32 @@ Repeatability and player-cohort evidence remain untested.
 
 ### Planning
 
-Planning is untested, so no verdict is recorded.
+N1 records one DANU architecture plan produced from the captain's verbatim rulings and landed in the project.
+Martyrdome planning and plan quality in play remain untested.
 
 ### Implementation
 
-Implementation is untested, so no verdict is recorded.
+N1 records DANU's first architecture step and four smaller ships landed on the project's local default branch.
+Martyrdome implementation, implementation alignment with a published target, and any playable outcome remain untested.
 
 ### Review and validation
 
 Publication-document review is tested once in P1.
-Implementation review, runtime validation, and player-outcome validation remain untested, so no verdict is recorded for them.
+N1 records light-path implementation review that caught real defects on every DANU ship, with long fix loops on parser work until a round bound was imposed.
+Runtime validation and player-outcome validation remain untested, so no verdict is recorded for them.
 
 ### Publication or integration
 
 P1 records one successful Martyrdome target-publication result.
 P2 records a second successful remote publication whose captain-facing local handoff failed because Firstmate confused its managed clone with the captain's working repository.
-General repeatability, repository-surface correction, and implementation alignment remain untested.
+N1 records repeated successful local landing on a fresh peer home and one landing deadlock caused by the canonical-repository rollout, recovered onto the captain's own checkout.
+General repeatability and implementation alignment remain untested.
 
 ### Supervision or recovery
 
 S1 records a failed unattended-away boundary and successful foreground continuation in the same active turn.
-Away-mode operation and recovery remain unproven.
+N1 records one context reset resumed with no captain input, false stale-worker alarms during pipeline fix rounds, and one wake drain that missed two open decisions.
+Away-mode operation remains unproven.
 
 ## Current assessment conclusion
 
@@ -467,4 +599,6 @@ The gap trial strengthened source-authority discipline, honest runtime evidence,
 The publication trials strengthened remote repository truth, proportional project-delivery rigor, routine autonomy, and foreground momentum while preserving the design trial's earlier failures as historical findings.
 The second publication also exposed that Firstmate can land correct work remotely while misleading the captain about which local repository was verified and where the result is available.
 The supervision observation failed at the unattended-away boundary, and foreground continuation must not be credited as satisfying the captain's overnight request.
-The next assessment entry must evaluate a later process stage on its own evidence rather than extending either successful result into an assumed overall verdict.
+The DANU trial then carried a fresh repository from onboarding through a captain-ruled plan to a landed first implementation step in one day with questions batched by exception, while reproducing the agent-authored-canon failure once and exposing local-only review base, peer-home default, stale-alarm, and canonical-landing defects in Firstmate's own machinery.
+That single chain does not show that the idea works in play or that onboarding repeats elsewhere.
+The next assessment entry must evaluate a later process stage on its own evidence rather than extending any successful result into an assumed overall verdict.
