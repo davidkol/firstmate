@@ -147,7 +147,7 @@ resolve_permissive_tmux_kill_ref() {
 # real behavior difference. fm-line-cap-lib.sh is sourced by fm-send.sh and
 # fm-busy-lib.sh by fm-crew-state.sh; fm-startup-memory-budget-lib.sh is sourced
 # by fm-config-inherit-lib.sh.
-OLD_BIN_UNCHANGED_SIBLINGS="fm-gate-refuse-lib.sh fm-guard.sh fm-lock-lib.sh fm-tasks-axi-lib.sh fm-pr-lib.sh fm-tangle-lib.sh fm-tmux-lib.sh fm-composer-lib.sh fm-wake-lib.sh fm-classify-lib.sh fm-line-cap-lib.sh fm-busy-lib.sh fm-supervision-lib.sh fm-ff-lib.sh fm-config-inherit-lib.sh fm-startup-memory-budget-lib.sh fm-project-mode.sh fm-harness.sh fm-crew-state.sh fm-nm-run-lib.sh fm-decision-hold.sh fm-backend.sh fm-operational-input.sh"
+OLD_BIN_UNCHANGED_SIBLINGS="fm-gate-refuse-lib.sh fm-guard.sh fm-lock-lib.sh fm-tasks-axi-lib.sh fm-pr-lib.sh fm-tangle-lib.sh fm-tmux-lib.sh fm-composer-lib.sh fm-wake-lib.sh fm-classify-lib.sh fm-line-cap-lib.sh fm-busy-lib.sh fm-supervision-lib.sh fm-ff-lib.sh fm-config-inherit-lib.sh fm-startup-memory-budget-lib.sh fm-project-mode.sh fm-project-lib.sh fm-harness.sh fm-crew-state.sh fm-nm-run-lib.sh fm-decision-hold.sh fm-backend.sh fm-operational-input.sh"
 # A pull-request merge may add a new main-only dependency that the branch's older baseline does not have yet.
 OLD_BIN_OPTIONAL_SIBLINGS="fm-pending-reply-lib.sh"
 OLD_BIN_REFACTORED="fm-send.sh fm-peek.sh fm-watch.sh fm-spawn.sh fm-teardown.sh fm-marker-lib.sh"
@@ -909,6 +909,7 @@ run_spawn_symlink_case() {  # <label> <physical|logical>
   fb=$(make_spawn_symlink_fakebin "$TMP_ROOT/symlink-fake-$label" "$initial_path" "$wt")
   data="$TMP_ROOT/symlink-data-$label"
   mkdir -p "$data/$id"
+  fm_register_project "$data" proj "$proj"
   fm_write_ship_brief "$data/$id/brief.md" T0
   state="$TMP_ROOT/symlink-state-$label"; config="$TMP_ROOT/symlink-config-$label"
   mkdir -p "$state" "$config"
@@ -1095,6 +1096,7 @@ test_spawn_default_backend_writes_no_meta_field() {
   local fb
   fb=$(make_spawn_fakebin "$TMP_ROOT/nobackend-fake" "$wt")
   mkdir -p "$data/$id"; fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   state="$TMP_ROOT/nobackend-state"; config="$TMP_ROOT/nobackend-config"
   mkdir -p "$state" "$config"
 
@@ -1117,6 +1119,7 @@ test_spawn_explicit_backend_flag_beats_autodetect_herdr_env() {
   fm_git_worktree "$proj" "$wt" "fm/$id"
   fb=$(make_spawn_fakebin "$TMP_ROOT/explicit-backend-fake" "$wt")
   mkdir -p "$data/$id"; fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   state="$TMP_ROOT/explicit-backend-state"; config="$TMP_ROOT/explicit-backend-config"
   mkdir -p "$state" "$config"
 
@@ -1141,6 +1144,7 @@ test_spawn_autodetect_nesting_resolves_tmux_silently() {
   fm_git_worktree "$proj" "$wt" "fm/$id"
   fb=$(make_spawn_fakebin "$TMP_ROOT/nest-fake" "$wt")
   mkdir -p "$data/$id"; fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   state="$TMP_ROOT/nest-state"; config="$TMP_ROOT/nest-config"
   mkdir -p "$state" "$config"
 

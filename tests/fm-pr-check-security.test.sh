@@ -2333,7 +2333,9 @@ test_bootstrap_isolates_incomplete_poll_migration() {
     'harness=codex' \
     'backend=tmux'
   printf 'FMX_PAIRING_TOKEN=test-token\n' > "$dir/home/.env"
-  mkdir -p "$dir/home/projects"
+  # Bootstrap runs fleet refresh only for a home with a canonical project registry.
+  fm_git_init_commit "$dir/repos/alpha"
+  fm_register_project "$dir/home/data" alpha "$dir/repos/alpha"
   fm_fake_exit0 "$fakebin" curl jq
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash

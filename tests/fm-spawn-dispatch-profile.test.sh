@@ -58,6 +58,7 @@ make_spawn_case() {
   mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
   printf '%s\n' "$harness" > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
+  fm_register_project "$home/data" project "$proj"
   touch "$home/state/.last-watcher-beat"
   for id in "$@"; do
     mkdir -p "$home/data/$id"
@@ -473,8 +474,7 @@ test_spawn_freezes_delivery_posture_across_prompt_and_metadata() {
   read_case_record "$rec"
   brief="$HOME_DIR/data/$id/brief.md"
   rm -f "$brief"
-  printf '%s\n' '- project [direct-PR +yolo] - dispatch posture fixture (added 2026-08-12)' \
-    > "$HOME_DIR/data/projects.md"
+  fm_register_project "$HOME_DIR/data" project "$PROJ_DIR" direct-PR +yolo
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_DATA_OVERRIDE="$HOME_DIR/data" \
     "$ROOT/bin/fm-brief.sh" "$id" project >/dev/null \
     || fail "could not scaffold the dispatch-posture brief"
@@ -486,8 +486,7 @@ test_spawn_freezes_delivery_posture_across_prompt_and_metadata() {
     $0 == "{FIRSTMATE_INFERENCE}" { print "- The dispatch posture is resolved at launch."; next }
     { print }
   ' "$brief" > "$brief.filled" && mv "$brief.filled" "$brief"
-  printf '%s\n' '- project [local-only] - dispatch posture fixture (added 2026-08-12)' \
-    > "$HOME_DIR/data/projects.md"
+  fm_register_project "$HOME_DIR/data" project "$PROJ_DIR" local-only
 
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
   status=$?

@@ -69,37 +69,49 @@ ROWS
   pass "batch detection: single pair batches, non-pair rejected, single-task and slash-id stay single"
 }
 
-# A projects/ path is resolved through the firstmate home, never the caller cwd,
-# before the missing-brief check. One row per home-scoping override.
+# A project id is resolved through the firstmate home's canonical registry,
+# never the caller cwd or a `projects/<name>` clone, before the missing-brief
+# check (bin/fm-project-lib.sh). One row per data-location override.
 test_projects_path_scoping() {
-  local label use_override id home projects out status expected
+  local label use_override id home data repo out status expected
   while IFS='|' read -r label use_override id; do
     [ -n "$label" ] || continue
     home="$TMP_ROOT/$id home"
-    projects="$TMP_ROOT/$id projects"
-    mkdir -p "$home/data" "$projects/alpha"
+    repo="$TMP_ROOT/$id repo"
+    fm_git_init_commit "$repo"
     if [ "$use_override" = yes ]; then
-      out=$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
-        FM_HOME="$home" FM_PROJECTS_OVERRIDE="$projects" FM_SPAWN_NO_GUARD=1 \
-        "$SPAWN" "$id" projects/alpha codex 2>&1)
-    else
-      mkdir -p "$home/projects/alpha"
-      out=$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+      data="$TMP_ROOT/$id data"
+      fm_register_project "$data" alpha "$repo"
+      out=$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE='' \
         FM_HOME="$home" FM_SPAWN_NO_GUARD=1 \
-        "$SPAWN" "$id" projects/alpha codex 2>&1)
+        "$SPAWN" "$id" alpha codex 2>&1)
+    else
+      data="$home/data"
+      fm_register_project "$data" alpha "$repo"
+      out=$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+        FM_HOME="$home" FM_SPAWN_NO_GUARD=1 \
+        "$SPAWN" "$id" alpha codex 2>&1)
     fi
     status=$?
     [ "$status" -ne 0 ] || fail "$label: spawn with missing brief should fail"
-    expected="error: no brief at $home/data/$id/brief.md"
+    expected="error: no brief at $data/$id/brief.md"
     printf '%s\n' "$out" | grep -F "$expected" >/dev/null \
-      || fail "$label: projects/alpha was not resolved through the home before the brief check"
-    printf '%s\n' "$out" | grep -F 'cd: projects/alpha' >/dev/null \
-      && fail "$label: spawn resolved projects/alpha from the caller cwd"
+      || fail "$label: alpha was not resolved through the home registry before the brief check ($out)"
+    # A projects/<name> path is never resolved from the caller cwd or the home's
+    # managed clone directory: only the registry binds a project.
+    mkdir -p "$home/projects/alpha"
+    out=$(cd "$home" && FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE='' \
+      FM_HOME="$home" FM_SPAWN_NO_GUARD=1 \
+      "$SPAWN" "$id" projects/alpha codex 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$label: an unregistered projects/alpha path must be refused"
+    printf '%s\n' "$out" | grep -F 'PROJECT_PATH_NOT_REGISTERED' >/dev/null \
+      || fail "$label: unregistered projects/alpha was not refused by the canonical resolver ($out)"
   done <<'ROWS'
-FM_HOME scopes projects/|no|nope-home-z7
-FM_PROJECTS_OVERRIDE scopes projects/|yes|nope-override-z8
+FM_HOME scopes the registry|no|nope-home-z7
+FM_DATA_OVERRIDE scopes the registry|yes|nope-override-z8
 ROWS
-  pass "projects/ paths are scoped through the firstmate home for single-task spawn"
+  pass "project ids resolve through the home registry for single-task spawn, and unregistered projects/ paths are refused"
 }
 
 test_batch_dispatches_every_pair

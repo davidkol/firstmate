@@ -530,10 +530,11 @@ fi
 # how work gets marked done while stranded outside the owner's only copy. That is
 # every mode that reaches the host: the PR modes, and validated-main, which pushes
 # the default branch itself.
-# fm-project-mode.sh warns and falls back to "no-mistakes off" whenever it cannot
-# resolve the name, so a warning means the registry records nothing here. The
-# fallback is not a record and must not be checked against a remote as if it
-# were: that manufactures a hold about a mode nobody ever chose.
+# fm-project-mode.sh refuses on stderr (PROJECT_NOT_FOUND, PROJECT_PATH_REQUIRED,
+# and the other bin/fm-project-lib.sh refusals) whenever it cannot resolve the
+# name, so stderr output means the registry records nothing usable here. A
+# refusal is not a record and no default may be checked against a remote as if
+# it were: that manufactures a hold about a mode nobody ever chose.
 MODE_UNRESOLVED=
 if [ -n "$PROJECT_NAME" ] && [ -x "$SCRIPT_DIR/fm-project-mode.sh" ]; then
   mode_err="$WORK/mode.err"

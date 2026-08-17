@@ -126,6 +126,18 @@ fm_git_init_commit() {
   git -C "$dir" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm initial
 }
 
+# fm_register_project <data-dir> <id> <path> [<mode> [+yolo]]: write a
+# one-entry canonical project registry at <data-dir>/projects.md that binds <id>
+# to the absolute repository root <path> (default mode no-mistakes). Primary and
+# peer homes resolve every project-bound brief, spawn, and promotion through this
+# registry (bin/fm-project-lib.sh), so a fixture that hands fm-spawn.sh or
+# fm-brief.sh a project must register it first. Overwrites any prior registry.
+fm_register_project() {
+  local data=$1 id=$2 path=$3 mode=${4:-no-mistakes} yolo=${5:-}
+  mkdir -p "$data"
+  printf -- '- %s [%s%s] - test fixture\n  path: %s\n' "$id" "$mode" "${yolo:+ $yolo}" "$path" > "$data/projects.md"
+}
+
 # fm_git_add_origin <repo> <bare>: clone <repo> bare into <bare> and register it
 # as <repo>'s origin via a file:// URL (so later clones resolve an absolute path).
 fm_git_add_origin() {

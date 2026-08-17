@@ -444,6 +444,7 @@ test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails() {
   fm_git_init_commit "$proj"
   mkdir -p "$data/$id" "$state" "$config"
   fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   touch "$state/.last-watcher-beat"
   orca_case pathless-cleanup-fail
   printf '1\n' > "$RESP/1.exit"
@@ -480,6 +481,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   fm_git_worktree "$proj" "$wt" "fm/$id"
   mkdir -p "$data/$id" "$state" "$config"
   fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   touch "$state/.last-watcher-beat"
   orca_case spawn
   log="$LOG"
@@ -545,6 +547,7 @@ test_spawn_refuses_orca_when_runtime_not_ready() {
   fm_git_init_commit "$proj"
   mkdir -p "$data/$id" "$state" "$config"
   fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   touch "$state/.last-watcher-beat"
   orca_case runtime-down-spawn
   printf '{"ok":true,"result":{"runtime":{"reachable":false,"state":"starting"}}}\n' > "$RESP/1.out"
@@ -574,6 +577,7 @@ test_spawn_refuses_orca_nonisolated_worktree() {
   fm_git_init_commit "$proj"
   mkdir -p "$data/$id" "$state" "$config"
   fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   touch "$state/.last-watcher-beat"
   orca_case bad-spawn
   printf '1\n' > "$RESP/1.exit"
@@ -608,6 +612,7 @@ test_spawn_removes_orca_worktree_when_terminal_create_fails() {
   fm_git_worktree "$proj" "$wt" "fm/$id"
   mkdir -p "$data/$id" "$state" "$config"
   fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   touch "$state/.last-watcher-beat"
   orca_case terminal-fail
   printf '1\n' > "$RESP/1.exit"
@@ -641,6 +646,7 @@ test_spawn_preserves_orca_metadata_when_abort_cleanup_fails() {
   fm_git_worktree "$proj" "$wt" "fm/$id"
   mkdir -p "$data/$id" "$state" "$config"
   fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   touch "$state/.last-watcher-beat"
   orca_case cleanup-fail
   printf '1\n' > "$RESP/1.exit"
@@ -675,6 +681,7 @@ test_spawn_releases_orca_resources_when_metadata_write_fails() {
   fm_git_worktree "$proj" "$wt" "fm/$id"
   mkdir -p "$data/$id" "$state/$id.meta" "$config"
   fm_write_ship_brief "$data/$id/brief.md" T0
+  fm_register_project "$data" project "$proj"
   orca_case meta-fail
   printf '1\n' > "$RESP/1.exit"
   printf '{"ok":true,"result":{"repo":{"id":"repo-meta-fail"}}}\n' > "$RESP/2.out"

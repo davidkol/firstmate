@@ -219,6 +219,8 @@ test_generated_briefs_pass_the_check() {
   local home out kind
   home="$TMP_ROOT/briefs"
   mkdir -p "$home/data" "$home/state" "$TMP_ROOT/claude-config/projects"
+  fm_git_init_commit "$home/proj"
+  fm_register_project "$home/data" someproj "$home/proj"
   for kind in ship scout; do
     if [ "$kind" = scout ]; then
       out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
@@ -245,6 +247,8 @@ test_the_scaffold_blessed_absence_entry_passes() {
   local home brief blessed out
   home="$TMP_ROOT/absence"
   mkdir -p "$home/data"
+  fm_git_init_commit "$home/proj"
+  fm_register_project "$home/data" someproj "$home/proj"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     "$ROOT/bin/fm-brief.sh" absence-gate someproj >/dev/null 2>&1
   brief="$home/data/absence-gate/brief.md"
@@ -448,6 +452,10 @@ EOF
 # reads as the gate failing when the gate was never reached.
 run_spawn_gate() {
   local home=$1 id=$2 proj=$3
+  # Spawn resolves the project through the home's canonical registry before it
+  # reads the brief, so the fixture project is a registered Git root.
+  [ -d "$proj/.git" ] || fm_git_init_commit "$proj"
+  [ -f "$home/data/projects.md" ] || fm_register_project "$home/data" someproj "$proj"
   FM_ROOT_OVERRIDE='' \
     FM_HOME="$home" \
     FM_DATA_OVERRIDE="$home/data" \
@@ -766,7 +774,9 @@ test_repository_sources_are_project_root_relative() {
 test_spawn_lets_a_filled_generated_brief_past_the_placeholder_gate() {
   local home brief out
   home="$TMP_ROOT/spawn-filled"
-  mkdir -p "$home/data" "$home/state" "$home/proj" "$TMP_ROOT/claude-config-spawn/projects"
+  mkdir -p "$home/data" "$home/state" "$TMP_ROOT/claude-config-spawn/projects"
+  fm_git_init_commit "$home/proj"
+  fm_register_project "$home/data" someproj "$home/proj"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" \
     FM_STATE_OVERRIDE="$home/state" CLAUDE_CONFIG_DIR="$TMP_ROOT/claude-config-spawn" \
     "$ROOT/bin/fm-brief.sh" filled someproj >/dev/null 2>&1

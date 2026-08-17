@@ -41,20 +41,23 @@ BETA_ORIGIN=
 
 # --- shared world + seed ----------------------------------------------------
 setup_world() {
-  mkdir -p "$HOME_DIR/projects" "$HOME_DIR/data" "$HOME_DIR/state"
-  fm_git_init_commit "$HOME_DIR/projects/alpha"
-  fm_git_init_commit "$HOME_DIR/projects/beta"
-  fm_git_init_commit "$HOME_DIR/projects/gamma"
-  fm_git_add_origin "$HOME_DIR/projects/alpha" "$TMP_ROOT/remotes/alpha.git"
-  fm_git_add_origin "$HOME_DIR/projects/beta" "$TMP_ROOT/remotes/beta.git"
-  fm_git_add_origin "$HOME_DIR/projects/gamma" "$TMP_ROOT/remotes/gamma.git"
+  mkdir -p "$HOME_DIR/repos" "$HOME_DIR/data" "$HOME_DIR/state"
+  fm_git_init_commit "$HOME_DIR/repos/alpha"
+  fm_git_init_commit "$HOME_DIR/repos/beta"
+  fm_git_init_commit "$HOME_DIR/repos/gamma"
+  fm_git_add_origin "$HOME_DIR/repos/alpha" "$TMP_ROOT/remotes/alpha.git"
+  fm_git_add_origin "$HOME_DIR/repos/beta" "$TMP_ROOT/remotes/beta.git"
+  fm_git_add_origin "$HOME_DIR/repos/gamma" "$TMP_ROOT/remotes/gamma.git"
   cat > "$HOME_DIR/data/projects.md" <<EOF
 - alpha [direct-PR +yolo] - alpha project (added 2026-06-22)
+  path: $HOME_DIR/repos/alpha
 - beta [direct-PR] - beta project (added 2026-06-22)
+  path: $HOME_DIR/repos/beta
 - gamma - gamma project (added 2026-06-22)
+  path: $HOME_DIR/repos/gamma
 EOF
-  ALPHA_ORIGIN=$(git -C "$HOME_DIR/projects/alpha" remote get-url origin)
-  BETA_ORIGIN=$(git -C "$HOME_DIR/projects/beta" remote get-url origin)
+  ALPHA_ORIGIN=$(git -C "$HOME_DIR/repos/alpha" remote get-url origin)
+  BETA_ORIGIN=$(git -C "$HOME_DIR/repos/beta" remote get-url origin)
 
   # One combined fakebin: tmux + treehouse (spawn/send/teardown) and no-mistakes
   # (gamma initialization during seed).
@@ -92,7 +95,7 @@ phase_seed() {
   # no-mistakes init runs in the NEW clone, never the parent project.
   assert_present "$SUB/projects/gamma/.no-mistakes-init" "no-mistakes project was not initialized in the subhome"
   assert_present "$SUB/projects/gamma/.no-mistakes-doctor" "no-mistakes project was not doctored in the subhome"
-  assert_absent "$HOME_DIR/projects/gamma/.no-mistakes-init" "seed wrote no-mistakes state through the parent project"
+  assert_absent "$HOME_DIR/repos/gamma/.no-mistakes-init" "seed wrote no-mistakes state through the parent project"
 
   # Registry line: scope from the filled brief, project list, no legacy owns field.
   assert_grep '- design - customer onboarding charter' "$HOME_DIR/data/secondmates.md" "registry summary not from the charter"
@@ -221,7 +224,7 @@ phase_teardown() {
   assert_absent "$HOME_DIR/state/design.meta" "teardown did not clear the parent meta"
   assert_no_grep '- design ' "$HOME_DIR/data/secondmates.md" "teardown did not remove the registry route"
   # The parent's source projects are untouched (no write through a parent home).
-  assert_present "$HOME_DIR/projects/alpha" "teardown disturbed a parent project"
+  assert_present "$HOME_DIR/repos/alpha" "teardown disturbed a parent project"
   pass "teardown: removes the home, then clears meta and the registry route"
 }
 

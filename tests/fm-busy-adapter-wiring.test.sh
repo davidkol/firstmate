@@ -49,6 +49,7 @@ make_spawn_case() {  # <name> <harness> <id>
   mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
   printf '%s\n' "$harness" > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
+  fm_register_project "$home/data" project "$proj"
   touch "$home/state/.last-watcher-beat"
   mkdir -p "$home/data/$id"
   fm_write_ship_brief "$home/data/$id/brief.md" T0
