@@ -190,7 +190,7 @@ git add AGENTS.md .agents/skills/project-management/SKILL.md .agents/skills/seco
 git commit -m "docs: define canonical project repository ownership"
 ```
 
-- [ ] **Step 4: Migrate the private Martyrdome entry after the implementation is green**
+- [x] **Step 4: Migrate the private Martyrdome entry after the implementation is green**
 
 Run: `FM_HOME=/Users/davidkol/fm-homes/martyrdome bin/fm-project-path-set.sh Martyrdome /Users/davidkol/projects/Godot/Martyrdome --mode validated-main`
 Expected: the registry records the canonical path and validated-main mode while the old managed clone remains untouched.
@@ -214,12 +214,12 @@ Expected: every command exits zero.
 Acquire a temporary Treehouse worktree from a scratch repository, verify distinct worktree roots and equal physical Git common directories, then return it through Treehouse.
 Expected: identity checks pass and the scratch primary checkout remains unchanged.
 
-- [ ] **Step 3: Verify the migrated Martyrdome binding read-only**
+- [x] **Step 3: Verify the migrated Martyrdome binding read-only**
 
 Run: `FM_HOME=/Users/davidkol/fm-homes/martyrdome bin/fm-project-resolve.sh Martyrdome`
 Expected: one record containing the canonical Godot path and `validated-main` mode.
 
-- [ ] **Step 4: Stop before shared landing and push**
+- [x] **Step 4: Stop before shared landing and push**
 
 Report the exact checks, commits, and private migration result.
 Request the captain's separately informed validation, landing, and push approval required by the standing rule.
