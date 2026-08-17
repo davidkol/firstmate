@@ -46,8 +46,10 @@ test_bare_project_seeds_the_full_set_and_nothing_else() {
   out=$(reconcile --seed "$repo") || fail "seeding a bare project failed:"$'\n'"$out"
 
   assert_present "$repo/AGENTS.md" "AGENTS.md was not seeded"
-  assert_present "$repo/CLAUDE.md" "CLAUDE.md symlink was not seeded"
-  [ -L "$repo/CLAUDE.md" ] || fail "CLAUDE.md is not a symlink to AGENTS.md"
+  assert_present "$repo/CLAUDE.md" "CLAUDE.md pointer was not seeded"
+  [ -f "$repo/CLAUDE.md" ] && [ ! -L "$repo/CLAUDE.md" ] \
+    || fail "CLAUDE.md is not a regular pointer"
+  assert_grep '@AGENTS.md' "$repo/CLAUDE.md" "CLAUDE.md does not import AGENTS.md"
   assert_present "$repo/script/setup" "script/setup was not seeded"
   assert_present "$repo/script/check" "script/check was not seeded"
   assert_present "$repo/script/run" "script/run was not seeded"
@@ -71,7 +73,9 @@ test_existing_surfaces_are_reported_not_duplicated() {
   repo=$(new_bare_project existing)
   mkdir -p "$repo/docs" "$repo/notes" "$repo/script"
   printf '# Agent memory\n\nRun `tests/gate.sh`.\n' > "$repo/AGENTS.md"
-  ln -s AGENTS.md "$repo/CLAUDE.md"
+  printf '%s\n' \
+    '<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->' \
+    '@AGENTS.md' > "$repo/CLAUDE.md"
   printf '# Decisions\n\n2026-01-01: keep it.\n' > "$repo/DECISIONS.md"
   printf '# note\n' > "$repo/notes/2026-01-01-a.md"
   printf '# Handoff\n' > "$repo/docs/handoff.md"
@@ -84,6 +88,8 @@ test_existing_surfaces_are_reported_not_duplicated() {
   assert_contains "$out" "SURFACE: decision-record repo DECISIONS.md" "DECISIONS.md was not inventoried"
   assert_contains "$out" "COLLISION: handoff - 2 surfaces" "two handoff surfaces were not reported as a collision"
   assert_contains "$out" "PRESENT: AGENTS.md" "AGENTS.md was not reported as already present"
+  assert_not_contains "$out" "COLLISION: entry-point" \
+    "canonical CLAUDE.md pointer was inventoried as a second entry point"
   assert_contains "$out" "PRESENT: DECISIONS.md" "DECISIONS.md was not reported as already present"
   assert_contains "$out" "PRESENT: notes" "the existing notes store was not reported as already present"
   assert_not_contains "$out" "SEED: DECISIONS.md" "a second decision record was planned over an existing one"
@@ -361,7 +367,8 @@ test_pr_delivery_mode_against_a_repo_with_no_remote_is_a_disagreement() {
   repo=$(new_bare_project mode-vs-remote)
   home="$TMP_ROOT/home-mode"
   mkdir -p "$home/data"
-  printf -- '- mode-vs-remote [no-mistakes] - a project (added 2026-07-28)\n' > "$home/data/projects.md"
+  printf -- '- mode-vs-remote [no-mistakes] - a project (added 2026-07-28)\n  path: %s\n' \
+    "$repo" > "$home/data/projects.md"
 
   out=$(FM_HOME="$home" "$RECONCILE" --offline --project mode-vs-remote "$repo" 2>&1)
   assert_contains "$out" "DISAGREEMENT: delivery-mode-vs-remote" \
@@ -381,7 +388,8 @@ test_validated_main_against_a_repo_with_no_remote_is_a_disagreement() {
   repo=$(new_bare_project validated-main-vs-remote)
   home="$TMP_ROOT/home-validated-main"
   mkdir -p "$home/data"
-  printf -- '- validated-main-vs-remote [validated-main] - a project (added 2026-07-28)\n' > "$home/data/projects.md"
+  printf -- '- validated-main-vs-remote [validated-main] - a project (added 2026-07-28)\n  path: %s\n' \
+    "$repo" > "$home/data/projects.md"
 
   out=$(FM_HOME="$home" "$RECONCILE" --offline --project validated-main-vs-remote "$repo" 2>&1)
   assert_contains "$out" "DISAGREEMENT: delivery-mode-vs-remote" \
@@ -408,7 +416,7 @@ test_an_unregistered_project_reports_the_lookup_instead_of_inventing_a_mode() {
     "an unregistered project's fallback mode was reported as a registry record"
   assert_contains "$out" "GAP: delivery-mode-unresolved" \
     "an unresolved registry lookup was not reported at all"
-  assert_contains "$out" "not in registry" "the gap did not say why the mode is unresolved"
+  assert_contains "$out" "PROJECT_NOT_FOUND: unregistered" "the gap did not say why the mode is unresolved"
 
   out=$(FM_HOME="$home" "$RECONCILE" --offline --seed --project unregistered "$repo" 2>&1); rc=$?
   expect_code 0 "$rc" "seeding a project the registry does not list"

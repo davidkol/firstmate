@@ -55,7 +55,7 @@ Primary and peer homes resolve each project to one explicit canonical repository
 Their `projects/` directories may retain inactive legacy clones but are never a fallback source; secondmate homes remain the explicit provisioned-clone exception.
 
 ```
-AGENTS.md            this file (CLAUDE.md is a symlink to it)
+AGENTS.md            this file (CLAUDE.md is a regular file that imports it with @AGENTS.md)
 CONTRIBUTING.md      contributor workflow and repo conventions
 README.md            public overview and development notes
 .github/workflows/   shared CI and PR enforcement, committed

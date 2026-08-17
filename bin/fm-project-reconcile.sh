@@ -237,6 +237,15 @@ scan_repo() {
     \( -type d -o -iname '*.md' \) -print 2>/dev/null
 }
 
+is_canonical_claude_pointer() {
+  local file=$1
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  cmp -s "$file" /dev/stdin <<'EOF'
+<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->
+@AGENTS.md
+EOF
+}
+
 while IFS= read -r abs; do
   [ "$abs" = "$DIR" ] && continue
   rel=${abs#"$DIR"/}
@@ -244,10 +253,11 @@ while IFS= read -r abs; do
   if [ -d "$abs" ]; then type=d; fi
   kind=$(classify "$rel" "$type")
   [ -n "$kind" ] || continue
-  # CLAUDE.md that is only a symlink to AGENTS.md is the convention, not a
-  # second entry point.
-  if [ "$kind" = entry-point ] && [ -L "$abs" ]; then
-    continue
+  # A conventional CLAUDE.md compatibility surface is not a second entry point.
+  if [ "$kind" = entry-point ]; then
+    if [ -L "$abs" ] || is_canonical_claude_pointer "$abs"; then
+      continue
+    fi
   fi
   add_surface "$kind" repo "$rel" ""
 done <<EOF
