@@ -473,7 +473,7 @@ Whether the idea works remains the captain's open project question and is not an
 **Partly tested - Review and validation:** The light path's single reviewer caught real defects on every ship, but heuristic-parser work needed ten to fifteen fix rounds until Firstmate imposed a round bound.
 **Partly tested - Publication or integration:** Local landing worked repeatedly, then the canonical-repository rollout deadlocked the guarded landing for a peer home with a task in flight.
 **Partly tested - Supervision or recovery:** A context reset was a non-event, but stale-worker alarms fired falsely while pipelines applied fixes, and unattended-away supervision was not observed.
-The observable result on 2026-08-17 was that all four chain links, intent, design, architecture, and implementation, had durable artifacts produced within one day on a fresh repository, with the false-canon and landing failures recorded below.
+The observable result on 2026-08-17 was that the trial durably recorded the captain's rulings and design reports, landed an architecture plan and its first implementation step within one day on a fresh repository, and remained incomplete before a playable outcome, with the false-canon and landing failures recorded below.
 
 ### Measured evidence
 
@@ -501,7 +501,7 @@ The observable result on 2026-08-17 was that all four chain links, intent, desig
 ### Verdict against the captain's goals
 
 - **Test Firstmate on a brand-new repository and concept - Tested once, succeeded at onboarding:** The peer home attached and reconciled the repository without writes, and the first ship, playtest, and fold loop ran; repeatability on another fresh repository is unavailable evidence.
-- **Steer the project intent -> design -> implementation -> playable game - Partly met:** All four links gained durable artifacts within one day, and the plan applied the captain's rulings, but no playable outcome was observed and the project's own "does the idea work" question stays open.
+- **Steer the project intent -> design -> implementation -> playable game - Partly met:** The trial durably recorded the captain's rulings and design reports, landed an architecture plan and its first implementation step within one day, and applied the rulings to the plan; the captain-owned chain remains incomplete before playability, and the project's own "does the idea work" question stays open.
 - **Build systems and architecture, leave design and balancing to the captain - Failed once, then corrected:** Firstmate repeated agent-authored "rhetoric is not an input" doctrine as the project's thesis in a captain-facing recommendation, the captain corrected it, and it was routed as a false-canon correction with the ruling recorded verbatim.
 - **Facilitate the complete chain - Met for this boundary:** Firstmate captured rulings verbatim in a context card and decision records, escalated real design forks to evidence scouts instead of building on its own read, and dispatched the plan and Step 1 without adding approval ceremony the captain had not asked for.
 - **Make the process quick and easy - Partly met:** Bulk-by-exception answers and zero-question segments kept his cost low, but the review loops on parser work, the recurring local-only base re-ask, and the landing deadlock added hours of pipeline time and one avoidable question.
@@ -537,6 +537,8 @@ False stale-worker alarms during pipeline fix rounds and an empty open-decisions
 **Captain's stated preference:** Firstmate builds the systems and architecture while he owns design and balancing, question length should carry the situational context each question needs, and the trial's own criteria are how Firstmate operates on a brand-new repository and how well it steers toward a playable game (captain, 2026-08-16, danurepo peer-home session).
 
 **Assessment recommendation:** Keep the ruling capture, evidence-scout, and bulk-by-exception loop; put a review-round bound in heuristic-parser briefs from the start; append steer receipts at steer time; fix the local-only review base and the peer-home defaults in Firstmate rather than paying the extra round per task; and cover the pathless peer-home case in the canonical migration.
+
+**Process-change evidence:** N1 updates the Learned facts for D1-C1, D1-C3, and P2-C1 and records the Planned, Made, and Learned facts for N1-C1 through N1-C4 above.
 
 **Open empirical questions:** Whether the plan and Step 1 make the idea work in play, whether decisions requested matched decisions genuinely needed, whether the captain experienced the scout-first routing of design forks as momentum or delay, whether the delegated design choice read to him as served or invented, whether the local-only landing plus captain playtest loop is quick and easy in practice, and whether onboarding repeats on another fresh repository all remain unanswered by this record.
 
