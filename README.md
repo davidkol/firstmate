@@ -47,6 +47,7 @@ Launching a supported harness inside it instantiates your first mate - and makes
 - **Two task shapes** - ship tasks deliver authorized changes; scout tasks leave standalone investigation reports when the intake contract warrants separate research.
 - **Explicit project modes** - each project ships via `no-mistakes`, `validated-main`, `direct-PR`, or `local-only`, with an optional `+yolo` autonomy flag.
 - **Peer homes** - run a separate first mate per game or product out of one clone: `bin/fm-home-seed.sh <id> <home> --peer <project>` provisions a home holding only its own backlog, clones, and state, and `bin/fm-open.sh <home> <harness>` opens it against this same code root, so every home runs one version, nothing can drift, and `/updatefirstmate` reaches them all at once.
+  Symlink `bin/fm-mate.sh` onto your `PATH` as `mate` to open one with `mate <project> <harness>`.
 - **Optional secondmates** - opt in to persistent second mates that run from isolated firstmate homes with their own `FM_HOME`, state, projects, and session lock, supervising project clones or a project-less firstmate-repo domain, kept on the primary firstmate version by guarded local fast-forwards and checked for live agent processes at session start.
 - **Event-driven, zero-token supervision** - a bash watcher sleeps on the fleet and wakes the first mate only when something needs you; verified primary harnesses also get a turn-end backstop that blocks or follows up on a blind stop when work is under way and supervision is not live.
 - **Optional X mode** - opt in with one local `.env` token so firstmate can answer your public `@myfirstmate` mentions, act on normal reversible mention requests through the same lifecycle as chat requests, acknowledge spawned work, and post up to three public-safe completion follow-ups within seven days for genuine milestones and the final outcome without changing non-X behavior; dry-run preview records would-be replies and dismissals locally before go-live.
@@ -113,6 +114,17 @@ bin/fm-codex-primary.sh
 
 The Codex launcher supplies Firstmate's no-prompt/full-access policy, explicitly enables tracked hooks, asks `codex doctor --json` to prove that complete effective posture, and refuses to accept work if Codex reports anything else.
 Use the same entry to resume a session, for example `bin/fm-codex-primary.sh resume <session-id>`; a raw `codex` or `codex resume` is not a supported primary Firstmate entry because it can inherit a restricted user or session policy.
+
+For a short global peer-home command, symlink the tracked launcher into `~/.local/bin` and ensure that directory is on your `PATH`:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+ln -s "$(pwd -P)/bin/fm-mate.sh" "$HOME/.local/bin/mate"
+mate martyrdome claude
+```
+
+`mate <project> <harness> [harness-args...]` opens `~/fm-homes/<project>` by default, requires the harness explicitly, and passes any remaining arguments to it unchanged.
+Because the global command is a symlink to the tracked launcher, it follows Firstmate updates while per-task and session harness overrides remain available.
 
 For Grok, `--trust` is needed once per clone so project hooks and the turn-end guard load; `/hooks-trust` inside Grok works too.
 For Pi, approve the project trust prompt once per clone on first launch so the tracked `.pi/extensions/*.ts` files auto-load.
