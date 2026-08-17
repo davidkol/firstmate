@@ -43,10 +43,8 @@ PROJECT_ID=$(grep '^project_id=' "$META" | cut -d= -f2- || true)
 WT=$(grep '^worktree=' "$META" | cut -d= -f2- || true)
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ "$MODE" = validated-main ] || { echo "error: task $ID is mode=$MODE, not validated-main; land local-only tasks with bin/fm-merge-local.sh and PR tasks with bin/fm-pr-merge.sh <id> <PR url>" >&2; exit 1; }
-# Same three-way identity check as fm-teardown.sh: a task recorded before the
-# canonical-repository change carries no project_id and may still land on its
-# recorded project path while that project's registry entry is pathless; once
-# the entry has a canonical path, the missing identity is a refusal.
+# Apply the legacy-task identity rule owned by docs/configuration.md
+# "Canonical project repositories" through the shared project helper.
 if [ -n "$PROJECT_ID" ]; then
   fm_project_verify_task_identity "$PROJECT_ID" "$PROJ" "$WT" || exit 1
 elif fm_project_legacy_task_requires_identity "$PROJ"; then
