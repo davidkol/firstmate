@@ -106,6 +106,7 @@ Effort precedence is an explicit per-task captain instruction first, then any ap
 Never replace an effort value supplied by either higher-precedence source.
 Use the fallback only when neither the captain nor applicable standing configuration specifies effort.
 Use `low` for well-understood work with an explicit bounded path and `xhigh` for ambiguous investigation or design.
+Uncharacterized production integration into a new host with camera, physics, input, lifecycle, async, or deferred-initialization uncertainty is not well-understood work; choose at least `medium` when the selected adapter supports an effort setting.
 Choose intermediate levels proportionally as complexity, uncertainty, blast radius, or open-ended reasoning increases.
 When a verified adapter lacks `xhigh`, cap the choice at its highest supported non-`max` level rather than omitting the intended effort silently.
 Never select `max` from this fallback; use it only when the captain has explicitly expressed that per-task or standing preference.
