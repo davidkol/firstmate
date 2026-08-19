@@ -41,6 +41,15 @@ Escalate from T0 when the task changes an executable seam, public contract, safe
 Escalate from T1 when work crosses a subsystem boundary, changes player-facing behavior instead of restoring it, or lacks a sensitive local oracle.
 Escalate from T2 when multiple systems must compose, a platform artifact changes, or separable parts can be present but inert.
 
+## Parent-outcome proof
+
+When task-local intake classifies a child as proof for a broader accepted outcome, evaluate the child outcome and its parent relation separately.
+Support-only evidence may establish a valid T0 or T1 child outcome, but it cannot close its parent outcome.
+The worker and selected reviewer must reject any claim that support-only evidence closes the parent while preserving that evidence as valid support.
+A child whose proof role is `closes` inherits the parent-relevant Entry -> Action -> observable Result in its applicable evidence prose.
+Sustained runtime observation is inherited only when time-dependent integration risk requires it, such as physics, lifecycle, camera or input ownership, or asynchronous or deferred initialization.
+When no such time-dependent risk bears on the parent result, the tier's direct or focused oracle remains sufficient.
+
 ## Conditional evidence
 
 Add only evidence lines the risk actually needs.

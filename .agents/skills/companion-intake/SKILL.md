@@ -50,14 +50,15 @@ Load [`delivery-doctrine`](../delivery-doctrine/SKILL.md) before shaping a ship 
 1. Preserve the complete request verbatim before interpreting it.
 2. Write a cleaned reading that removes transcription noise and repairs readability without adding, dropping, broadening, or narrowing meaning.
 3. Inspect the project's authoritative design, implementation, decision, and acceptance sources that bear on the request.
-4. Keep the concise private project context card to authoritative source pointers with a pertinence rationale, pertinent open decisions, and exact dated captain corrections; read current code and runtime on demand instead of copying goal, priority, built, planned, or unknown summaries into a second intent surface.
-5. Let the Companion intake that resolved the request be the card's only writer; workers read it through source pointers.
-6. Identify only ambiguity whose answer could change the pertinent behavior or implementation boundary.
-7. Take the fast path when no pertinent ambiguity remains.
-8. When one remains, present exactly one concise pertinent question through the existing [`decision-hold-lifecycle`](../decision-hold-lifecycle/SKILL.md) with an honest default that lets work continue and no pre-answer task dependency.
-9. After an answer, preserve it exactly with its date, update or create authorized ordinary work, add the decision dependency immediately before the existing resolve command clears it, and leave unrelated work unblocked.
-10. Rewrite the cleaned reading and task content to the corrected intent while leaving the verbatim request unchanged.
-11. Record one plain current correction with its date and source in the context card so a cold worker can receive it; do not build a correction ledger or receipt protocol.
+4. When the request explicitly commissions a child task to test, prove, validate, or advance a broader accepted outcome, preserve an authoritative source pointer for that parent outcome and classify the child proof role as `supports` or `closes` inside the existing task-local intake prose.
+5. Keep the concise private project context card to authoritative source pointers with a pertinence rationale, pertinent open decisions, and exact dated captain corrections; read current code and runtime on demand instead of copying goal, priority, built, planned, or unknown summaries into a second intent surface.
+6. Let the Companion intake that resolved the request be the card's only writer; workers read it through source pointers.
+7. Identify only ambiguity whose answer could change the pertinent behavior or implementation boundary.
+8. Take the fast path when no pertinent ambiguity remains.
+9. When one remains, present exactly one concise pertinent question through the existing [`decision-hold-lifecycle`](../decision-hold-lifecycle/SKILL.md) with an honest default that lets work continue and no pre-answer task dependency.
+10. After an answer, preserve it exactly with its date, update or create authorized ordinary work, add the decision dependency immediately before the existing resolve command clears it, and leave unrelated work unblocked.
+11. Rewrite the cleaned reading and task content to the corrected intent while leaving the verbatim request unchanged.
+12. Record one plain current correction with its date and source in the context card so a cold worker can receive it; do not build a correction ledger or receipt protocol.
 
 The captain may reject every offered option.
 Treat that response as a correction to the interpretation, not as permission to choose the nearest option.
@@ -75,6 +76,9 @@ Prepare one task-local intake block with these sections:
 - Seam invariants and acceptance environment.
 - Observable done conditions.
 - Review risk and required evidence.
+
+Carry an applicable parent-outcome pointer and proof role through the existing authoritative-source, desired-behavior, done-condition, and evidence prose.
+Do not add a delivery-contract field or a separate intake section for that relation.
 
 For a ship, translate that block into the two required delivery-contract fields and only the applicable conditional evidence lines through `delivery-doctrine`.
 
