@@ -99,167 +99,51 @@ The procedural disagreements below are not covered by it, and no carried line wa
 
 ## Known ambiguities in the carried process
 
-The carried text contradicts itself in the places below.
-Each is stated with both sides so an adopting project can decide for itself.
-The carried text does not settle any of them, no carried line was changed to resolve them, and no answer is invented here.
+The carried text contains unresolved procedural disagreements with itself - about whether the verifier may read the brief, what proof an enum change needs, which phase a task starts at, and which phase owns cleanup among others.
+None of them stops the chain running: an adopter hits one and chooses.
+No carried line was edited to resolve them.
 
-### Whether the verifier may read the brief
+## What a target project must provide
 
-`playbooks/phases/dispatch.md:133` assembles the VERIFY pass from the same material as the AUTHOR pass, which includes the executed brief.
-`playbooks/phases/verify.md:19-24` forbids the verification agent from reading the brief, calling that circular.
+This is a setup checklist, not an index of every path the carried text mentions.
+It answers one question: what must be in place before this chain can run here.
+Work through it and you are done; an entry you cannot provide is a gap you decide about, not a defect in the carriage.
 
-### Whether bare source tags are acceptable
+- **A test runner.** The chain invokes `./run_tests.sh --summary` after every fix and merge, at `playbooks/bug-handling.md:100`, `playbooks/phases/brief.md:84`, `playbooks/phases/review.md:40`, `specialist-protocol.md:67` and `specialist-protocol.md:102`. Provide a runner at that path or decide what replaces it.
+- **Per-system specialist configs.** `playbooks/phases/dispatch.md:59-60` reads `.claude/specialists/_protocol.md` then `.claude/specialists/<system>.md`, and `playbooks/implementation.md:29` routes to a specialist only when that config exists. The shared protocol is carried here as `specialist-protocol.md`; the per-system configs are yours to write, one per system you want specialist dispatch for.
+- **Bookkeeping files the chain reads and writes.** `BACKLOG.md` and `PROJECT_STATE.md` (`playbooks/phases/handoff.md:14-15`, `playbooks/phases/review.md:50-64`), a session baton at `docs/baton.md` (`playbooks/phases/handoff.md:7`), a decision queue at `docs/pm/queue.md` (`playbooks/bug-handling.md:41`, `:168`), a brief directory at `docs/briefs/` (`playbooks/phases/dispatch.md:131`), and a project memory file (`playbooks/implementation.md:25`).
+- **A spec corpus root, with the internal structure the prose depends on.** The carried text expects `systems/` for per-system specs, `workflows/` for cross-system flows, and `reference/` holding `wiring-reference.md`, `content-authoring.md` and a `recipes/` directory. Those distinctions are load-bearing: `playbooks/phases/brief.md:128` names three of them as separate authoritative sources for a default value.
+- **A design document treated as ground truth.** `docs/Master-Design.md` in the source project, read first for design intent at `playbooks/phases/research.md:14` and used as the authority layer throughout `playbooks/bug-handling.md`.
+- **Content specifications.** `docs/content/`, read when a brief touches authored content (`playbooks/phases/brief.md:32`, `:74`, `:124`).
+- **External skills the chain calls.** `superpowers:brainstorming` and `superpowers:writing-plans` (`playbooks/design-pass.md:5`, `:204`, `playbooks/md-revision.md:5`), a `verification-author` skill (`playbooks/design-pass.md:5`), a `consultant` skill and an `orchestrator` skill (`playbooks/implementation.md:31`, `:46`). None are carried here.
+- **The implementation language.** Substituted as `<the project's language>` where a carried rule named one. The worked examples remain in the source project's language on purpose.
+- **The default branch name.** The carried text hardcodes `main`. Three sites are operational and break on a different default branch: `playbooks/implementation.md:23` and `playbooks/phases/implement.md:142` create worktrees from it, and `playbooks/phases/review.md:26` diffs against it. Six further sites are prose.
+- **An agent runtime that can dispatch subagents.** `playbooks/phases/dispatch.md` and `playbooks/phases/verify.md` assume parallel workers in worktrees, and `consultant.md:22` assumes a `Read`, `Grep`, `Glob`, `Bash` tool surface.
+- **Optional, if you want the source project's checks.** A runtime evaluation tool the text calls MCP `game_eval` (`playbooks/phases/review.md:79`, `:101`, `:182`) and the `.regime/` verifier substrate (`playbooks/implementation.md:22`, `playbooks/phases/brief-audit.md:52`). Neither is carried, and the captain ruled the verification regime out of scope.
 
-`specialist-protocol.md:108` accepts bare `[USER]` and `[DEFAULT]` tags on a numeric value.
-`playbooks/phases/brief.md:127-145` requires `[USER: <date>, ...]` and `[DEFAULT: <path>:<line>]` and explicitly bans a bare `[DEFAULT]`.
+## Stale source citations
 
-### What proof an enum mapping needs
+Every `file:line` citation in the carried text points into the source project's code as it stood at one moment, and several were already wrong at the pinned commit.
+These three are verified against `99809956`:
 
-`playbooks/phases/implement.md:61` accepts a single-symbol grep to confirm an enum index.
-`playbooks/phases/brief.md:149-159` requires the full ordered enum block and a count from zero.
+- `playbooks/phases/brief.md:105` names `_build_context()` at `skill_manager.gd:339` as the canonical exemplar. At the pinned commit that function is at line 576, and line 339 is `_process_repeat_delivery_queue()`, an unrelated queue processor.
+- `playbooks/phases/verify.md:58` names `deal_damage_effect.gd:22-24` as the canonical AoE allegiance filter pattern. Those lines are a runtime backstop for the no-damage-type case, not an allegiance filter.
+- `consultant.md:59` counts 27 per-system specs. The pinned tree holds 28, so a reader following the count silently drops `28-director.md`.
 
-### Whether code or design is read first
+Correcting these numbers would not help, because the files they point into do not exist in an adopting project.
+Treat every such citation as a source-project artifact and substitute your own exemplar.
 
-`playbooks/phases/research.md:7-10` puts the audit, the wiring reference, and the affected code files ahead of the architecture specs.
-`playbooks/bug-handling.md:146-157` reads the design and specification layers first.
+## Source-project assumptions you must replace
 
-### Which phase every task starts at
+The carried text states the source project's architecture as unconditional rule in several places.
+The lines are left exactly as written; what follows is what an adopter must decide or supply instead.
 
-`playbooks/phases/research.md:3` says RESEARCH is always first and every task starts there regardless of scope.
-`playbooks/implementation.md:10-18` places SCOPE before RESEARCH.
+- `specialist-protocol.md:260-263` states `EffectContext` construction, component access through `PipelineUtils` and `StatusTracker`, REDUCTION-stat modifier behavior, and a ban on `set_meta` for duration expiry as unconditional rules. Replace each with the equivalent convention in your own architecture, or drop the rule if you have no equivalent.
+- `playbooks/phases/implement.md:96` presents a "Known NOT WIRED systems" list as current fact. It describes the source project at one moment; substitute your own list of known-unwired systems, or remove the check.
+- `playbooks/phases/brief.md:5` cites "SKILL.md rule 1" for the anti-invention reminder, and `playbooks/implementation.md:23` and `:40` cite "Memory rule 11" and "Memory rule 5". Those numbers resolve to the source project's own rule files, not to anything here, and this file has no numbered rules to find. Supply your own, or read them as prose.
 
-### Who owns the Worker Rules list
+## How this list was built
 
-`playbooks/phases/brief.md:48` names `playbooks/phases/implement.md` the single source of truth for Worker Rules.
-`specialist-protocol.md:62-71` carries its own divergent copy of that list.
-
-### Which phase owns memory updates and cleanup
-
-`playbooks/implementation.md:25` assigns baton, PROJECT_STATE, BACKLOG, MEMORY updates and merged-worktree cleanup to HANDOFF.
-`playbooks/phases/handoff.md:5-20` contains the baton and bookkeeping steps but neither the MEMORY update nor the worktree cleanup.
-
-### Whether BRIEF-PRE-CHECK can be bypassed
-
-Reading A treats the chain in `playbooks/implementation.md:10` as strictly sequential.
-Under that reading, `playbooks/phases/implement.md` launches workers and proceeds directly to REVIEW, while `playbooks/phases/dispatch.md` can fall back to BRIEF, so either route can bypass BRIEF-PRE-CHECK.
-Reading B treats specialist DISPATCH and direct BRIEF as alternatives because `playbooks/phases/dispatch.md:8-14` explicitly presents them that way.
-Under that reading, the linear arrow diagram in `playbooks/implementation.md:10` is a compression rather than a strict order, and the carried text is coherent.
-The carried text does not settle which reading is correct.
-
-Two further items raised in the same scan were defects in this file rather than ambiguities in the carried text, so they were corrected above instead of being disclosed here: this file previously claimed one file per phase, and it previously listed `design-pass.md` and `implementation.md` as target-provided although both are carried here.
-
-## Unresolved dependencies
-
-The carried files reference material that was deliberately not carried.
-Those references remain as written so the source process is visible, while this self-contained ledger names the 83 target-provided paths, commands, tools, skills, and execution capabilities that the carried text instructs an agent to read, write, or execute.
-The derivation records every found candidate before assigning an `IN` or `OUT` boundary judgment, preserves raw aliases and their use sites, and strips trailing `:N` or `:N-M` citations only after the cited token is retained.
-Items judged out of scope remain annotated with reasons in the pipeline evidence rather than disappearing before review.
-
-### Agent, verifier, and runtime capabilities
-
-- **[EXECUTE]** `./run_tests.sh` - `playbooks/bug-handling.md:100`, `playbooks/phases/brief.md:84`, `playbooks/phases/review.md:40`, `specialist-protocol.md:67`, `specialist-protocol.md:102`.
-- **[EXECUTE]** `.regime/venv/bin/python3` - `playbooks/implementation.md:22`, `playbooks/phases/brief-audit.md:52`.
-- **[WRITE]** `.regime/verifiers/` - `playbooks/bug-handling.md:103`.
-- **[EXECUTE]** `.regime/verifiers/v_brief_precheck_v3.py` - `playbooks/implementation.md:22`, `playbooks/phases/brief-audit.md:52`.
-- **[EXECUTE]** MCP `game_eval` - `playbooks/bug-handling.md:100`, `playbooks/phases/review.md:79`, `playbooks/phases/review.md:83`, `playbooks/phases/review.md:101`, `playbooks/phases/review.md:182`.
-- **[EXECUTE]** Subagent or parallel-worker execution capability - `playbooks/phases/dispatch.md:82`, `playbooks/phases/dispatch.md:121`, `playbooks/phases/implement.md:126`, `playbooks/phases/implement.md:134`, `playbooks/phases/review.md:7`, `playbooks/phases/verify.md:9`, `playbooks/phases/verify.md:11`, `playbooks/phases/verify.md:43`, `playbooks/phases/verify.md:91`.
-- **[READ]** `verification-author` - `playbooks/design-pass.md:5`; a skill the source project used for spec authoring, not carried here.
-- **[EXECUTE]** `Read`, `Grep`, `Glob`, `Bash` agent tool surface - `consultant.md:22`, which assumes the consultant role has these tools.
-- **[EXECUTE]** `superpowers:brainstorming` - `playbooks/design-pass.md:5`, `playbooks/design-pass.md:204`, `playbooks/md-revision.md:5`.
-- **[EXECUTE]** `superpowers:writing-plans` - `playbooks/design-pass.md:5`, `playbooks/md-revision.md:5`.
-
-### Agent rules, skills, and role configs
-
-- **[READ]** `.agent/rules/gdscript-style.md` - `playbooks/implementation.md:51`.
-- **[READ]** `.agent/task-guides.md` - `playbooks/implementation.md:52`.
-- **[READ]** `.claude/skills/dvs/SKILL.md` - `consultant.md:75`.
-- **[READ, EXECUTE]** `.claude/skills/orchestrator/` - `consultant.md:88`.
-- **[READ, EXECUTE]** `.claude/skills/orchestrator/SKILL.md` - `playbooks/implementation.md:5`.
-- **[READ]** `.claude/skills/orchestrator/delegation-frame.md` - `playbooks/implementation.md:31`, `playbooks/implementation.md:46`.
-- **[READ]** `.claude/skills/pes/` - `consultant.md:83`.
-- **[READ]** `.claude/specialists/` - `playbooks/implementation.md:29`, `playbooks/implementation.md:47`, `playbooks/phases/dispatch.md:8`, `playbooks/phases/dispatch.md:59`, `playbooks/phases/dispatch.md:60`.
-- **[READ]** `.claude/specialists/_protocol.md` - `playbooks/phases/dispatch.md:59`.
-
-### Source-project context registry
-
-- **[READ]** `docs/briefs/dvs-flywheel-component-2-handoff.md` - `consultant.md:66`.
-- **[READ]** `docs/briefs/dvs-flywheel-component-2-session-{1,2,3}-handoff.md` - `consultant.md:67`.
-- **[READ]** `docs/briefs/dvs-flywheel-component-2-session-3-analysis.md` - `consultant.md:68`.
-- **[READ]** `.flywheel/dvs/calibration-set.ndjson` - `consultant.md:69`.
-- **[READ]** `.flywheel/dvs/calibration-set-unlabeled.ndjson` - `consultant.md:70`.
-- **[READ]** `.flywheel/dvs/scope.yaml` - `consultant.md:71`.
-- **[READ]** `scripts/flywheel/` - `consultant.md:72`.
-- **[READ]** `docs/superpowers/specs/2026-04-08-design-verification-system.md` - `consultant.md:76`.
-- **[READ]** `docs/superpowers/specs/2026-04-12-dvs-flywheel-adapter-design.md` - `consultant.md:77`.
-- **[READ]** `docs/research/pes-v2-viability-review.md` - `consultant.md:80`.
-- **[READ]** `docs/research/pes-v2-*.md` - `consultant.md:81`.
-- **[READ]** `docs/validation/tdd-spec-rework.md` - `consultant.md:82`.
-- **[READ]** `docs/superpowers/specs/2026-03-23-content-spec-system-design.md` - `consultant.md:93`.
-- **[READ]** `docs/briefs/enemy-coordination/design-r4.md` - `playbooks/design-pass.md:11`.
-- **[READ]** `docs/content-pipeline/README.md` - `consultant.md:91`.
-
-### Target-project guides and sibling playbooks
-
-The bare names `design-pass.md` and `implementation.md` also appear in `playbooks/bug-handling.md:5`, `:39` and `:41`.
-Both are carried here as `playbooks/design-pass.md` and `playbooks/implementation.md`, so they are not target-provided and are not listed below.
-
-- **[READ, EXECUTE]** `verification.md` - `playbooks/bug-handling.md:5`, `playbooks/bug-handling.md:38`, `playbooks/bug-handling.md:69`, `playbooks/bug-handling.md:72`, `playbooks/bug-handling.md:73`, `playbooks/bug-handling.md:90`.
-- **[READ, EXECUTE]** `docs/playbooks/verification.md` - `playbooks/implementation.md:5`, `playbooks/bug-handling.md:170`.
-- **[READ]** `docs/playbooks/verifier-design.md` - `playbooks/design-pass.md:207`, `playbooks/implementation.md:22`.
-- **[READ]** `docs/playbooks/auditing.md` - `playbooks/bug-handling.md:173`.
-- **[READ]** `docs/playbooks/agent-coordination.md` - `playbooks/bug-handling.md:172`.
-
-### PM and current-state corpus
-
-- **[READ, WRITE]** `docs/baton.md` - `consultant.md:86`, `playbooks/phases/handoff.md:7`.
-- **[READ, WRITE]** `docs/pm/queue.md` - `playbooks/bug-handling.md:41`, `playbooks/bug-handling.md:168`.
-- **[READ, WRITE]** `BACKLOG.md` - `consultant.md:87`, `playbooks/bug-handling.md:167`, `playbooks/phases/handoff.md:15`, `playbooks/phases/review.md:50`, `playbooks/phases/review.md:64`, `playbooks/phases/review.md:185`.
-- **[READ, WRITE]** `PROJECT_STATE.md` - `playbooks/phases/handoff.md:14`, `playbooks/phases/review.md:55`, `playbooks/phases/review.md:64`, `playbooks/phases/review.md:186`, `playbooks/phases/verify.md:108`.
-- **[READ, WRITE]** `MEMORY.md` - `consultant.md:63`, `playbooks/phases/verify.md:108`.
-- **[READ]** `CLAUDE.md` - `consultant.md:62`, `consultant.md:119`, `playbooks/implementation.md:5`, `playbooks/md-revision.md:99`, `playbooks/phases/brief.md:103`, `playbooks/phases/brief.md:159`, `playbooks/phases/brief.md:171`, `playbooks/phases/implement.md:148`, `playbooks/phases/verify.md:56`, `specialist-protocol.md:260`.
-
-### Design, spec, content, and inventory documents
-
-- **[READ]** `Master-Design.md` - `playbooks/design-pass.md:3`.
-- **[READ, WRITE]** `docs/Master-Design.md` - `consultant.md:57`, `playbooks/bug-handling.md:161`, `playbooks/md-revision.md:3`, `playbooks/md-revision.md:138`, `playbooks/phases/brief.md:33`, `playbooks/phases/research.md:14`.
-- **[READ]** `BigDesignReference.md` - `playbooks/bug-handling.md:163`.
-- **[READ]** `docs/reference/_archive/` - `playbooks/bug-handling.md:163`.
-- **[READ, WRITE]** `docs/content/` - `consultant.md:92`, `playbooks/bug-handling.md:153`, `playbooks/bug-handling.md:163`, `playbooks/phases/brief.md:32`, `playbooks/phases/brief.md:74`, `playbooks/phases/brief.md:124`, `playbooks/phases/brief.md:128`, `playbooks/phases/brief.md:145`, `playbooks/phases/brief.md:197`.
-- **[READ]** `docs/content/*.md` - `playbooks/bug-handling.md:153`.
-- **[READ]** `docs/content/defaults.md` - `consultant.md:92`, `playbooks/phases/brief.md:128`, `playbooks/phases/brief.md:145`, `playbooks/phases/brief.md:197`.
-- **[WRITE]** `defaults.md` - `playbooks/phases/spec.md:59`.
-- **[READ]** `content-authoring.md` - `playbooks/phases/brief.md:136`, `playbooks/phases/brief.md:137`, `playbooks/phases/brief.md:138`, `playbooks/phases/implement.md:134`, `playbooks/phases/implement.md:188`, `playbooks/phases/research.md:56`.
-- **[READ]** `recipes/README.md` - `playbooks/phases/research.md:56`.
-- **[READ]** `wiring-reference.md` - `playbooks/phases/brief.md:171`, `playbooks/phases/research.md:57`.
-- **[READ, WRITE]** `docs/briefs/` - `playbooks/phases/brief.md:202`, `playbooks/phases/dispatch.md:28`, `playbooks/phases/dispatch.md:131`, `playbooks/phases/research.md:79`.
-- **[READ]** `docs/inventory/refresh-1/SUMMARY.md` - `playbooks/bug-handling.md:156`, `playbooks/bug-handling.md:164`.
-- **[READ]** `docs/audits/2026-04-05-engine-perfection-audit.md` - `playbooks/phases/research.md:8`.
-- **[WRITE]** `docs/content-pipeline/templates/README.md` - `playbooks/phases/implement.md:166`.
-- **[READ]** `event-types.md` - `specialist-protocol.md:230`.
-
-### Memory pins
-
-- **[READ]** `.claude/projects/-Users-davidkol-projects-Godot-Tombhammer/memory/` - `playbooks/md-revision.md:136`.
-- **[READ]** `feedback_check_content_spec_layer.md` - `playbooks/phases/brief.md:36`.
-- **[READ]** `feedback_hold_revisions_during_iteration.md` - `playbooks/md-revision.md:136`.
-- **[READ]** `feedback_invented_quantities_in_design_drafts.md` - `playbooks/design-pass.md:155`.
-- **[READ]** `feedback_md_design_voice_not_spec_voice.md` - `playbooks/md-revision.md:136`.
-- **[READ]** `feedback_md_ground_truth_bar.md` - `playbooks/md-revision.md:136`.
-
-### Target-project code and content roots
-
-- **[READ]** `docs/` - `playbooks/phases/design.md:79`, `playbooks/phases/spec.md:67`.
-- **[READ]** `systems/` - `playbooks/bug-handling.md:92`, `playbooks/phases/design.md:79`, `playbooks/phases/research.md:77`.
-- **[READ]** `systems/*.md` - `consultant.md:59`.
-- **[READ]** `systems/08-status-system.md` - `specialist-protocol.md:154`.
-- **[READ, WRITE]** `systems/NN-*.md` - `playbooks/bug-handling.md:153`, `playbooks/bug-handling.md:162`, `playbooks/implementation.md:20`, `playbooks/implementation.md:49`, `playbooks/phases/research.md:16`.
-- **[READ]** `entities/` - `playbooks/bug-handling.md:92`, `playbooks/phases/research.md:77`.
-- **[READ]** `resources/` - `playbooks/bug-handling.md:92`, `playbooks/phases/spec.md:67`.
-- **[READ]** `tests/` - `playbooks/phases/brief.md:31`, `playbooks/phases/spec.md:67`.
-- **[READ, WRITE]** `SK_*.tres` - `playbooks/bug-handling.md:22`, `playbooks/phases/review.md:8`.
-- **[READ, WRITE]** `XX_*.tres` - `specialist-protocol.md:221`.
-- **[READ, EXECUTE]** `scaling_rule.gd` - `playbooks/phases/brief.md:149`.
-- **[READ, EXECUTE]** `systems/stats/scaling_rule.gd` - `playbooks/phases/brief.md:151`, `playbooks/phases/implement.md:62`.
-- **[READ, EXECUTE]** `systems/stats/stat_names.gd` - `playbooks/phases/brief.md:170`.
-- **[READ]** `deal_damage_effect.gd` - `playbooks/phases/verify.md:58`.
-- **[READ, EXECUTE]** `systems/effects/types/` - `playbooks/phases/brief-audit.md:23`.
+The checklist above was derived from the carried text and is meant to be finishable, not exhaustive.
+An exhaustive index of every referenced path was attempted and abandoned: three independent scans each produced a different set of omissions, which is evidence that the goal is not reachable rather than evidence of carelessness.
+The full annotated derivation of every candidate token is kept as validation evidence for this repository and is deliberately not shipped with the skill.
