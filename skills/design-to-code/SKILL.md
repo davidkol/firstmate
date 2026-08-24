@@ -39,11 +39,9 @@ The original pointer line was the following.
 
 No other carried prose was reworded, reordered, condensed, or generalized.
 
-Nothing installs this shelf yet, and firstmate itself does not load it.
-This remains T0 documentation carriage because the public shelf is inactive in this repository.
-`AGENTS.md` declares `skills/` installer-facing and not loaded by firstmate, and `.claude/skills` resolves to `../.agents/skills` rather than `skills/`.
-No installer for this shelf exists under `bin/`; `bin/fm-test-run.sh` recognizes generic `skills/*` changes only to select contract validation.
-No executable seam, build artifact, or runtime behavior changed.
+Firstmate does not load this shelf: `AGENTS.md` declares `skills/` installer-facing and not loaded by firstmate, and `.claude/skills` resolves to `../.agents/skills` rather than `skills/`.
+The shelf is installable standalone through external skill-installer discovery like any other entry under `skills/`, as `README.md` documents for the skills.sh `npx skills add` installer.
+This is T1 public-contract carriage because the installer-facing skill changes agent behavior even though no firstmate runtime, build artifact, or executable code changed.
 
 ## What a target project must supply
 
@@ -71,55 +69,48 @@ SCOPE -> RESEARCH -> DESIGN -> SPEC -> BRIEF -> BRIEF-PRE-CHECK -> DISPATCH -> R
 Three sibling playbooks cover the other arcs: `playbooks/design-pass.md` for a Socratic pass over a design document, `playbooks/md-revision.md` for revising that document after an audit, and `playbooks/bug-handling.md` for reported bugs.
 `consultant.md` and `specialist-protocol.md` carry the two source-project role descriptions, but they do not register the target project's callable skill or specialist configs.
 
+## Known ambiguity
+
+Reading A treats the chain in `playbooks/implementation.md:10` as strictly sequential.
+Under that reading, `playbooks/phases/implement.md` launches workers and proceeds directly to REVIEW, while `playbooks/phases/dispatch.md` can fall back to BRIEF, so either route can bypass BRIEF-PRE-CHECK.
+Reading B treats specialist DISPATCH and direct BRIEF as alternatives because `playbooks/phases/dispatch.md:8-14` explicitly presents them that way.
+Under that reading, the linear arrow diagram in `playbooks/implementation.md:10` is a compression rather than a strict order, and the carried text is coherent.
+The carried text does not settle which reading is correct.
+Adopters should decide which reading applies to their project.
+No carried line was changed to resolve this ambiguity.
+
 ## Unresolved dependencies
 
 The carried files reference material that was deliberately not carried.
-Those references remain as written so the source process is visible, while this bounded ledger names the target-provided paths, commands, tools, and execution capabilities that the carried text instructs an agent to read, write, or execute.
-The ledger does not cover illustrative mentions, prose references, or names that appear only inside a worked example.
-Its 75 in-scope entries come from the 79-token annotated derivation in `.no-mistakes/evidence/dependency-sweep.txt`.
-The full derivation also retains all four items judged out of scope and gives a one-clause reason for each judgment, so no candidate silently disappears from review.
+Those references remain as written so the source process is visible, while this self-contained ledger names the 82 target-provided paths, commands, tools, skills, and execution capabilities that the carried text instructs an agent to read, write, or execute.
+The derivation records every found candidate before assigning an `IN` or `OUT` boundary judgment, preserves raw aliases and their use sites, and strips trailing `:N` or `:N-M` citations only after the cited token is retained.
+Items judged out of scope remain annotated with reasons in the pipeline evidence rather than disappearing before review.
 
-### Method
+### Agent, verifier, and runtime capabilities
 
-The `METHOD` block in `.no-mistakes/evidence/dependency-sweep.txt` enumerates the 16 carried Markdown files and emits every uncarried path-shaped or command-shaped candidate found by its mechanical passes.
-It strips trailing `:N` and `:N-M` line citations before extension matching, normalizes declared shared owners and aliases, and records every candidate on its own annotated `IN` or `OUT` line.
-A fixed-string pass records each candidate's carried file-and-line use sites, while the annotation states the read, write, or execute verb and a one-clause boundary reason.
-The sweep has no exclusion bucket.
-
-### Agent and command capabilities
-
-- **[EXECUTE]** Agent or subagent execution capability - `playbooks/phases/dispatch.md:82`, `playbooks/phases/dispatch.md:121`, `playbooks/phases/implement.md:126`, `playbooks/phases/implement.md:134`, `playbooks/phases/review.md:7`, `playbooks/phases/verify.md:9`, `playbooks/phases/verify.md:11`, `playbooks/phases/verify.md:43`, `playbooks/phases/verify.md:91`.
-- **[EXECUTE]** Git command capability - `playbooks/design-pass.md:63`, `playbooks/md-revision.md:91`, `playbooks/implementation.md:23`, `playbooks/phases/brief.md:85`, `playbooks/phases/implement.md:142`, `playbooks/phases/review.md:26`, `playbooks/phases/review.md:27`, `playbooks/phases/review.md:34`, `playbooks/phases/review.md:41`, `playbooks/phases/review.md:42`, `specialist-protocol.md:103`.
-- **[READ, EXECUTE]** Grep command or tool capability - `consultant.md:22`, `consultant.md:114`, `playbooks/bug-handling.md:60`, `playbooks/bug-handling.md:68`, `playbooks/bug-handling.md:90`, `playbooks/bug-handling.md:92`, `playbooks/bug-handling.md:139`, `playbooks/bug-handling.md:143`, `playbooks/bug-handling.md:154`, `playbooks/phases/brief-audit.md:21`, `playbooks/phases/brief-audit.md:25`, `playbooks/phases/brief-audit.md:29`, `playbooks/phases/brief-audit.md:62`, `playbooks/phases/brief-audit.md:105`, `playbooks/phases/brief.md:17`, `playbooks/phases/brief.md:19`, `playbooks/phases/brief.md:21`, `playbooks/phases/brief.md:29`, `playbooks/phases/brief.md:77`, `playbooks/phases/brief.md:83`, `playbooks/phases/brief.md:149`, `playbooks/phases/brief.md:159`, `playbooks/phases/brief.md:170`, `playbooks/phases/design.md:79`, `playbooks/phases/design.md:106`, `playbooks/phases/implement.md:60`, `playbooks/phases/implement.md:61`, `playbooks/phases/implement.md:84`, `playbooks/phases/research.md:77`, `playbooks/phases/research.md:78`, `playbooks/phases/research.md:79`, `playbooks/phases/research.md:90`, `playbooks/phases/research.md:101`, `playbooks/phases/research.md:102`, `playbooks/phases/review.md:70`, `playbooks/phases/review.md:108`, `playbooks/phases/spec.md:46`, `playbooks/phases/spec.md:67`, `specialist-protocol.md:12`, `specialist-protocol.md:91`, `specialist-protocol.md:109`, `specialist-protocol.md:121`, `specialist-protocol.md:221`, `specialist-protocol.md:227`.
-- **[READ, EXECUTE]** Find command capability - `playbooks/bug-handling.md:155`.
-- **[READ, EXECUTE]** `wc -l` command capability - `playbooks/phases/brief.md:15`, `playbooks/phases/brief.md:55`, `playbooks/phases/brief.md:191`.
-- **[READ, EXECUTE]** `ls` command capability - `playbooks/phases/brief.md:17`.
-- **[READ, EXECUTE]** `awk` command capability - `playbooks/phases/brief.md:151`.
-- **[READ]** Agent `Read` tool capability - `consultant.md:22`, `specialist-protocol.md:12`.
-- **[READ]** Agent `Glob` tool capability - `consultant.md:22`.
-- **[EXECUTE]** Agent `Bash` tool capability - `consultant.md:22`.
-
-### Verifiers, tests, and runtime tools
-
-- **[EXECUTE]** `.regime/venv/bin/python3` - `playbooks/implementation.md:22`, `playbooks/phases/brief-audit.md:52`.
-- **[EXECUTE]** `.regime/verifiers/v_brief_precheck_v3.py` - `playbooks/implementation.md:22`, `playbooks/phases/brief-audit.md:52`.
-- **[WRITE]** `.regime/verifiers/` - `playbooks/bug-handling.md:103`.
 - **[EXECUTE]** `./run_tests.sh` - `playbooks/bug-handling.md:100`, `playbooks/phases/brief.md:84`, `playbooks/phases/review.md:40`, `specialist-protocol.md:67`, `specialist-protocol.md:102`.
+- **[EXECUTE]** `.regime/venv/bin/python3` - `playbooks/implementation.md:22`, `playbooks/phases/brief-audit.md:52`.
+- **[WRITE]** `.regime/verifiers/` - `playbooks/bug-handling.md:103`.
+- **[EXECUTE]** `.regime/verifiers/v_brief_precheck_v3.py` - `playbooks/implementation.md:22`, `playbooks/phases/brief-audit.md:52`.
 - **[EXECUTE]** MCP `game_eval` - `playbooks/bug-handling.md:100`, `playbooks/phases/review.md:79`, `playbooks/phases/review.md:83`, `playbooks/phases/review.md:101`, `playbooks/phases/review.md:182`.
-
-### External skills and role configs
-
+- **[EXECUTE]** Subagent or parallel-worker execution capability - `playbooks/phases/dispatch.md:82`, `playbooks/phases/dispatch.md:121`, `playbooks/phases/implement.md:126`, `playbooks/phases/implement.md:134`, `playbooks/phases/review.md:7`, `playbooks/phases/verify.md:9`, `playbooks/phases/verify.md:11`, `playbooks/phases/verify.md:43`, `playbooks/phases/verify.md:91`.
 - **[EXECUTE]** `superpowers:brainstorming` - `playbooks/design-pass.md:5`, `playbooks/design-pass.md:204`, `playbooks/md-revision.md:5`.
 - **[EXECUTE]** `superpowers:writing-plans` - `playbooks/design-pass.md:5`, `playbooks/md-revision.md:5`.
-- **[EXECUTE]** `verification-author` - `playbooks/design-pass.md:5`.
-- **[EXECUTE]** The target project's callable `consultant` skill - `playbooks/design-pass.md:5`, `playbooks/design-pass.md:13`, `playbooks/design-pass.md:33`, `playbooks/design-pass.md:35`, `playbooks/design-pass.md:205`.
-- **[READ, EXECUTE]** `.claude/skills/orchestrator/`, including its `SKILL.md` and `delegation-frame.md` - `consultant.md:88`, `playbooks/design-pass.md:5`, `playbooks/implementation.md:5`, `playbooks/implementation.md:31`, `playbooks/implementation.md:46`.
-- **[READ]** `.claude/specialists/`, including each `<system>.md` config - `playbooks/implementation.md:29`, `playbooks/implementation.md:47`, `playbooks/phases/dispatch.md:8`, `playbooks/phases/dispatch.md:59`, `playbooks/phases/dispatch.md:60`.
+
+### Agent rules, skills, and role configs
+
+- **[READ]** `.agent/rules/gdscript-style.md` - `playbooks/implementation.md:51`.
+- **[READ]** `.agent/task-guides.md` - `playbooks/implementation.md:52`.
+- **[READ]** `.claude/skills/dvs/SKILL.md` - `consultant.md:75`.
+- **[READ, EXECUTE]** `.claude/skills/orchestrator/` - `consultant.md:88`.
+- **[READ, EXECUTE]** `.claude/skills/orchestrator/SKILL.md` - `playbooks/implementation.md:5`.
+- **[READ]** `.claude/skills/orchestrator/delegation-frame.md` - `playbooks/implementation.md:31`, `playbooks/implementation.md:46`.
+- **[READ]** `.claude/skills/pes/` - `consultant.md:83`.
+- **[READ]** `.claude/specialists/` - `playbooks/implementation.md:29`, `playbooks/implementation.md:47`, `playbooks/phases/dispatch.md:8`, `playbooks/phases/dispatch.md:59`, `playbooks/phases/dispatch.md:60`.
+- **[READ]** `.claude/specialists/_protocol.md` - `playbooks/phases/dispatch.md:59`.
 
 ### Source-project context registry
 
-- **[READ]** `.claude/skills/dvs/SKILL.md` - `consultant.md:75`.
-- **[READ]** `.claude/skills/pes/` - `consultant.md:83`.
 - **[READ]** `docs/briefs/dvs-flywheel-component-2-handoff.md` - `consultant.md:66`.
 - **[READ]** `docs/briefs/dvs-flywheel-component-2-session-{1,2,3}-handoff.md` - `consultant.md:67`.
 - **[READ]** `docs/briefs/dvs-flywheel-component-2-session-3-analysis.md` - `consultant.md:68`.
@@ -138,9 +129,10 @@ The sweep has no exclusion bucket.
 
 ### Target-project guides and sibling playbooks
 
-- **[READ]** `.agent/rules/gdscript-style.md` - `playbooks/implementation.md:51`.
-- **[READ]** `.agent/task-guides.md` - `playbooks/implementation.md:52`.
-- **[READ, EXECUTE]** `docs/playbooks/verification.md` - `playbooks/implementation.md:5`, `playbooks/bug-handling.md:5`, `playbooks/bug-handling.md:38`, `playbooks/bug-handling.md:69`, `playbooks/bug-handling.md:72`, `playbooks/bug-handling.md:73`, `playbooks/bug-handling.md:90`, `playbooks/bug-handling.md:170`.
+- **[READ]** `design-pass.md` - `playbooks/bug-handling.md:5`, `playbooks/bug-handling.md:41`.
+- **[READ]** `implementation.md` - `playbooks/bug-handling.md:5`, `playbooks/bug-handling.md:39`.
+- **[READ, EXECUTE]** `verification.md` - `playbooks/bug-handling.md:5`, `playbooks/bug-handling.md:38`, `playbooks/bug-handling.md:69`, `playbooks/bug-handling.md:72`, `playbooks/bug-handling.md:73`, `playbooks/bug-handling.md:90`.
+- **[READ, EXECUTE]** `docs/playbooks/verification.md` - `playbooks/implementation.md:5`, `playbooks/bug-handling.md:170`.
 - **[READ]** `docs/playbooks/verifier-design.md` - `playbooks/design-pass.md:207`, `playbooks/implementation.md:22`.
 - **[READ]** `docs/playbooks/auditing.md` - `playbooks/bug-handling.md:173`.
 - **[READ]** `docs/playbooks/agent-coordination.md` - `playbooks/bug-handling.md:172`.
@@ -156,20 +148,26 @@ The sweep has no exclusion bucket.
 
 ### Design, spec, content, and inventory documents
 
+- **[READ]** `Master-Design.md` - `playbooks/design-pass.md:3`.
 - **[READ, WRITE]** `docs/Master-Design.md` - `consultant.md:57`, `playbooks/bug-handling.md:161`, `playbooks/md-revision.md:3`, `playbooks/md-revision.md:138`, `playbooks/phases/brief.md:33`, `playbooks/phases/research.md:14`.
+- **[READ]** `BigDesignReference.md` - `playbooks/bug-handling.md:163`.
+- **[READ]** `docs/reference/_archive/` - `playbooks/bug-handling.md:163`.
 - **[READ, WRITE]** `docs/content/` - `consultant.md:92`, `playbooks/bug-handling.md:153`, `playbooks/bug-handling.md:163`, `playbooks/phases/brief.md:32`, `playbooks/phases/brief.md:74`, `playbooks/phases/brief.md:124`, `playbooks/phases/brief.md:128`, `playbooks/phases/brief.md:145`, `playbooks/phases/brief.md:197`.
+- **[READ]** `docs/content/*.md` - `playbooks/bug-handling.md:153`.
 - **[READ]** `docs/content/defaults.md` - `consultant.md:92`, `playbooks/phases/brief.md:128`, `playbooks/phases/brief.md:145`, `playbooks/phases/brief.md:197`.
 - **[WRITE]** `defaults.md` - `playbooks/phases/spec.md:59`.
+- **[READ]** `content-authoring.md` - `playbooks/phases/brief.md:136`, `playbooks/phases/brief.md:137`, `playbooks/phases/brief.md:138`, `playbooks/phases/implement.md:134`, `playbooks/phases/implement.md:188`, `playbooks/phases/research.md:56`.
+- **[READ]** `recipes/README.md` - `playbooks/phases/research.md:56`.
+- **[READ]** `wiring-reference.md` - `playbooks/phases/brief.md:171`, `playbooks/phases/research.md:57`.
 - **[READ, WRITE]** `docs/briefs/` - `playbooks/phases/brief.md:202`, `playbooks/phases/dispatch.md:28`, `playbooks/phases/dispatch.md:131`, `playbooks/phases/research.md:79`.
 - **[READ]** `docs/inventory/refresh-1/SUMMARY.md` - `playbooks/bug-handling.md:156`, `playbooks/bug-handling.md:164`.
 - **[READ]** `docs/audits/2026-04-05-engine-perfection-audit.md` - `playbooks/phases/research.md:8`.
 - **[WRITE]** `docs/content-pipeline/templates/README.md` - `playbooks/phases/implement.md:166`.
-- **[READ, WRITE]** `<spec corpus root>` and its instructed descendants - `consultant.md:58`, `consultant.md:59`, `consultant.md:60`, `consultant.md:61`, `playbooks/bug-handling.md:26`, `playbooks/bug-handling.md:153`, `playbooks/bug-handling.md:157`, `playbooks/bug-handling.md:162`, `playbooks/bug-handling.md:165`, `playbooks/bug-handling.md:166`, `playbooks/implementation.md:17`, `playbooks/implementation.md:20`, `playbooks/implementation.md:39`, `playbooks/implementation.md:48`, `playbooks/implementation.md:49`, `playbooks/implementation.md:50`, `playbooks/md-revision.md:19`, `playbooks/md-revision.md:139`, `playbooks/phases/brief.md:17`, `playbooks/phases/brief.md:19`, `playbooks/phases/brief.md:52`, `playbooks/phases/brief.md:59`, `playbooks/phases/brief.md:60`, `playbooks/phases/brief.md:98`, `playbooks/phases/brief.md:128`, `playbooks/phases/brief.md:145`, `playbooks/phases/design.md:58`, `playbooks/phases/implement.md:71`, `playbooks/phases/implement.md:112`, `playbooks/phases/implement.md:164`, `playbooks/phases/implement.md:165`, `playbooks/phases/research.md:9`, `playbooks/phases/research.md:15`, `playbooks/phases/research.md:16`, `playbooks/phases/research.md:52`, `playbooks/phases/research.md:78`, `playbooks/phases/research.md:107`, `specialist-protocol.md:152`, `specialist-protocol.md:154`.
 - **[READ]** `event-types.md` - `specialist-protocol.md:230`.
 
 ### Memory pins
 
-- **[READ]** `~/.claude/projects/-Users-davidkol-projects-Godot-Tombhammer/memory/` - `playbooks/md-revision.md:136`.
+- **[READ]** `.claude/projects/-Users-davidkol-projects-Godot-Tombhammer/memory/` - `playbooks/md-revision.md:136`.
 - **[READ]** `feedback_check_content_spec_layer.md` - `playbooks/phases/brief.md:36`.
 - **[READ]** `feedback_hold_revisions_during_iteration.md` - `playbooks/md-revision.md:136`.
 - **[READ]** `feedback_invented_quantities_in_design_drafts.md` - `playbooks/design-pass.md:155`.
@@ -180,9 +178,15 @@ The sweep has no exclusion bucket.
 
 - **[READ]** `docs/` - `playbooks/phases/design.md:79`, `playbooks/phases/spec.md:67`.
 - **[READ]** `systems/` - `playbooks/bug-handling.md:92`, `playbooks/phases/design.md:79`, `playbooks/phases/research.md:77`.
+- **[READ]** `systems/*.md` - `consultant.md:59`.
+- **[READ]** `systems/08-status-system.md` - `specialist-protocol.md:154`.
+- **[READ, WRITE]** `systems/NN-*.md` - `playbooks/bug-handling.md:153`, `playbooks/bug-handling.md:162`, `playbooks/implementation.md:20`, `playbooks/implementation.md:49`, `playbooks/phases/research.md:16`.
 - **[READ]** `entities/` - `playbooks/bug-handling.md:92`, `playbooks/phases/research.md:77`.
 - **[READ]** `resources/` - `playbooks/bug-handling.md:92`, `playbooks/phases/spec.md:67`.
 - **[READ]** `tests/` - `playbooks/phases/brief.md:31`, `playbooks/phases/spec.md:67`.
+- **[READ, WRITE]** `SK_*.tres` - `playbooks/bug-handling.md:22`, `playbooks/phases/review.md:8`.
+- **[READ, WRITE]** `XX_*.tres` - `specialist-protocol.md:221`.
+- **[READ, EXECUTE]** `scaling_rule.gd` - `playbooks/phases/brief.md:149`.
 - **[READ, EXECUTE]** `systems/stats/scaling_rule.gd` - `playbooks/phases/brief.md:151`, `playbooks/phases/implement.md:62`.
 - **[READ, EXECUTE]** `systems/stats/stat_names.gd` - `playbooks/phases/brief.md:170`.
 - **[READ]** `deal_damage_effect.gd` - `playbooks/phases/verify.md:58`.
