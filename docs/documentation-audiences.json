@@ -364,6 +364,74 @@
       "audience": "operator-current"
     },
     {
+      "path": "skills/design-to-code/SKILL.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/consultant.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/bug-handling.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/design-pass.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/implementation.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/md-revision.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/brief-audit.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/brief.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/design.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/dispatch.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/handoff.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/implement.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/research.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/review.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/spec.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/playbooks/phases/verify.md",
+      "audience": "public-product"
+    },
+    {
+      "path": "skills/design-to-code/specialist-protocol.md",
+      "audience": "public-product"
+    },
+    {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
     },
