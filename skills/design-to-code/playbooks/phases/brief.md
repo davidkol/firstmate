@@ -202,4 +202,4 @@ If briefs have dependencies (e.g., code change before .tres wiring), number them
 - [ ] Briefs saved to `docs/briefs/`
 - [ ] Max 3 briefs this session (if more work remains, write a handoff)
 
-**Next:** Proceed to HANDOFF — update bookkeeping and summarize for the user.
+**Next:** Proceed to BRIEF-PRE-CHECK (`playbooks/phases/brief-audit.md`) — verify the brief before dispatch.
