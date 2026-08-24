@@ -37,10 +37,25 @@ The original pointer line was the following.
 **Next:** Proceed to HANDOFF — update bookkeeping and summarize for the user.
 ```
 
+The captain authorized two further carried-text corrections on 2026-08-24, both because the original line was unusable or unsafe for an adopter.
+`playbooks/md-revision.md` now names a neutral memory directory instead of the source author's machine, username, and private project path.
+The original line named that path directly.
+
+```text
+- **Memory pins (source material):** `feedback_md_ground_truth_bar.md`, `feedback_md_design_voice_not_spec_voice.md`, `feedback_hold_revisions_during_iteration.md` (all retained in `~/.claude/projects/-Users-davidkol-projects-Godot-Tombhammer/memory/` as backups for this playbook).
+```
+
+`playbooks/phases/handoff.md` now archives resolved backlog entries before removing them, which also removes a disagreement with `playbooks/phases/review.md:51`.
+The original line deleted them outright.
+
+```text
+   - `BACKLOG.md` — resolved items removed, new items added
+```
+
 No other carried prose was reworded, reordered, condensed, or generalized.
 
-Firstmate does not load this shelf: `AGENTS.md` declares `skills/` installer-facing and not loaded by firstmate, and `.claude/skills` resolves to `../.agents/skills` rather than `skills/`.
-The shelf is installable standalone through external skill-installer discovery like any other entry under `skills/`, as `README.md` documents for the skills.sh `npx skills add` installer.
+The repository this was carried into does not itself load this shelf; its own agent-loaded skills live in a separate directory.
+This directory is published for standalone installation and is discoverable by external skill installers, so an adopting project installs it like any other public skill.
 This is T1 public-contract carriage because the installer-facing skill changes agent behavior even though no firstmate runtime, build artifact, or executable code changed.
 
 ## What a target project must supply
@@ -59,7 +74,8 @@ The carried text assumes that the target project's default branch is literally n
 
 ## The chain
 
-The implementation loop runs in this order, one file per phase under `playbooks/phases/`.
+The implementation loop runs in this order, with the phase files under `playbooks/phases/`.
+Most phases have one file, but two are bundles: BRIEF is `brief.md` together with `implement.md`, and REVIEW is `review.md` together with `verify.md`, as `playbooks/implementation.md:21` and `playbooks/implementation.md:24` define them.
 
 ```
 SCOPE -> RESEARCH -> DESIGN -> SPEC -> BRIEF -> BRIEF-PRE-CHECK -> DISPATCH -> REVIEW -> HANDOFF
@@ -69,20 +85,73 @@ SCOPE -> RESEARCH -> DESIGN -> SPEC -> BRIEF -> BRIEF-PRE-CHECK -> DISPATCH -> R
 Three sibling playbooks cover the other arcs: `playbooks/design-pass.md` for a Socratic pass over a design document, `playbooks/md-revision.md` for revising that document after an audit, and `playbooks/bug-handling.md` for reported bugs.
 `consultant.md` and `specialist-protocol.md` carry the two source-project role descriptions, but they do not register the target project's callable skill or specialist configs.
 
-## Known ambiguity
+## Authority: intent always wins
+
+The carried files disagree about which layer settles a conflict.
+`specialist-protocol.md:242` makes code the ground truth on a spec-code mismatch, `playbooks/phases/verify.md:3-7` makes the specification the source of truth, and `playbooks/bug-handling.md:26-28` places designer-authored intent above both.
+
+The captain resolved this on 2026-08-24: **intent always wins**.
+Where designer intent, the specification, and the executing code disagree about authority, intent is authoritative and the lower layers are corrected to match it.
+
+This resolution is authored here and is deliberately bounded.
+It settles the authority-layer question and nothing else.
+The procedural disagreements below are not covered by it, and no carried line was edited to apply it.
+
+## Known ambiguities in the carried process
+
+The carried text contradicts itself in the places below.
+Each is stated with both sides so an adopting project can decide for itself.
+The carried text does not settle any of them, no carried line was changed to resolve them, and no answer is invented here.
+
+### Whether the verifier may read the brief
+
+`playbooks/phases/dispatch.md:133` assembles the VERIFY pass from the same material as the AUTHOR pass, which includes the executed brief.
+`playbooks/phases/verify.md:19-24` forbids the verification agent from reading the brief, calling that circular.
+
+### Whether bare source tags are acceptable
+
+`specialist-protocol.md:108` accepts bare `[USER]` and `[DEFAULT]` tags on a numeric value.
+`playbooks/phases/brief.md:127-145` requires `[USER: <date>, ...]` and `[DEFAULT: <path>:<line>]` and explicitly bans a bare `[DEFAULT]`.
+
+### What proof an enum mapping needs
+
+`playbooks/phases/implement.md:61` accepts a single-symbol grep to confirm an enum index.
+`playbooks/phases/brief.md:149-159` requires the full ordered enum block and a count from zero.
+
+### Whether code or design is read first
+
+`playbooks/phases/research.md:7-10` puts the audit, the wiring reference, and the affected code files ahead of the architecture specs.
+`playbooks/bug-handling.md:146-157` reads the design and specification layers first.
+
+### Which phase every task starts at
+
+`playbooks/phases/research.md:3` says RESEARCH is always first and every task starts there regardless of scope.
+`playbooks/implementation.md:10-18` places SCOPE before RESEARCH.
+
+### Who owns the Worker Rules list
+
+`playbooks/phases/brief.md:48` names `playbooks/phases/implement.md` the single source of truth for Worker Rules.
+`specialist-protocol.md:62-71` carries its own divergent copy of that list.
+
+### Which phase owns memory updates and cleanup
+
+`playbooks/implementation.md:25` assigns baton, PROJECT_STATE, BACKLOG, MEMORY updates and merged-worktree cleanup to HANDOFF.
+`playbooks/phases/handoff.md:5-20` contains the baton and bookkeeping steps but neither the MEMORY update nor the worktree cleanup.
+
+### Whether BRIEF-PRE-CHECK can be bypassed
 
 Reading A treats the chain in `playbooks/implementation.md:10` as strictly sequential.
 Under that reading, `playbooks/phases/implement.md` launches workers and proceeds directly to REVIEW, while `playbooks/phases/dispatch.md` can fall back to BRIEF, so either route can bypass BRIEF-PRE-CHECK.
 Reading B treats specialist DISPATCH and direct BRIEF as alternatives because `playbooks/phases/dispatch.md:8-14` explicitly presents them that way.
 Under that reading, the linear arrow diagram in `playbooks/implementation.md:10` is a compression rather than a strict order, and the carried text is coherent.
 The carried text does not settle which reading is correct.
-Adopters should decide which reading applies to their project.
-No carried line was changed to resolve this ambiguity.
+
+Two further items raised in the same scan were defects in this file rather than ambiguities in the carried text, so they were corrected above instead of being disclosed here: this file previously claimed one file per phase, and it previously listed `design-pass.md` and `implementation.md` as target-provided although both are carried here.
 
 ## Unresolved dependencies
 
 The carried files reference material that was deliberately not carried.
-Those references remain as written so the source process is visible, while this self-contained ledger names the 82 target-provided paths, commands, tools, skills, and execution capabilities that the carried text instructs an agent to read, write, or execute.
+Those references remain as written so the source process is visible, while this self-contained ledger names the 83 target-provided paths, commands, tools, skills, and execution capabilities that the carried text instructs an agent to read, write, or execute.
 The derivation records every found candidate before assigning an `IN` or `OUT` boundary judgment, preserves raw aliases and their use sites, and strips trailing `:N` or `:N-M` citations only after the cited token is retained.
 Items judged out of scope remain annotated with reasons in the pipeline evidence rather than disappearing before review.
 
@@ -94,6 +163,8 @@ Items judged out of scope remain annotated with reasons in the pipeline evidence
 - **[EXECUTE]** `.regime/verifiers/v_brief_precheck_v3.py` - `playbooks/implementation.md:22`, `playbooks/phases/brief-audit.md:52`.
 - **[EXECUTE]** MCP `game_eval` - `playbooks/bug-handling.md:100`, `playbooks/phases/review.md:79`, `playbooks/phases/review.md:83`, `playbooks/phases/review.md:101`, `playbooks/phases/review.md:182`.
 - **[EXECUTE]** Subagent or parallel-worker execution capability - `playbooks/phases/dispatch.md:82`, `playbooks/phases/dispatch.md:121`, `playbooks/phases/implement.md:126`, `playbooks/phases/implement.md:134`, `playbooks/phases/review.md:7`, `playbooks/phases/verify.md:9`, `playbooks/phases/verify.md:11`, `playbooks/phases/verify.md:43`, `playbooks/phases/verify.md:91`.
+- **[READ]** `verification-author` - `playbooks/design-pass.md:5`; a skill the source project used for spec authoring, not carried here.
+- **[EXECUTE]** `Read`, `Grep`, `Glob`, `Bash` agent tool surface - `consultant.md:22`, which assumes the consultant role has these tools.
 - **[EXECUTE]** `superpowers:brainstorming` - `playbooks/design-pass.md:5`, `playbooks/design-pass.md:204`, `playbooks/md-revision.md:5`.
 - **[EXECUTE]** `superpowers:writing-plans` - `playbooks/design-pass.md:5`, `playbooks/md-revision.md:5`.
 
@@ -129,8 +200,9 @@ Items judged out of scope remain annotated with reasons in the pipeline evidence
 
 ### Target-project guides and sibling playbooks
 
-- **[READ]** `design-pass.md` - `playbooks/bug-handling.md:5`, `playbooks/bug-handling.md:41`.
-- **[READ]** `implementation.md` - `playbooks/bug-handling.md:5`, `playbooks/bug-handling.md:39`.
+The bare names `design-pass.md` and `implementation.md` also appear in `playbooks/bug-handling.md:5`, `:39` and `:41`.
+Both are carried here as `playbooks/design-pass.md` and `playbooks/implementation.md`, so they are not target-provided and are not listed below.
+
 - **[READ, EXECUTE]** `verification.md` - `playbooks/bug-handling.md:5`, `playbooks/bug-handling.md:38`, `playbooks/bug-handling.md:69`, `playbooks/bug-handling.md:72`, `playbooks/bug-handling.md:73`, `playbooks/bug-handling.md:90`.
 - **[READ, EXECUTE]** `docs/playbooks/verification.md` - `playbooks/implementation.md:5`, `playbooks/bug-handling.md:170`.
 - **[READ]** `docs/playbooks/verifier-design.md` - `playbooks/design-pass.md:207`, `playbooks/implementation.md:22`.

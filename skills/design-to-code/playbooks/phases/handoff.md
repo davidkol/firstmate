@@ -12,7 +12,7 @@
 
 2. **Update bookkeeping** (only if no worktrees are still outstanding):
    - `PROJECT_STATE.md` — system status changes, metric updates
-   - `BACKLOG.md` — resolved items removed, new items added
+   - `BACKLOG.md` — resolved items archived, then removed; new items added
 
 3. **Summarize for the user:**
    - What was accomplished

@@ -133,7 +133,7 @@ If a revision pass auto-commits each iteration, the cumulative diff becomes hard
 
 ## Reference artifacts
 
-- **Memory pins (source material):** `feedback_md_ground_truth_bar.md`, `feedback_md_design_voice_not_spec_voice.md`, `feedback_hold_revisions_during_iteration.md` (all retained in `~/.claude/projects/-Users-davidkol-projects-Godot-Tombhammer/memory/` as backups for this playbook).
+- **Memory pins (source material):** `feedback_md_ground_truth_bar.md`, `feedback_md_design_voice_not_spec_voice.md`, `feedback_hold_revisions_during_iteration.md` (all retained in `<your agent memory directory>` as backups for this playbook).
 - **Design-pass playbook (sister discipline):** `playbooks/design-pass.md` — the Socratic interrogation pattern that produces the audit findings this playbook consumes.
 - **Master Design:** `docs/Master-Design.md` — the artifact this playbook governs revisions to.
 - **Decision hierarchy:** `<spec corpus root>/reference/decision-hierarchy-workflow.md` — Design → Spec → Code, and why MD-as-ground-truth matters.
