@@ -39,7 +39,7 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 After EACH merge:
 1. `./run_tests.sh --summary` — verify no new failures
 2. `git diff --stat HEAD~1` — verify the merge looks right
-3. Clean up: `git worktree remove --force .wt/<name> && git branch -d <branch>`
+3. Clean up: `git worktree remove .wt/<name> && git branch -d <branch>`
 
 ## Merge Conflicts
 

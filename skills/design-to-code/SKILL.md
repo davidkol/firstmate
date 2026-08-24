@@ -13,8 +13,15 @@ This is a working process, not a designed-for-reuse framework.
 Every file beside this one is carried near-verbatim from `Tombhammer`, a private Godot ARPG project, at pinned commit `99809956ffaa0a68d9681e6edff3d11e60347a57`, carried on 2026-08-23.
 It was written over months of real use on that one project and it reads that way: the worked examples, the cited precedents, and the past-session war stories are all from that project and are all deliberately intact, because the concrete shape is the part that teaches.
 
-Only five kinds of substitution were made in a carried file: the project name where it was the subject of a rule, the project's absolute path, the engine and language where a rule named them, the spec corpus path, and internal cross-references repointed at this directory's layout.
-Nothing else was reworded, reordered, condensed, or generalized.
+Five general kinds of substitution were made in a carried file: the project name where it was the subject of a rule, the project's absolute path, the engine and language where a rule named them, the spec corpus path, and internal cross-references repointed at this directory's layout.
+A sixth difference is a captain-authorized safety exception dated 2026-08-23: `playbooks/phases/review.md` omits the `--force` token from the original cleanup command.
+The original line was the following.
+
+```text
+3. Clean up: `git worktree remove --force .wt/<name> && git branch -d <branch>`
+```
+
+No other carried prose was reworded, reordered, condensed, or generalized.
 
 Nothing installs this shelf yet, and firstmate itself does not load it.
 This remains T0 documentation carriage because the public shelf is inactive in this repository.
@@ -34,6 +41,7 @@ The carried text leaves two placeholders that a target project fills in for itse
 A third placeholder, `<the project>`, appears where a rule named the source project as its subject.
 The target project also supplies its own `consultant` skill and its own per-system specialist configs under `.claude/specialists/`.
 `specialist-protocol.md` is the carried shared protocol that `playbooks/phases/dispatch.md` names as `.claude/specialists/_protocol.md`.
+The carried text assumes that the target project's default branch is literally named `main`.
 
 ## The chain
 
@@ -51,7 +59,7 @@ Three sibling playbooks cover the other arcs: `playbooks/design-pass.md` for a S
 
 The carried files reference material that was deliberately not carried.
 Those references are left exactly as written rather than stubbed or deleted, so nothing about the original process is silently lost.
-The ledger below records the 57 normalized target-provided dependencies from the mechanical sweep at `.no-mistakes/evidence/dependency-sweep.txt`.
+The ledger below records the 57 normalized target-provided dependencies from Bucket B and the two bare branch-name literals from Bucket G of the mechanical sweep at `.no-mistakes/evidence/dependency-sweep.txt`.
 
 ### Method
 
@@ -59,7 +67,8 @@ The sweep enumerated the 16 carried Markdown files, then used `rg -ni` over each
 It normalized descendants of `<spec corpus root>`, `.claude/specialists/`, and `.claude/skills/orchestrator/` to their owning dependency, split compound commands into executable and project resource, and retained every normalized file-and-line use site.
 It subtracted the 16 carried destinations, including the `_protocol.md` mapping to `specialist-protocol.md`, and classified standard shell and Git utilities, generated worktree paths, format tokens, and illustrative example paths as non-dependencies.
 A second fixed-string `rg -n -F` pass over each normalized dependency and its variants produced the recorded use-site sets.
-Bucket B in that sweep is the source for this ledger.
+Step 6 used a word-bounded `rg -n -w` pass for the bare branch-name literals `main` and `master` so non-path prerequisites are not omitted again.
+Buckets B and G in that sweep are the source for this ledger.
 
 ### `.regime/` verifiers
 
@@ -107,6 +116,13 @@ Godot AST tooling from the source project.
 - `CLAUDE.md` - `consultant.md:62`, `consultant.md:119`, `playbooks/implementation.md:5`, `playbooks/md-revision.md:99`, `playbooks/phases/brief.md:103`, `playbooks/phases/brief.md:159`, `playbooks/phases/brief.md:171`, `playbooks/phases/implement.md:148`, `playbooks/phases/verify.md:56`, `specialist-protocol.md:260`.
 
 No reference to `docs/arcs.md` or `pm-inbox/` survives in the carried set.
+
+### Bare branch-name literals
+
+- `main` is the assumed default-branch name.
+  The operational sites are `playbooks/implementation.md:23`, `playbooks/phases/implement.md:142`, and `playbooks/phases/review.md:26`.
+  The prose-only sites are `playbooks/phases/brief.md:51`, `playbooks/phases/implement.md:147`, `playbooks/phases/implement.md:183`, `playbooks/phases/review.md:95`, `playbooks/phases/review.md:183`, and `playbooks/phases/review.md:187`.
+- `master` appears only as a prose descriptor at `consultant.md:82` and is not an operational branch assumption.
 
 ### Design, spec, content, audit, and inventory documents
 
