@@ -196,7 +196,7 @@ Firstmate's skills live in two separate places with different audiences:
   Each skill is standalone from firstmate's paths, tools, and vocabulary, and its `SKILL.md` names any target-project prerequisites.
   The shelf currently contains two skills.
   `skills/stow` is a generic session-knowledge-sweep skill that routes findings by explicit instruction first, then existing local conventions, then a private `.stow-notes.md` fallback in the current directory, and closes with a resume pointer for the next session.
-  `skills/design-to-code` carries a near-verbatim design-to-code playbook chain whose target-project prerequisites and uncarried dependencies are documented in its `SKILL.md`.
+  `skills/design-to-code` carries a near-verbatim design-to-code playbook chain whose `SKILL.md` provides a target-project setup checklist.
   The public `skills/stow` intentionally shares no code with the firstmate-internal `.agents/skills/stow` it is named after, so the two can evolve independently.
 
 ## Documentation
