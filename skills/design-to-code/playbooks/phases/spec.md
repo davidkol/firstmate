@@ -91,4 +91,4 @@ When spec changes affect Definition class fields or enums:
 - [ ] Content pipeline docs flagged for update
 - [ ] Propagation direction identified and executed
 
-**Next:** If code/content changes needed → read `phases/implement.md`. If spec-only → read `playbooks/phases/verify.md`.
+**Next:** If code/content changes needed → read `playbooks/phases/implement.md`. If spec-only → read `playbooks/phases/verify.md`.

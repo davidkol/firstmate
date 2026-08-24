@@ -9,7 +9,7 @@ Send tasks to domain specialist agents. Two-pass model: RESEARCH first, then AUT
 - The task is primarily within one system's domain
 - The system's spec is in the rehabbed format (How It Works + Known Traps)
 
-**Fall back to BRIEF (phases/brief.md) when:**
+**Fall back to BRIEF (playbooks/phases/brief.md) when:**
 - No specialist template exists for the target system
 - The task spans multiple systems and can't be decomposed
 - The spec hasn't been rehabbed yet

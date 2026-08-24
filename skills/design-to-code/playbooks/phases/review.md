@@ -33,7 +33,7 @@ One workstream at a time:
 ```bash
 git merge <branch> --no-ff -m "merge: [summary]
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
+"
 ```
 
 After EACH merge:

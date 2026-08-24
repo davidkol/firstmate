@@ -115,4 +115,4 @@ Search shipping games for the same problem: PoE 1&2, D4, Last Epoch, Grim Dawn, 
 - [ ] Runtime path traced (Tier 1.5)
 - [ ] Code-level agents returned with findings
 
-**Next:** If design/MD changes needed → `phases/design.md`. If spec-only → `phases/spec.md`. If implementation-only → `phases/implement.md`.
+**Next:** If design/MD changes needed → `playbooks/phases/design.md`. If spec-only → `playbooks/phases/spec.md`. If implementation-only → `playbooks/phases/implement.md`.

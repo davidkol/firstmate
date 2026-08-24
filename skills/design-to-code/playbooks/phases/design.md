@@ -130,4 +130,4 @@ For each decision the user made in the "Unknown" section, write down the target 
 - [ ] Master Design updated (if game design changes)
 - [ ] Impact analysis done — downstream blast radius identified
 
-**Next:** Run `phases/spec.md` to encode the Decision → REQ/AP mapping. Then `phases/brief.md` for implementation. Do NOT skip the SPEC phase even if spec changes seem "small" — prescriptive encoding is the step that gets dropped.
+**Next:** Run `playbooks/phases/spec.md` to encode the Decision → REQ/AP mapping. Then `playbooks/phases/brief.md` for implementation. Do NOT skip the SPEC phase even if spec changes seem "small" — prescriptive encoding is the step that gets dropped.

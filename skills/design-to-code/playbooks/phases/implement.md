@@ -189,4 +189,4 @@ Updates flow from SPEC, not from the code being written. Include spec citations.
 - [ ] New recipe created or existing recipe updated if novel pattern discovered
 - [ ] Workers dispatched
 
-**Next:** Read `phases/review.md` when workers report completion.
+**Next:** Read `playbooks/phases/review.md` when workers report completion.

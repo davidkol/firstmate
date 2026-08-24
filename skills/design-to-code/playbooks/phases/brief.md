@@ -188,7 +188,7 @@ If briefs have dependencies (e.g., code change before .tres wiring), number them
 
 ## Phase Completion
 
-- [ ] `phases/implement.md` re-read this session (paste `wc -l` output in each brief's Context Loading scratch block)
+- [ ] `playbooks/phases/implement.md` re-read this session (paste `wc -l` output in each brief's Context Loading scratch block)
 - [ ] Matching recipe or content-authoring.md re-read for all Definition classes in briefs
 - [ ] All briefs are mechanical — zero judgment, all decisions pre-made
 - [ ] Every chosen value (numeric, enum, StringName, predicate, tag filter) has a source tag per Quality Rule 1
