@@ -231,6 +231,27 @@ Spawn records both `project_id=` and the resolved canonical `project=` path, the
 Landing and teardown repeat that identity proof before acting.
 A task recorded before migration carries no `project_id=` and can still land and tear down on its recorded path while its entry is pathless, but is refused with `PROJECT_IDENTITY_MISSING` once that project has a canonical path; migrate a project only when it has no in-flight tasks, which is exactly what `bin/fm-project-path-set.sh`'s refusal enforces.
 
+### Project-local Codex sessions
+
+A Codex primary running under tmux can hand the captain into one project-local orchestrator per registered project and tmux session without creating a Firstmate task or Firstmate watcher, status, retry, or supervision state.
+Install the public [`design-to-code`](../skills/design-to-code/SKILL.md) skill through Codex's standard skill mechanism before launch, then use the literal-request form:
+
+```sh
+bin/fm-project-session.sh Martyrdome -- '<literal request>'
+```
+
+The first milestone supports only Codex CLI under tmux; every other primary harness or backend uses the normal task path.
+The launcher reports uncommitted paths in the canonical checkout without blocking, because the clean Treehouse lease starts at the remote default commit and does not contain those working-tree bytes.
+The project session takes custody on `project-session/<project-id>`, commits `docs/project-status.md` at meaningful handoffs, and remains outside Firstmate's task and supervision lifecycle.
+
+After returning to Firstmate, read the committed snapshot with `bin/fm-project-status.sh Martyrdome`.
+The reader selects `refs/heads/project-session/<project-id>` while that session ref exists and otherwise selects the project's remote default ref; it never treats the canonical checkout's local `HEAD` or working-tree copy as committed status.
+Use the launcher's printed holder-guarded Treehouse return command only after the committed snapshot proves the work landed or is explicitly disposable.
+Cleanup and crash recovery remain manual, and the deterministic session branch remains until its work is deliberately landed or disposed.
+
+Automatic session-start orientation and additional project-session harnesses are deferred until this path has executed evidence from two projects.
+The script headers and `--help` output own exact diagnostics and mechanics.
+
 ## Harness support
 
 claude, codex, opencode, pi, pi-signed, grok, and kimi are empirically verified for crewmate and secondmate launches; [README requirements](../README.md#requirements) own the set supported for the primary session.

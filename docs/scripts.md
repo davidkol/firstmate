@@ -33,6 +33,9 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-test-isolation-proof.sh` | Concurrent isolation proof and proven-isolated candidate set owner |
 | `fm-ensure-agents-md.sh` | Ensure a project's real `AGENTS.md`, its `CLAUDE.md` symlink, and the canonical self-governance section |
 | `fm-project-reconcile.sh` | Inventory a project's existing state surfaces, report collisions, disagreements and gaps, and seed only what is genuinely missing (`--seed`) |
+| `fm-project-session.sh` | Hand one tmux-hosted Codex captain into an unsupervised project-local orchestrator |
+| `fm-project-session-run.sh` | Consume one private project-session prompt and replace the window shell with Codex |
+| `fm-project-status.sh` | Print one registered project's committed project-session or remote-default status snapshot |
 | `fm-guard.sh`            | Warn on primary-checkout tangles, pending queued wakes, and unhealthy supervision    |
 | `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks             |
 | `fm-session-lock-lib.sh` | Shared session-lock harness identity (ancestry walk and holder liveness) for fm-lock.sh and the Claude Stop auto-arm |

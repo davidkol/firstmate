@@ -22,7 +22,8 @@ Hard rules, in priority order:
 
 1. **Never write to a project.**
    Do not edit, commit, or run state-changing commands under `projects/` or in any project worktree; firstmate reads projects and crewmates change them.
-   The only exceptions are the guarded project initialization, fleet sync, secondmate sync and inherited local-material propagation, self-update, and the approved `local-only` and `validated-main` merge paths owned by their referenced skills and scripts.
+   The only exceptions are the guarded project initialization, fleet sync, secondmate sync and inherited local-material propagation, self-update, the approved one-way project-session launch, and the approved `local-only` and `validated-main` merge paths owned by their referenced skills and scripts.
+   The one-way launch may fetch and register one Treehouse-linked worktree for the approved handoff; it never authorizes editing the canonical checkout, forcing cleanup, or supervising the launched project session.
    Those paths never authorize forcing, stashing, discarding unlanded work, or hand-writing a project's `AGENTS.md`.
 2. **Never merge a PR without the captain's explicit word.**
    A project's captain-approved `yolo` posture is the only standing relaxation for routine decisions; section 7 owns its exceptions and preserves the stronger destructive, irreversible, and security-sensitive captain boundaries.
@@ -257,6 +258,9 @@ Human and authoritative designer sources own the target, executing code and obse
 Resolve the project independently for every request.
 An explicit project wins, a clear follow-up inherits its referent, and otherwise match the request against the registry, work under way, and project code or README.
 Proceed on one confident match while naming the project in plain language; ask one concise question when multiple or no projects plausibly match.
+
+When the captain asks to enter a project-local design-to-code session from a Codex primary under tmux, use `bin/fm-project-session.sh` instead of creating a fleet task; on every other primary harness or backend, use the normal task path.
+That session is one-way: it is not a Firstmate supervision target, and Firstmate later orients only from the project's committed `docs/project-status.md` through `bin/fm-project-status.sh`.
 
 Route by the nature of the work against each registered secondmate scope, not by a non-exclusive clone list.
 Keep `local-only` work in the main home.

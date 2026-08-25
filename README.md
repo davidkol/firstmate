@@ -167,6 +167,7 @@ Setup guides for tmux (the default) and every other supported backend (herdr, ze
 
 You chat with the first mate.
 It routes each request to a crewmate in its own session endpoint and git worktree, supervises the fleet with a zero-token event-driven watcher, and brings you finished PRs, approved local merges, or investigation reports.
+For design-to-code work, a Codex primary under tmux can instead make a [one-way project-local handoff](docs/configuration.md#project-local-codex-sessions) that leaves the project orchestrator in direct conversation with you while Firstmate later reads only the project's committed status.
 Optional secondmates extend this to persistent second mates, dispatch profiles let you steer which harness handles which task, and an opt-in X mode lets the same fleet answer public mentions.
 `codex-app` is not a runtime backend yet; [docs/codex-app-backend.md](docs/codex-app-backend.md) owns the Codex App boundary.
 
