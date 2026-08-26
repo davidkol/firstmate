@@ -20,6 +20,9 @@
 set -eu
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=bin/fm-gate-refuse-lib.sh
+. "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
+fm_refuse_if_gate_agent
 # shellcheck source=bin/fm-project-lib.sh
 . "$SCRIPT_DIR/fm-project-lib.sh"
 
@@ -66,6 +69,10 @@ command -v treehouse >/dev/null || {
 }
 command -v tmux >/dev/null || {
   printf 'project session: tmux is unavailable\n' >&2
+  exit 1
+}
+command -v node >/dev/null || {
+  printf 'project session: node is unavailable\n' >&2
   exit 1
 }
 
@@ -131,21 +138,19 @@ prompt_file=
 printf -v worktree_command '%q' "$worktree"
 
 lease_release_verified() {
-  export FM_PROJECT_SESSION_WORKTREE=$worktree
-  export FM_PROJECT_SESSION_LEASE_HOLDER=$lease_holder
-  if treehouse status --json 2>/dev/null | python3 -c '
-import json, os, sys
-target = os.environ["FM_PROJECT_SESSION_WORKTREE"]
-holder = os.environ["FM_PROJECT_SESSION_LEASE_HOLDER"]
-rows = json.load(sys.stdin)
-raise SystemExit(1 if any(row.get("path") == target and row.get("status") == "leased" and row.get("lease_holder") == holder for row in rows) else 0)
-' 2>/dev/null; then
-    released=0
-  else
-    released=1
-  fi
-  unset FM_PROJECT_SESSION_WORKTREE FM_PROJECT_SESSION_LEASE_HOLDER
-  return "$released"
+  local status_json
+  status_json=$(cd "$FM_PROJECT_PATH" && treehouse status --json 2>/dev/null) || return 1
+  printf '%s' "$status_json" \
+    | FM_PROJECT_SESSION_WORKTREE="$worktree" \
+      FM_PROJECT_SESSION_LEASE_HOLDER="$lease_holder" \
+      node -e '
+const fs = require("fs");
+const rows = JSON.parse(fs.readFileSync(0, "utf8"));
+if (!Array.isArray(rows)) process.exit(2);
+const target = process.env.FM_PROJECT_SESSION_WORKTREE;
+const holder = process.env.FM_PROJECT_SESSION_LEASE_HOLDER;
+process.exit(rows.some((row) => row && row.path === target && row.status === "leased" && row.lease_holder === holder) ? 1 : 0);
+' 2>/dev/null
 }
 
 rollback_lease() {
@@ -178,7 +183,15 @@ root_physical=$(cd "$worktree_root" && pwd -P) \
   || abort_after_lease 'leased Git root physical path is unreadable'
 [ "$worktree_physical" = "$root_physical" ] \
   || abort_after_lease 'leased path is not the Git worktree root'
-[ -z "$(git -C "$worktree" status --porcelain --untracked-files=all)" ] \
+canonical_common=$(fm_project_common_dir "$FM_PROJECT_PATH") \
+  || abort_after_lease 'canonical repository identity is unreadable'
+worktree_common=$(fm_project_common_dir "$worktree") \
+  || abort_after_lease 'leased repository identity is unreadable'
+[ "$worktree_common" = "$canonical_common" ] \
+  || abort_after_lease 'leased worktree is not linked to the canonical repository'
+worktree_status=$(git -C "$worktree" status --porcelain --untracked-files=all) \
+  || abort_after_lease 'leased worktree status is unreadable'
+[ -z "$worktree_status" ] \
   || abort_after_lease 'leased worktree is not clean'
 
 remote_short=$(git -C "$worktree" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) \
@@ -228,10 +241,14 @@ if ! window_id=$(tmux new-window -d -P -F '#{window_id}' -t "$session:" -n "$win
   abort_after_lease 'tmux could not create the project window'
 fi
 
-tmux set-option -w -t "$window_id" automatic-rename off || \
-  printf 'project session: warning: tmux automatic rename could not be disabled for %s\n' "$window_id" >&2
-tmux set-option -w -t "$window_id" allow-rename off || \
-  printf 'project session: warning: tmux client rename could not be disabled for %s\n' "$window_id" >&2
+tmux set-option -w -t "$window_id" automatic-rename off \
+  || abort_after_lease 'tmux could not stabilize the project window'
+tmux set-option -w -t "$window_id" allow-rename off \
+  || abort_after_lease 'tmux could not stabilize the project window'
+live_window_id=$(tmux display-message -p -t "$window_id" '#{window_id}' 2>/dev/null) \
+  || abort_after_lease 'project window did not remain available'
+[ "$live_window_id" = "$window_id" ] \
+  || abort_after_lease 'project window did not remain available'
 
 window_target="$session:$window_name"
 printf 'PROJECT_SESSION project=%s window=%s window_id=%s worktree=%s\n' \

@@ -33,7 +33,7 @@ test_runner_preserves_prompt_and_retires_file_before_codex() {
   prompt="$case_dir/private prompt"
   expected="$case_dir/expected"
   # shellcheck disable=SC2016 # The dollar sign is literal prompt custody data.
-  printf '%s' 'First line with spaces
+  printf '%s\n\n' 'First line with spaces
 Second line has "quotes", a $dollar, and literal newlines.' > "$prompt"
   cp "$prompt" "$expected"
 
@@ -98,11 +98,14 @@ case "${1:-}" in
   status)
     if [ "${FM_FAKE_STATUS_INVALID:-0}" = 1 ]; then
       printf '%s\n' 'not-json'
+    elif [ "$PWD" != "$(cd "$FM_FAKE_PROJECT_PATH" && pwd -P)" ]; then
+      printf '[]\n'
     elif [ "${FM_FAKE_RETURN_KEEP:-0}" = 1 ] && [ ! -e "$FM_FAKE_CASE_DIR/returned" ]; then
       printf '[{"path":"%s","status":"leased","lease_holder":"project-session:Fixture"}]\n' "$FM_FAKE_WORKTREE"
     else
       printf '[]\n'
     fi
+    exit "${FM_FAKE_STATUS_EXIT:-0}"
     ;;
   *) exit 2 ;;
 esac
@@ -115,7 +118,13 @@ printf '|%s' "$@" >> "$FM_FAKE_TOOL_LOG"
 printf '\n' >> "$FM_FAKE_TOOL_LOG"
 case "${1:-}" in
   display-message)
-    printf '%s\n' "${FM_FAKE_TMUX_SESSION:-work}"
+    if [ "${3:-}" = -t ]; then
+      [ "${FM_FAKE_WINDOW_DISAPPEAR:-0}" != 1 ] || exit 19
+      [ -e "$FM_FAKE_CASE_DIR/window-created" ] || exit 20
+      printf '%s\n' '@42'
+    else
+      printf '%s\n' "${FM_FAKE_TMUX_SESSION:-work}"
+    fi
     ;;
   list-windows)
     [ -z "${FM_FAKE_EXISTING_WINDOW:-}" ] || printf '%s\n' "$FM_FAKE_EXISTING_WINDOW"
@@ -127,9 +136,11 @@ case "${1:-}" in
     cp "$2" "$FM_FAKE_CAPTURED_PROMPT"
     (stat -c '%a' "$2" 2>/dev/null || stat -f '%Lp' "$2") > "$FM_FAKE_CASE_DIR/prompt-mode"
     rm -f "$2"
+    : > "$FM_FAKE_CASE_DIR/window-created"
     printf '%s\n' '@42'
     ;;
   set-option)
+    [ "${FM_FAKE_SET_OPTION_FAIL:-0}" != 1 ] || exit 18
     ;;
   list-clients)
     i=0
@@ -176,16 +187,31 @@ new_launch_case() {
   CASE_FAKEBIN=$(make_launcher_fakebin)
 }
 
+make_no_node_path() {
+  local path_dir="$CASE_DIR/no-node-bin" tool target
+  mkdir -p "$path_dir"
+  for tool in bash dirname awk git; do
+    target=$(command -v "$tool") || fail "missing fixture prerequisite: $tool"
+    ln -s "$target" "$path_dir/$tool"
+  done
+  printf '%s\n' "$path_dir"
+}
+
 run_launcher() {
   FM_HOME="$CASE_HOME" FM_ROOT_OVERRIDE="$ROOT" CODEX_HOME="$CASE_CODEX_HOME" \
-    TMUX="${RUN_TMUX-/fake}" PATH="$CASE_FAKEBIN:$PATH" \
+    TMUX="${RUN_TMUX-/fake}" PATH="$CASE_FAKEBIN:${RUN_SYSTEM_PATH:-$PATH}" \
+    FM_GATE_REFUSE_BYPASS="${RUN_GATE_BYPASS:-1}" \
     FM_FAKE_CASE_DIR="$CASE_DIR" FM_FAKE_WORKTREE="$CASE_WORKTREE" \
+    FM_FAKE_PROJECT_PATH="$CASE_REPO" \
     FM_FAKE_TOOL_LOG="$CASE_TOOL_LOG" FM_FAKE_CAPTURED_PROMPT="$CASE_PROMPT" \
     FM_FAKE_CLIENT_COUNT="${RUN_CLIENT_COUNT:-1}" \
     FM_FAKE_EXISTING_WINDOW="${RUN_EXISTING_WINDOW:-}" \
     FM_FAKE_RETURN_KEEP="${RUN_RETURN_KEEP:-0}" \
     FM_FAKE_STATUS_INVALID="${RUN_STATUS_INVALID:-0}" \
+    FM_FAKE_STATUS_EXIT="${RUN_STATUS_EXIT:-0}" \
     FM_FAKE_NEW_WINDOW_FAIL="${RUN_NEW_WINDOW_FAIL:-0}" \
+    FM_FAKE_SET_OPTION_FAIL="${RUN_SET_OPTION_FAIL:-0}" \
+    FM_FAKE_WINDOW_DISAPPEAR="${RUN_WINDOW_DISAPPEAR:-0}" \
     "$LAUNCHER" Fixture -- "${RUN_REQUEST:-Implement the approved continuity outcome.}"
 }
 
@@ -215,6 +241,34 @@ test_missing_skill_and_tmux_refuse_before_allocation() {
   assert_contains "$output" 'requires tmux' 'missing tmux refusal was unclear'
   assert_no_allocation 'missing tmux environment allocated a lease or window'
   pass 'project session preflights skill and tmux before allocation'
+}
+
+test_gate_context_refuses_before_allocation() {
+  local output rc
+  new_launch_case gate-context
+  RUN_GATE_BYPASS=0
+  set +e
+  output=$(NO_MISTAKES_GATE=1 run_launcher 2>&1); rc=$?
+  set -e
+  RUN_GATE_BYPASS=1
+  expect_code 3 "$rc" 'no-mistakes gate context preflight'
+  assert_contains "$output" 'NO_MISTAKES_GATE set' 'gate refusal omitted its authority boundary'
+  assert_no_allocation 'gate context allocated a lease or window'
+  pass 'project session refuses gate authority before allocation'
+}
+
+test_missing_node_refuses_before_allocation() {
+  local output rc
+  new_launch_case missing-node
+  RUN_SYSTEM_PATH=$(make_no_node_path)
+  set +e
+  output=$(run_launcher 2>&1); rc=$?
+  set -e
+  RUN_SYSTEM_PATH=
+  expect_code 1 "$rc" 'missing Node preflight'
+  assert_contains "$output" 'node is unavailable' 'missing Node refusal was unclear'
+  assert_no_allocation 'missing Node allocated a lease or window'
+  pass 'project session refuses missing JSON support before allocation'
 }
 
 test_existing_window_and_session_branch_refuse_before_allocation() {
@@ -278,6 +332,46 @@ test_wrong_head_returns_lease_before_window() {
   pass 'project session verifies the remote-default commit and guarded rollback before launch'
 }
 
+test_wrong_repository_returns_lease() {
+  local output rc other_seed other_remote
+  new_launch_case wrong-repository
+  other_seed="$CASE_DIR/other-seed"
+  other_remote="$CASE_DIR/other-origin.git"
+  mkdir -p "$other_seed"
+  git init -q -b main "$other_seed"
+  printf '%s\n' other > "$other_seed/other.txt"
+  git -C "$other_seed" add other.txt
+  git -C "$other_seed" commit -qm initial
+  git clone -q --bare "$other_seed" "$other_remote"
+  CASE_WORKTREE="$CASE_DIR/other-worktree"
+  git clone -q "$other_remote" "$CASE_WORKTREE"
+  git -C "$CASE_WORKTREE" remote set-head origin -a >/dev/null
+  set +e
+  output=$(run_launcher 2>&1); rc=$?
+  set -e
+  expect_code 1 "$rc" 'leased repository identity mismatch'
+  assert_contains "$output" 'leased worktree is not linked to the canonical repository' \
+    'repository identity mismatch refusal was unclear'
+  assert_present "$CASE_DIR/returned" 'repository identity mismatch did not release the fixture lease'
+  assert_no_grep 'tmux|new-window' "$CASE_TOOL_LOG" 'repository identity mismatch created a project window'
+  pass 'project session verifies repository identity before launch'
+}
+
+test_unreadable_git_status_returns_lease() {
+  local output rc index_path
+  new_launch_case unreadable-git-status
+  index_path=$(git -C "$CASE_WORKTREE" rev-parse --git-path index)
+  printf '%s\n' broken > "$index_path"
+  set +e
+  output=$(run_launcher 2>&1); rc=$?
+  set -e
+  expect_code 1 "$rc" 'leased Git status failure'
+  assert_contains "$output" 'leased worktree status is unreadable' 'Git status failure was treated as a clean worktree'
+  assert_present "$CASE_DIR/returned" 'Git status failure did not release the fixture lease'
+  assert_no_grep 'tmux|new-window' "$CASE_TOOL_LOG" 'Git status failure created a project window'
+  pass 'project session requires readable Git status before launch'
+}
+
 test_rollback_requires_readable_release_evidence() {
   local output rc
   new_launch_case unreadable-release
@@ -296,6 +390,39 @@ test_rollback_requires_readable_release_evidence() {
   pass 'project session fails closed when Treehouse release evidence is unreadable'
 }
 
+test_rollback_requires_successful_release_status_command() {
+  local output rc
+  new_launch_case failed-release-status
+  printf '%s\n' dirty > "$CASE_WORKTREE/dirty.txt"
+  RUN_STATUS_EXIT=1
+  set +e
+  output=$(run_launcher 2>&1); rc=$?
+  set -e
+  RUN_STATUS_EXIT=0
+  expect_code 1 "$rc" 'failed Treehouse release status command'
+  assert_contains "$output" 'lease release could not be verified' \
+    'failed Treehouse status command was treated as proof of release'
+  assert_no_grep 'tmux|new-window' "$CASE_TOOL_LOG" 'failed release verification created a project window'
+  pass 'project session fails closed when Treehouse release status fails'
+}
+
+test_rollback_does_not_depend_on_python() {
+  local output rc
+  new_launch_case no-python
+  printf '%s\n' dirty > "$CASE_WORKTREE/dirty.txt"
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 127' > "$CASE_FAKEBIN/python3"
+  chmod +x "$CASE_FAKEBIN/python3"
+  set +e
+  output=$(run_launcher 2>&1); rc=$?
+  set -e
+  expect_code 1 "$rc" 'dirty lease without Python'
+  assert_not_contains "$output" 'lease release could not be verified' \
+    'rollback verification retained an undeclared Python dependency'
+  assert_present "$CASE_DIR/returned" 'rollback without Python did not release the fixture lease'
+  assert_no_grep 'tmux|new-window' "$CASE_TOOL_LOG" 'rollback without Python created a project window'
+  pass 'project session verifies rollback with the universal Node toolchain'
+}
+
 test_new_window_failure_returns_lease() {
   local output rc
   new_launch_case new-window-failure
@@ -310,6 +437,38 @@ test_new_window_failure_returns_lease() {
     'tmux failure rollback omitted the holder guard'
   assert_absent "$CASE_PROMPT" 'failed tmux launch exposed the private prompt copy'
   pass 'project session rolls back the guarded lease when tmux cannot create the window'
+}
+
+test_window_option_failure_returns_lease() {
+  local output rc
+  new_launch_case window-option-failure
+  RUN_SET_OPTION_FAIL=1
+  set +e
+  output=$(run_launcher 2>&1); rc=$?
+  set -e
+  RUN_SET_OPTION_FAIL=0
+  expect_code 1 "$rc" 'tmux stable-option failure'
+  assert_contains "$output" 'tmux could not stabilize the project window' \
+    'stable-option failure was published as a successful session'
+  assert_present "$CASE_DIR/returned" 'stable-option failure did not release the fixture lease'
+  assert_not_contains "$output" 'PROJECT_SESSION project=' 'stable-option failure published session success'
+  pass 'project session requires stable window options before handoff'
+}
+
+test_vanished_window_returns_lease() {
+  local output rc
+  new_launch_case vanished-window
+  RUN_WINDOW_DISAPPEAR=1
+  set +e
+  output=$(run_launcher 2>&1); rc=$?
+  set -e
+  RUN_WINDOW_DISAPPEAR=0
+  expect_code 1 "$rc" 'tmux immediate window liveness'
+  assert_contains "$output" 'project window did not remain available' \
+    'vanished window was published as a successful session'
+  assert_present "$CASE_DIR/returned" 'vanished window did not release the fixture lease'
+  assert_not_contains "$output" 'PROJECT_SESSION project=' 'vanished window published session success'
+  pass 'project session requires immediate window liveness before handoff'
 }
 
 test_success_preserves_prompt_and_firstmate_state_boundary() {
@@ -389,11 +548,19 @@ test_multiple_clients_abstain_from_selection() {
 
 run_launcher_tests() {
   test_missing_skill_and_tmux_refuse_before_allocation
+  test_gate_context_refuses_before_allocation
+  test_missing_node_refuses_before_allocation
   test_existing_window_and_session_branch_refuse_before_allocation
   test_dirty_lease_reports_failed_guarded_rollback
   test_wrong_head_returns_lease_before_window
+  test_wrong_repository_returns_lease
+  test_unreadable_git_status_returns_lease
   test_rollback_requires_readable_release_evidence
+  test_rollback_requires_successful_release_status_command
+  test_rollback_does_not_depend_on_python
   test_new_window_failure_returns_lease
+  test_window_option_failure_returns_lease
+  test_vanished_window_returns_lease
   test_success_preserves_prompt_and_firstmate_state_boundary
   test_multiple_clients_abstain_from_selection
 }
@@ -405,6 +572,16 @@ case "${1:-all}" in
     ;;
   runner) run_runner_tests ;;
   launcher) run_launcher_tests ;;
+  runner-bytes) test_runner_preserves_prompt_and_retires_file_before_codex ;;
+  gate-context) test_gate_context_refuses_before_allocation ;;
+  missing-node) test_missing_node_refuses_before_allocation ;;
+  rollback-pool) test_dirty_lease_reports_failed_guarded_rollback ;;
+  wrong-repository) test_wrong_repository_returns_lease ;;
+  unreadable-git-status) test_unreadable_git_status_returns_lease ;;
+  failed-release-status) test_rollback_requires_successful_release_status_command ;;
+  no-python) test_rollback_does_not_depend_on_python ;;
+  window-option-failure) test_window_option_failure_returns_lease ;;
+  vanished-window) test_vanished_window_returns_lease ;;
   *) fail "unknown fm-project-session test selection: $1" ;;
 esac
 

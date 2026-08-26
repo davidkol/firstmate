@@ -711,8 +711,15 @@ exit 1
 SH
   cat >"$repo/$a" <<'SH'
 #!/usr/bin/env bash
-sleep 0.5
-touch "$SCHED_EVIDENCE/slow-done"
+i=0
+while [ ! -e "$SCHED_EVIDENCE/replacement-started" ] && [ "$i" -lt 100 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+[ -e "$SCHED_EVIDENCE/replacement-started" ] || {
+  echo "not ok - scheduler waited for oldest worker"
+  exit 1
+}
 echo "ok - slow fixture"
 SH
   cat >"$repo/$b" <<'SH'
@@ -722,10 +729,7 @@ echo "ok - fast fixture"
 SH
   cat >"$repo/$c" <<'SH'
 #!/usr/bin/env bash
-if [ -e "$SCHED_EVIDENCE/slow-done" ]; then
-  echo "not ok - scheduler waited for oldest worker"
-  exit 1
-fi
+touch "$SCHED_EVIDENCE/replacement-started"
 echo "ok - replacement fixture started before slow fixture finished"
 SH
   chmod +x "$runner" "$repo/$a" "$repo/$b" "$repo/$c" "$fake_bin/stat"

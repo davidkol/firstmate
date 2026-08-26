@@ -13,6 +13,13 @@ PROMPT_FILE=${1:?usage: fm-project-session-run.sh <prompt-file>}
   exit 1
 }
 
-prompt=$(cat "$PROMPT_FILE")
+prompt=$(
+  cat "$PROMPT_FILE" || exit 1
+  printf x
+) || {
+  printf 'project session runner: prompt is unreadable\n' >&2
+  exit 1
+}
+prompt=${prompt%x}
 rm -f "$PROMPT_FILE"
 exec codex --dangerously-bypass-approvals-and-sandbox "$prompt"
