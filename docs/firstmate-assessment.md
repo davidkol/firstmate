@@ -2,7 +2,7 @@
 
 Firstmate's overall process is not yet assessed.
 This living assessment records dated, evidence-based stage trials without turning task history into a transcript.
-The current version can judge the Martyrdome target-design, target-publication, and target-to-current gap trials plus one unattended-away boundary observation and one repository-surface delivery failure, and it carries a dated snapshot of the ongoing DANU new-project trial that reached a landed first implementation step.
+The current version can judge the Martyrdome target-design, target-publication, target-to-current gap, and first implementation trials plus one unattended-away boundary observation and one repository-surface delivery failure, and it carries a dated snapshot of the ongoing DANU new-project trial that reached a landed first implementation step.
 
 ## Assessment boundary
 
@@ -10,16 +10,18 @@ The current version can judge the Martyrdome target-design, target-publication, 
 - **Partly tested - Design mode and repeatability:** One-at-a-time dialogue was used extensively, while clean bulk discovery was tried only near the end on questions already shaped by earlier work.
 - **Tested once - Gap analysis:** One Martyrdome scout compared all 77 accepted target elements with current code, scenes, tests, and bounded runtime observations without writing an implementation plan.
 - **Tested once - New-project onboarding:** One fresh peer home attached, reconciled, and began work on DANU, a repository with no prior Firstmate history, without project writes.
-- **Tested once - Planning:** One DANU planning scout produced an eight-step architecture plan from the captain's verbatim rulings and it landed in the project; no Martyrdome plan has been assessed and plan quality in play is untested.
-- **Tested once - Implementation:** DANU's first plan step and four smaller ships landed on the project's local default branch; no Martyrdome implementation has been assessed and no playable outcome has been observed.
-- **Partly tested - Review and validation:** Target publication received independent documentation review and bounded re-review, and DANU's light-path implementation review caught real defects on every ship at the cost of long fix loops on parser work, but game-runtime validation and player-outcome validation remain untested.
-- **Tested twice - Publication or integration:** The accepted standalone target was published in PR 12 and its split focused-document form was published in PR 13, but the second delivery exposed a repository-surface identity failure in the captain-facing handoff.
+- **Tested once - Planning:** One DANU planning scout produced an eight-step architecture plan from the captain's verbatim rulings and it landed in the project; Martyrdome implementation workers wrote internal plans, but none survives on `main`, no separate Martyrdome plan has been assessed, and plan quality in play is untested.
+- **Tested once - Martyrdome implementation, partly successful:** DANU's first plan step and four smaller ships landed on the project's local default branch; one Martyrdome trial landed two subsystem replacements and one player-observed repair, but one deferred design branch remains executable and the first handoff missed three visible failures.
+- **Partly tested - Review and validation; runtime tested once with a failure boundary:** Target publication received independent documentation review and bounded re-review, and DANU's light-path implementation review caught real defects on every ship at the cost of long fix loops on parser work; extensive real-route Martyrdome Godot checks missed three visible failures later found by captain play, and captain final verification is observed once after the repair, while player-outcome and game-improvement validation remain unmeasured.
+- **Failed once - Handoff, durable project status:** Martyrdome's `docs/project-status.md` still describes already-merged PR 22 as review-ready and directs review and merge next.
+- **Tested eight times - Publication or integration:** The accepted standalone target was published in PR 12, its split focused-document form was published in PR 13, and implementation PRs 17 through 22 all merged remotely; the focused-document delivery exposed a repository-surface identity failure, and the implementation handoff required unsafe manual actual-checkout instructions before play.
 - **Failed once - Repository-surface identity:** Firstmate verified its managed clone, described that result as the local Martyrdome state, and linked the captain to that clone without identifying or verifying the captain's actual working repository.
 - **Failed once - Canonical landing rollout:** The canonical-repository correction deadlocked DANU's guarded local landing for a pathless peer-home entry with a task in flight, and recovery found the captain's own checkout 36 commits behind Firstmate's home clone.
 - **Failed once, then corrected - Designer-intent authority:** Firstmate repeated agent-authored DANU doctrine as designer intent in a captain-facing recommendation until the captain corrected it.
-- **Partly tested - Supervision or recovery:** Foreground supervision continued in the active session, but the owned away-mode launcher refused to start, so the unattended-away boundary failed; one DANU context reset was a non-event, while unattended-away operation remains untested.
+- **Partly tested - Supervision or recovery:** Foreground supervision continued in the active session, but the owned away-mode launcher refused to start in S1 and the daemon died twice in I1, so unattended-away operation remains failed and unproven; ordinary turn supervision nevertheless maintained momentum and landed Martyrdome PR 21 while the captain was away, and one DANU context reset was a non-event.
+- **Unassessed - Game quality:** The captain's statement that the three reported defects seemed to work after PR 22 closes those defects, but no player-outcome or game-improvement measure was taken.
 
-The successful remote publication results and the single DANU chain are not evidence that Firstmate's later stages, local delivery visibility, or cross-project repeatability work in general.
+The successful remote publication results, the single DANU chain, and one partly successful Martyrdome implementation trial are not evidence that Firstmate's full chain, local delivery visibility, game improvement, or cross-project repeatability work in general.
 
 ## Process changes under test
 
@@ -96,6 +98,30 @@ Those facts do not have to advance through a fixed workflow: a change may remain
 - **Planned:** No change is proposed yet; the loop is recorded so a later trial can judge whether a wrong placeholder ever lands before the captain reads it.
 - **Made:** On 2026-08-17 Firstmate chose the smallest reversible placeholders for two DANU Step 1 gate questions that brushed game behavior, reported them in one line each, and the captain overruled both in one message; both rulings were recorded verbatim, relayed after the active run's terminal outcome, applied, and re-reviewed.
 - **Learned:** The loop cost the captain one message and no waiting in this instance, and its risk of a wrong placeholder landing before he reads it did not materialize here.
+
+### I1-C1 - Run the existing Design phase before code
+
+- **Planned:** When Research exposes a design fork, run `playbooks/phases/design.md` before code so the decision surface, assumptions, adjacent paths, and durable authority are settled before implementation begins.
+- **Made:** No shared behavior changed in I1; direct captain conversation and small transcription ships substituted for the carried Design phase, the Hando worker stopped before editing on one open response, and review later restored one ruling to the design owner.
+- **Learned:** Opening Design after dispatch did not prevent one Slap ruling from reaching implementation before its design owner or one explicitly deferred whole-kick behavior from becoming executable.
+
+### I1-C2 - Use the existing Brief mechanics and pre-check before dispatch
+
+- **Planned:** Use the mechanical core of `playbooks/phases/brief.md` and `playbooks/phases/implement.md`, then run `playbooks/phases/brief-audit.md` before dispatch.
+- **Made:** No shared behavior changed in I1; Firstmate wrote its own feature briefs, and workers opened the carried Brief, Implement, and Brief-Pre-Check files only after dispatch without producing the carried pre-check result.
+- **Learned:** The substitute briefs preserved useful authority order, exclusions, stop rules, and player outcomes, but one brief simultaneously labeled the whole-kick fork open and ordered its implementation; the 43 implementation findings show defects reached review but do not prove that the omitted brief procedure caused all of them.
+
+### I1-C3 - Verify the ordinary player promise
+
+- **Planned:** Use `playbooks/phases/verify.md`'s Feature Check against the ordinary player promise instead of treating instrumented mechanism proof as the complete feature result.
+- **Made:** No shared behavior changed in I1; agents ran extensive real-route Godot checks, but captain play still found unreadable parry feedback, impractical charged-air-punch reach, and absent charge presentation before the repair ship.
+- **Learned:** Instrumented runtime evidence established many mechanisms and still failed the player-visible boundary, while the captain's post-PR 22 verification closed the three reported defects without measuring game improvement.
+
+### I1-C4 - Run the existing Handoff phase after merge
+
+- **Planned:** Run `playbooks/phases/handoff.md` after merge so durable project status describes landed reality.
+- **Made:** No shared behavior changed in I1; Firstmate substituted private task updates, teardown, and a play route, while Martyrdome's `docs/project-status.md` remained on the pre-merge PR 22 state.
+- **Learned:** Successful merges and a working play route do not complete handoff when the project's durable status still directs the next operator to review and merge an already-merged PR.
 
 ## Human-owned evaluation standard
 
@@ -543,6 +569,88 @@ False stale-worker alarms during pipeline fix rounds and an empty open-decisions
 
 **Open empirical questions:** Whether the plan and Step 1 make the idea work in play, whether decisions requested matched decisions genuinely needed, whether the captain experienced the scout-first routing of design forks as momentum or delay, whether the delegated design choice read to him as served or invented, whether the local-only landing plus captain playtest loop is quick and easy in practice, and whether onboarding repeats on another fresh repository all remain unanswered by this record.
 
+## Implementation trial I1 - Martyrdome Player Combat and Hando (2026-08-27 to 2026-08-28)
+
+### Trial and boundary
+
+This trial covers two captain-chosen Martyrdome implementation chunks and one player-observed repair from accepted design and architecture through research, implementation, local review, merge, captain play, diagnosis, and repair.
+It reconstructs what Firstmate and its workers actually ran from the complete relevant Claude and Codex logs, the no-mistakes database, Martyrdome history and PRs 17 through 22, both identical copies of the carried design-to-code skill, and the phase files those copies contained.
+It excludes a general verdict about the carried process, cross-project repeatability, new-project onboarding, Martyrdome planning quality, and whether the game became better.
+The full evidence and reproduction method remain in `data/firstmate-implementation-trial-assessment/report.md`.
+
+### Captain-owned criteria
+
+- The captain directed Firstmate to "Run the carried process phases properly: research -> design -> brief -> dispatch -> implement" (captain, 2026-08-27, canonical primary transcript line 12).
+- In the same instruction he said, "Do not improvise a substitute" (captain, 2026-08-27, canonical primary transcript line 12).
+- The captain said, "The human intention and design is never misaligned and no agent ever invents anything that isn't just an implementation of existing intent." (captain, 2026-08-26, `data/captain-decisions-2026-08-26-design-authority.md:16-24`).
+- He assigned final verification by saying, "Let's say the human's own design and final verification." (captain, 2026-08-26, `data/captain-decisions-2026-08-26-design-authority.md:87-98`).
+- He rejected ceremony beyond the desired result by saying, "I just wanted to get there." (captain, 2026-08-26, `data/captain-decisions-2026-08-26-design-authority.md:114-121`).
+- The captain said, "we might not need spec per se ... im not convinced we need that for this game," and the dated record explicitly corrects Firstmate's later claim that he ruled Spec out (captain, 2026-08-27, `data/captain-decisions-2026-08-26-design-authority.md:207-216,342-346`).
+- The standing thirteen criteria for the complete chain, quick and easy operation, attention only where it matters, readable material, direct questions, durable accepted design, proportional ceremony, captain-specific operation, clean bulk questions, away momentum, intended repository surface, fresh-project operation, and human-owned design and balance apply as dated above.
+
+### Status and observed outcome
+
+**Tested once - Implementation, partly successful:** Two subsystem replacements and one player-observed repair landed through Martyrdome PRs 17 through 22, after which the captain said, "all seems to work, nice! lets do the assessment" (captain, 2026-08-28, canonical primary transcript line 1912).
+One explicitly deferred whole-kick branch nevertheless remains executable, one accepted Slap ruling reached code before the design owner, and the first implementation handoff missed three visible failures.
+**Partly tested - Review and validation:** Agents ran extensive real-route Godot checks and fresh review caught 55 findings, but captain play still found unreadable parry feedback, impractical charged-air-punch reach, and absent charge presentation.
+**Failed once - Handoff durability:** The implementation merged and became playable for the captain, but Martyrdome's durable project status still describes PR 22 as review-ready.
+**Partly tested - Supervision:** Ordinary turn supervision landed PR 21 while the captain was away, but the owned away daemon died twice and unattended operation remains failed and unproven.
+**Unassessed - Game quality:** The captain's final verification closes the three reported defects, not the open player-outcome or game-improvement measure.
+The carried chain itself did not run as instructed: Research substantially ran, while later phase files were mainly opened by already-dispatched workers and Firstmate substituted its own briefs, dispatch, validation, and handoff.
+
+### Measured evidence
+
+- GitHub records six merged PRs with no hosted CI checks: PRs 17 and 18 froze combat authority and the knee ruling, PR 19 replaced Player Combat, PR 20 recorded Hando rulings, PR 21 moved every production Hando onto the target runtime, and PR 22 repaired the captain-reported presentation and reach failures plus the Armor gate.
+- The no-mistakes database records nine runs, 45 review or repair sessions, 28 review rounds, 55 non-final findings, and 656.3 accumulated review minutes.
+- The accidental second Hando run added four rounds and 121.4 review minutes, although it later found real defects.
+- Player Research used the carried Research procedure, live Godot evidence, and three Tier 2 code-scoping agents, while Enemy Research used the procedure and live evidence but omitted the mandatory code-scoping agents from `playbooks/phases/research.md:97-116`.
+- The three implementation or fix workers opened the carried Design, Spec, Brief, Brief-Pre-Check, Implement, and Handoff files only after dispatch, and no required phase output exists for those omitted pre-dispatch procedures.
+- Twenty review or fix sessions opened the installed Review and Verify files, producing 32 reads of each, but the carried feature-completeness, merge, and durable-bookkeeping gates at `playbooks/phases/review.md:24-75,162-192` and `playbooks/phases/verify.md:89-112` did not run as written.
+- The 57 relevant Codex sessions recorded 689 Godot calls, including 321 game evaluations, 74 action injections, 51 single steps, 21 launches, 20 project stops, and 11 screenshots.
+- Primary Firstmate sent 123 text messages totaling 17,476 words; 44 exceeded 250 words, nine exceeded 400, and the longest was 525 words.
+- The whole-kick design remains deferred while current code executes the lean (`docs/target-design/player-combat.md:88-93`; `game/actors/player/combat/player_combat_provider.gd:3,191-198`).
+- The durable handoff remains stale because `docs/project-status.md:4-8` says the already-merged PR 22 is review-ready and directs review and merge next.
+- The playtest handoff also recommended `git checkout -- docs/target-design/` and a manual move of an untracked architecture directory, despite the standing prohibition on destructive checkout commands.
+
+### Verdict against the captain's goals
+
+- **Facilitate the complete game-development chain - Partly met:** Firstmate connected accepted design to architecture, implementation, runtime evidence, captain play, diagnosis, and repair, but did not run the named process as a chain and let one deferred behavior cross into code.
+- **Make the process quick and easy for him - Not met:** Two useful chunks landed, but 28 review rounds, 656.3 accumulated review minutes, one accidental rerun, and 123 captain-facing text messages were not quick or light.
+- **Use his attention only where it matters - Partly met:** Firstmate routed real combat and enemy design forks to the captain and resolved mechanical findings itself, but the invented no-adapter premise, late Slap authority hop, long status prose, and manual cleanup instructions imposed avoidable attention.
+- **Keep captain-facing material readable - Not met:** Direct questions were generally compact, but 44 messages exceeded 250 words despite the captain's instruction that long material belongs in files.
+- **Ask direct design questions - Met after one context correction:** Questions usually carried concrete options and a recommendation, one under-contextualized vocabulary question was corrected, and Firstmate withheld defaults where choosing one would invent design.
+- **Preserve accepted design outside chat - Partly met:** The knee and initial Hando card reached project design before code, review restored the Slap response to the design owner, but the whole-kick choice remains deferred in design while executable in code.
+- **Avoid ceremony that does not serve the work - Partly met:** Fresh review caught 55 findings, but the accidental rerun and repeated review and polling work added avoidable cost.
+- **Optimize for his process rather than a hypothetical user - Not met:** The captain explicitly required the carried phases, while Firstmate substantially ran Research and substituted its own machinery for the later named phases.
+- **Default to clean bulk design questions - Partly met:** Enemy research presented its main Hando questions together, while Player decisions surfaced serially across separate long messages.
+- **Maintain momentum while he is away - Partly met:** Hando implementation and PR 21 landed while the captain was away, but the away daemon died twice and ordinary turn supervision had to substitute.
+- **Keep actual work on the intended repository surface - Partly met:** Project writes stayed in Treehouse worktrees rooted in canonical Martyrdome, but the captain still received unsafe manual cleanup commands and had to pull before play.
+- **Operate well on a brand-new repository and concept - Unavailable evidence:** Martyrdome was established and already had published design, architecture, tests, and Firstmate history.
+- **Build systems and architecture, not design or balance - Partly met:** Workers usually stopped on design forks and disclosed provisional tuning, but Firstmate invented a no-adapter rule, commissioned code before one Hando ruling reached design, and directed implementation of a deferred whole-kick lean.
+
+### Strengths and failures
+
+Research was authority-first, logged, live, and genuinely parallel for Player Combat, and the captain was placed between research and build for both chunks.
+Firstmate promptly admitted the invented adapter ban when challenged, workers stopped at real design forks, most rulings reached project design before implementation, review caught 55 findings, diagnosis separated trigger from visible symptom, and all six ships used the intended canonical Treehouse surface and merged.
+
+The reusable failures are that later file reads did not retroactively execute the five phases the captain named, the Research brief passed an invented no-adapter premise to its scout, and "provisional" was treated as permission to execute one deferred behavior.
+One Hando ruling reached implementation before its design owner, review required 28 rounds including an accidental rerun, instrumented runtime checks missed three obvious player-visible failures, captain-facing volume stayed high, away mode failed twice, the play handoff proposed a destructive checkout command, and durable project status remained stale.
+
+### Correction and uncertainty
+
+**Observed evidence:** One established game moved two captain-chosen chunks and one player-observed repair from accepted design and architecture into six merged PRs, with materially effective but expensive review, incomplete process fidelity, three player-visible misses, one authority-order failure, and one stale durable handoff.
+
+**Captain's stated preference:** Run Research, Design, Brief, Dispatch, and Implement through the carried phase files without substituting another process, keep design and final verification human-owned, and do not add ceremony beyond the requested result (captain, 2026-08-26 and 2026-08-27, sources cited above).
+
+**Assessment recommendation:** Add no new tool or process layer; use the existing Design owner before code, the Brief and Implement mechanics plus Brief-Pre-Check before dispatch, Verify's ordinary-player Feature Check, Handoff after merge, and the existing diagnostic-reasoning owner for player-reported bugs.
+
+**Process-change evidence:** I1 records the Planned, Made, and Learned facts for I1-C1 through I1-C4 above.
+
+**Open captain choices:** `process-synthesis-redteam-decision-chain-scope` still owns whether the next Martyrdome chunk runs the literal five phases the captain named or the full nine-phase loop, and this assessment does not answer it.
+`martyrdome-player-combat-research-decision-full-parry-kick-payload` and `process-assessment-after-enemy-chunk-decision-broken-armor-cue` remain open game-design decisions, with no new invention recorded here.
+
+**Open empirical questions:** Whether this process repeats, whether a separate Spec layer would have prevented any observed defect, and whether the game became better remain unanswered by this trial.
+
 ## Future stage entries
 
 Later trials should extend this document with one bounded entry under the applicable stage rather than rewriting the design-stage history.
@@ -573,35 +681,41 @@ Martyrdome planning and plan quality in play remain untested.
 ### Implementation
 
 N1 records DANU's first architecture step and four smaller ships landed on the project's local default branch.
-Martyrdome implementation, implementation alignment with a published target, and any playable outcome remain untested.
+I1 records two Martyrdome subsystem replacements and one player-observed repair landed against accepted design and architecture, with one deferred design branch still executable and three visible failures missed before the first handoff.
+Repeatability and whether implementation improved the game remain untested.
 
 ### Review and validation
 
 Publication-document review is tested once in P1.
 N1 records light-path implementation review that caught real defects on every DANU ship, with long fix loops on parser work until a round bound was imposed.
-Runtime validation and player-outcome validation remain untested, so no verdict is recorded for them.
+I1 records extensive real-route Godot validation that missed three visible failures later found by captain play, followed by one captain verification that the repairs seemed to work.
+Player-outcome and game-improvement validation remain unmeasured.
 
 ### Publication or integration
 
 P1 records one successful Martyrdome target-publication result.
 P2 records a second successful remote publication whose captain-facing local handoff failed because Firstmate confused its managed clone with the captain's working repository.
 N1 records repeated successful local landing on a fresh peer home and one landing deadlock caused by the canonical-repository rollout, recovered onto the captain's own checkout.
-General repeatability and implementation alignment remain untested.
+I1 records six successful Martyrdome implementation merges and one unsafe manual actual-checkout handoff before captain play.
+General repeatability remains untested.
 
 ### Supervision or recovery
 
 S1 records a failed unattended-away boundary and successful foreground continuation in the same active turn.
 N1 records one context reset resumed with no captain input, false stale-worker alarms during pipeline fix rounds, and one wake drain that missed two open decisions.
-Away-mode operation remains unproven.
+I1 records a second away-mode failure episode in which the daemon died twice, while ordinary turn supervision still landed PR 21 during the captain's absence.
+Away-mode operation remains failed and unproven.
 
 ## Current assessment conclusion
 
 Firstmate has now produced one durable standalone game-design target, published both its standalone and split focused-document forms into Martyrdome through bounded review and merge, and completed one evidence-only target-to-current gap assessment.
-It still has not proved a concise, repeatable, end-to-end process, implementation-plan quality, implementation alignment, game-runtime validity, or player outcomes.
+It has also moved two captain-chosen Martyrdome subsystems and one player-observed repair from accepted design and architecture into six merged PRs, with one captain verification that the three reported failures seemed to work after repair.
+It still has not proved a concise, repeatable, end-to-end process, implementation-plan quality, player outcomes, or game improvement, and its first implementation trial exposed incomplete process fidelity, one executable deferred design branch, three runtime-validation misses, and stale durable handoff state.
 The gap trial strengthened source-authority discipline, honest runtime evidence, and separation between investigation and planning while exposing cross-stage decision duplication as a new process failure.
 The publication trials strengthened remote repository truth, proportional project-delivery rigor, routine autonomy, and foreground momentum while preserving the design trial's earlier failures as historical findings.
 The second publication also exposed that Firstmate can land correct work remotely while misleading the captain about which local repository was verified and where the result is available.
 The supervision observation failed at the unattended-away boundary, and foreground continuation must not be credited as satisfying the captain's overnight request.
 The DANU trial then carried a fresh repository from onboarding through a captain-ruled plan to a landed first implementation step in one day with questions batched by exception, while reproducing the agent-authored-canon failure once and exposing local-only review base, peer-home default, stale-alarm, and canonical-landing defects in Firstmate's own machinery.
 That single chain does not show that the idea works in play or that onboarding repeats elsewhere.
+The Martyrdome implementation trial shows that extensive review and runtime instrumentation can catch serious defects while still missing obvious player-visible failures, and that ordinary turn supervision can preserve momentum while away mode itself remains failed and unproven.
 The next assessment entry must evaluate a later process stage on its own evidence rather than extending any successful result into an assumed overall verdict.
