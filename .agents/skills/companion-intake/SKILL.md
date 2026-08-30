@@ -45,6 +45,14 @@ Use mechanical checks to catch execution slips and this authority boundary to ca
 Human and authoritative designer sources define the target, current code and observed runtime define the present, and agent-authored artifacts remain provisional claims regardless of where the project stores them.
 Load [`delivery-doctrine`](../delivery-doctrine/SKILL.md) before shaping a ship contract, and terminate its canonical outcome at an authoritative source rather than a queued task, report, comment, test, status line, memory, or agent-authored plan.
 
+## Design-to-implementation ownership
+
+When a request moves accepted game design toward implementation, make the first dispatch an existing crewmate chartered as the project-local orchestrator for the complete chain required by that project's authoritative instructions.
+That orchestrator owns continuity from the first required phase through handoff, including producing or explicitly adapting every required phase artifact, and remains the owner while separate workers execute its implementation briefs.
+Firstmate relays captain questions, answers, corrections, and decisions between the orchestrator and captain; it does not author the project plan, choose proposals, write implementation briefs, split the chain into phase tasks, or substitute its ordinary lifecycle for the project-owned chain.
+The orchestrator alone advances the chain into implementation, and it stops before its implementation dispatch when any preceding artifact or pre-check is missing rather than handing the gap to Firstmate or proceeding.
+This is a task charter for an existing crewmate, not a new worker kind, delivery path, or dispatch mechanism.
+
 ## Intake transformation
 
 1. Preserve the complete request verbatim before interpreting it.
