@@ -115,25 +115,6 @@
 - **[T11 - EXPERIMENTAL, WEAK - D11]** `data/captain-decision-2026-08-31-discovery-safety.md` is carried by S21 through S24 with all accepted pre-code guardrails intact and the lightweight-or-drop condition identified as Firstmate's unaccepted proposal.
 - **[T12 - AUTHORITY; COST ACCEPTED - D12]** `data/captain-decision-2026-08-31-outcome-record.md` is carried by S0, O1 through O8, and K3 with its accepted write moments, owner, evidence boundary, and reopen path intact while Firstmate's exact check schema and permanent cost protection remain outside captain authority.
 
-## Fidelity repair notes <!-- trace:TRANSCRIPT/D5/D6/D7/D8/D9/D10/D11/D12 -->
-
-- **P0:** The prior document omitted the synthesis's global standing, while transcript line 1257 calls it an experimental attempt to triangulate the best possible process.
-- **P2:** The prior `AUTHORITY` label applied D10 to a workflow-wide no-overwrite rule, while D10 makes project runtime the starting point and D9 separately protects designer-owned sources without settling every workflow conflict.
-- **S10:** The prior statement said `before shaping work`, while the captain accepted claim routing `before building` in D7.
-- **S15:** The prior `PROVISIONAL` label made Firstmate's no-gate and exact cost-comparison mechanics part of the ruling, while transcript line 1441 accepts the four-field option and says to judge how it feels in use.
-- **S19:** The prior `AUTHORITY` label made `whether it created work` a captain-named field, while transcript line 1451 requires tracking and recording review value without naming that metric.
-- **S21:** The prior categorical trigger flattened the captain's `I think`, `Or more so`, and `kind of` wording at transcript line 1306, so the worked-example signals are now explicitly provisional and experimental.
-- **S23:** The prior statement carried the lightweight-or-drop condition as accepted, while transcript lines 1489 and 1493 place it in Firstmate's separate recommendation followed by the captain's one-word acceptance of Option B.
-- **O4:** The prior `CHECK FIELDS` label attributed a composite schema to the captain, while D7, D8, D9, and D12 support tracking value and judging provisional additions without naming that combined field list.
-- **O8:** The prior `PROTECTED COST` label created an absolute trimming exemption, while transcript line 1508 says recording is super important even if it costs something.
-- **T5:** The prior trace inherited S10's `before shaping` timing, while D7 supports `before building`.
-- **T6:** The prior trace called the tentative D6 example a corrected trigger, while D6 and D11 support only an experimental candidate with narrow accepted guardrails.
-- **T7:** The prior trace carried S15 and O4 as undifferentiated captain mechanism, while D7 accepts the plan fields and leaves the exact overhead implementation to Firstmate.
-- **T8:** The prior trace inherited Firstmate's exact review schema, while transcript line 1451 supports broad value tracking and leaves the metric open.
-- **T10:** The prior trace treated P2 as broad authority and said the open questions were intact without naming the missing mover, while transcript line 1518 supplies two elevation times but no accountable owner.
-- **T11:** The prior trace said the unaccepted lightweight-or-drop condition was intact, while transcript line 1493 accepts only Option B above the separate recommendation.
-- **T12:** The prior trace claimed cost protection and the whole composite schema as authority, while transcript line 1508 accepts real recording cost without a permanent exemption and does not name the check fields.
-
 ## Report trace ledger <!-- trace:D1/D2/D3/D4/D5/D6/D7/D8/D9/D10/D11/D12 -->
 
 - **[R1 - BOUNDED EMPIRICAL SOURCE - D3/D5/D6/D8/D9]** `data/tombhammer-blind-what-drove-outcomes/report.md` supplies the bounded confidence labels used in C1, C2, S4, G4, and E7.
