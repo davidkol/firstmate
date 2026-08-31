@@ -14,7 +14,7 @@
 
 ### Work ownership <!-- trace:D3/D9 -->
 
-- **[S1 - TRIGGER - D3/D9]** Until a fair retest changes the choice, every job starts with one strong agent accountable for continuity from the captain's source words through the observed game, with bounded delegation only when it is genuinely faster.
+- **[S1 - TRIGGER, PROVISIONAL - D3/D9]** Until a fair retest changes the choice, every job starts with one strong agent accountable for continuity from the captain's source words through the observed game, with bounded delegation only when it is genuinely faster.
 - **[S2 - PROVISIONAL - D9]** At every context boundary, a cold-readable handoff carries exact authority, verified current state, open decisions, and the next action.
 - **[S3 - PROVISIONAL - D9]** High-risk or cross-boundary work gets one challenge that asks a different causal question chosen from the way the result could fail.
 - **[S4 - MODERATE, BOUNDED SAMPLE - D3/D9; R1/R2]** One strong integrator materially improved complex cross-system work in the bounded evidence, but the role alone was not shown to be causal or uniquely necessary.
