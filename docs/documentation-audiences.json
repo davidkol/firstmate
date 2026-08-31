@@ -264,6 +264,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/game-development-process.md",
+      "audience": "public-product"
+    },
+    {
       "path": "docs/gitlab-merge-watch.md",
       "audience": "maintainer-verification"
     },
