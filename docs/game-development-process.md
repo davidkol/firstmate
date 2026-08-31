@@ -120,8 +120,3 @@
 - **[R2 - ADVERSARIAL SOURCE - D2/D3/D4/D5/D6/D7/D8/D9/D10/D11/D12]** `data/process-plan-redteam/report.md` supplies the survived-versus-not-validated distinction, the steering boundary, and the corrections carried in E1 through E6 and K1 through K3.
 - **[R3 - SOURCE STUDY - D2/D3/D4/D5/D6]** `data/process-synthesis-candidate/report.md` supplies the original Hookgame comparison and the single-instance discovery-build limit carried in S24.
 - **[R4 - ONE-JOB COST SOURCE - D8]** `data/martyrdome-wrestling-cost-forensics/report.md` supplies the one-job review-cost boundary carried in S20.
-
-## Trace audit result <!-- trace:D1/D2/D3/D4/D5/D6/D7/D8/D9/D10/D11/D12/GAP -->
-
-- **[A1 - TRACE RESULT - D1/D2/D3/D4/D5/D6/D7/D8/D9/D10/D11/D12]** Every non-gap process statement above names at least one of the twelve decision records in its label.
-- **[A2 - UNTRACED STATEMENT LIST - GAP]** The only statements without a decision-record source are G2 and G4, and both are explicitly marked as gaps.
