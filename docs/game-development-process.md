@@ -1,7 +1,8 @@
 # One shared game-development process <!-- trace:D2/D10 -->
 
+- **[P0 - EXPERIMENTAL - TRANSCRIPT 2026-08-31 JSONL 1257]** The captain described this synthesis as a `pretty good kind of experimental approach` to `Try to get the best of everything and triangulate the best possible process for making games`.
 - **[P1 - AUTHORITY - D2/D10]** One process and one learning destination serve every game so a lesson in one project improves the others.
-- **[P2 - AUTHORITY - D10]** Project design authority, runtime facts, and current workflow are inputs to that shared process, not material the shared process may overwrite.
+- **[P2 - MIXED AUTHORITY AND GAP - D9/D10]** Project design authority and runtime facts are inputs to the shared process, D9 bars the active plan from outranking designer-owned sources, and whether the shared process may overwrite every current workflow remains unsettled.
 
 ## 1. The core <!-- trace:D5/D7/D9 -->
 
@@ -30,26 +31,26 @@
 
 ### Checkability and human inspection <!-- trace:D5/D7 -->
 
-- **[S10 - TRIGGER - D5/D7]** Before shaping work, route every claimed outcome separately according to who or what can actually prove it wrong.
+- **[S10 - TRIGGER - D7]** Before building, route every claimed outcome separately according to who or what can actually prove it wrong.
 - **[S11 - AUTHORITY - D5/D7]** A machine checks a claim it can easily falsify, that result closes only that claim, and the captain is not involved in checking it.
 - **[S12 - AUTHORITY - D5/D7]** Intent, presentation, playability, and feel still reach the captain, and only he may choose before building to omit and record desired work that no machine can check.
 - **[S13 - LOW-TO-MODERATE, NOT VALIDATED - D5; R2]** When the captain must inspect, the working default is a coherent playable slice plus final acceptance, with faster inspection when the result is easy to identify visually or through play.
 - **[S14 - PROVISIONAL - D7]** Before building, the existing short plan names each claim, its normal failure path, its checker, and the observation that would prove it wrong.
-- **[S15 - PROVISIONAL - D7]** Those four fields are the entire added closure overhead, no new document or text-grading gate is created, and the outcome record says whether their cost exceeded what they caught.
+- **[S15 - PROVISIONAL AUTHORITY AND FIRSTMATE IMPLEMENTATION - D7]** The four fields belong in the existing short plan, while treating them as the entire added overhead, creating no text-grading gate, and comparing their cost with what they caught are Firstmate implementation choices rather than captain rulings.
 
 ### Freshness and review <!-- trace:D8 -->
 
 - **[S16 - TRIGGER - D8]** Before shaping any ship, reproduce the current failure or prove the promised result is missing, and close as no work if the premise is absent.
 - **[S17 - TRIGGER - D8]** When an independent challenge is used, the task-wide ceiling across reruns is one challenge, one repair, and then an honest handback even if the result is unsuccessful.
 - **[S18 - AUTHORITY - D8]** Semantic code freezes before final evidence is produced, and publishing evidence never restarts semantic review of the same task.
-- **[S19 - AUTHORITY - D8]** Record what each check caught, what it cost, and whether it created work instead of finding it.
+- **[S19 - AUTHORITY AND FIRSTMATE METRIC - D8]** Record whether review checks pay for themselves, while `what it caught`, `what it cost`, and `whether it created work instead of finding it` are Firstmate's proposed metrics rather than fields named by the captain.
 - **[S20 - EVIDENCE BOUNDARY - D8; R4]** The ceiling and pre-check are adopted, the measured cost evidence is one Martyrdome job, and whether any particular check pays for itself remains an open empirical question.
 
 ### Disposable discovery build <!-- trace:D6/D11 -->
 
-- **[S21 - TRIGGER - D6/D11]** Consider a disposable build only when gameplay intent is already clear, one specific implementation unknown is named, the architecture or internals are genuinely difficult, agents are unlikely to get the first attempt right, and substantial improvement remains possible.
+- **[S21 - EXPERIMENTAL, PROVISIONAL TRIGGER - D6/D11]** Consider a disposable build only when gameplay intent is already clear and one specific implementation unknown is named, treating difficult architecture, likely first-attempt failure, and room for improvement as the captain's tentative worked-example signals rather than a categorical test.
 - **[S22 - EXPERIMENTAL - D11]** Before any code, isolate the build so production cannot depend on it, define its learning output and stop condition, and make disposal an explicit act.
-- **[S23 - EXPERIMENTAL - D6/D11]** The first build surfaces the named problems, the clean rebuild uses what was learned, and the switch is dropped if those safeguards cannot stay lightweight.
+- **[S23 - EXPERIMENTAL AUTHORITY AND FIRSTMATE PROPOSAL - D6/D11]** The first build surfaces the named problems and the clean rebuild uses what was learned, while dropping the switch when safeguards cannot stay lightweight is Firstmate's separate proposal and not an accepted condition.
 - **[S24 - WEAK, SINGLE INSTANCE - D6/D11; R3]** The only observed Hookgame case was a rescue after failure rather than this discipline working, so the switch remains the weakest and explicitly experimental.
 
 ### Shared centre and project reality <!-- trace:D2/D10 -->
@@ -68,11 +69,11 @@
 - **[O1 - AUTHORITY - D12]** The outcome record lives in the active plan and status that already exist, not in a new subsystem, dashboard, schema, document, or gate.
 - **[O2 - INTAKE WRITE - D12]** At intake, the accountable owner records the task context and the switch settings actually chosen.
 - **[O3 - CLOSURE WRITE - D12]** Before observed acceptance, refusal, no-work closure, or an unsuccessful handback, the accountable owner records the observable outcome and what it cost the captain.
-- **[O4 - CHECK FIELDS - D7/D8/D9/D12]** For each check, the record says what it caught, what it cost, whether it created work, and whether the provisional plan fields, handoff, or different-question challenge earned their cost.
+- **[O4 - CAPTAIN-AUTHORIZED PURPOSE, FIRSTMATE SCHEMA - D7/D8/D9/D12]** The record tracks whether checks and provisional additions earn their cost, while the combined fields for what each check caught, cost, or created are Firstmate's schema rather than captain-named fields.
 - **[O5 - EVIDENCE FIELD - D12]** Evidence points to a runtime, player, or authoritative-source observation rather than the owner's verdict.
 - **[O6 - REOPEN PATH - D12]** A later-discovered escape reopens the same row instead of leaving the earlier closure standing as the final truth.
 - **[O7 - INTERPRETATION LIMIT - D12]** The record stays descriptive and never claims a switch caused an outcome without a fair comparison.
-- **[O8 - PROTECTED COST - D12]** The captain explicitly accepted the recording cost, so overhead trimming does not remove this layer.
+- **[O8 - AUTHORITY, COST ACCEPTED - D12]** The captain called recording super important even when it costs something, but did not grant it a permanent exemption from overhead trimming.
 
 ## Corrections that remain visible <!-- trace:D4/D9/D10/D12 -->
 
@@ -105,14 +106,33 @@
 - **[T2 - AUTHORITY - D2]** `data/captain-decision-2026-08-31-one-process-one-place.md` is carried by P1, S25, and E4 as one shared process and learning destination.
 - **[T3 - PROVISIONAL, MODERATE - D3]** `data/captain-decision-2026-08-31-switch-role-shape.md` is carried by S1, S4, and S5 with the retest and causal limit intact.
 - **[T4 - MODERATE - D4]** `data/captain-decision-2026-08-31-switch-spec-layer.md` is carried by S6 through S9, G3, and K4 without turning a conditional contract into a standing specification layer.
-- **[T5 - AUTHORITY; LOW-TO-MODERATE CADENCE - D5]** `data/captain-decision-2026-08-31-switch-checkability-routing.md` is carried by S10 through S13 with claim-level routing and the unvalidated cadence distinguished.
-- **[T6 - WEAK, SINGLE INSTANCE - D6]** `data/captain-decision-2026-08-31-switch-discovery-build.md` is carried by S21, S23, and S24 with the corrected implementation-uncertainty trigger.
-- **[T7 - PROVISIONAL - D7]** `data/captain-decision-2026-08-31-closure-contract.md` is carried by S10 through S15 and O4 with the overhead reservation intact.
-- **[T8 - ADOPTED AUTHORITY; ONE-JOB EVIDENCE BOUNDARY - D8]** `data/captain-decision-2026-08-31-review-freshness.md` is carried by S16 through S20 and O4 without claiming that every check is valuable.
+- **[T5 - AUTHORITY; LOW-TO-MODERATE CADENCE - D5/D7]** `data/captain-decision-2026-08-31-switch-checkability-routing.md` is carried by S10 through S13 with D7's before-building timing, claim-level routing, and the unvalidated cadence distinguished.
+- **[T6 - EXPERIMENTAL, PROVISIONAL; WEAK, SINGLE INSTANCE - D6/D11]** `data/captain-decision-2026-08-31-switch-discovery-build.md` is carried by S21, S23, and S24 with its tentative example and later narrow guardrails distinguished.
+- **[T7 - PROVISIONAL AUTHORITY AND FIRSTMATE IMPLEMENTATION - D7]** `data/captain-decision-2026-08-31-closure-contract.md` is carried by S10 through S15 and O4 with the accepted plan fields separated from Firstmate's overhead mechanisms.
+- **[T8 - ADOPTED AUTHORITY; ONE-JOB EVIDENCE BOUNDARY - D8]** `data/captain-decision-2026-08-31-review-freshness.md` is carried by S16 through S20 and O4 with broad value tracking distinguished from Firstmate's exact schema and without claiming that every check is valuable.
 - **[T9 - PROVISIONAL - D9]** `data/captain-decision-2026-08-31-architecture-owner.md` is carried by C2, S1 through S4, S8, S8A, O4, and K1 with the false no-seam claim corrected.
-- **[T10 - AUTHORITY; DEFERRED TEST - D10]** `data/captain-decision-2026-08-31-central-local.md` is carried by P1, P2, S25 through S27, G1, and K2 with both elevation paths and the deferred game-specific test intact.
-- **[T11 - EXPERIMENTAL, WEAK - D11]** `data/captain-decision-2026-08-31-discovery-safety.md` is carried by S21 through S24 with all pre-code guardrails and the lightweight-or-drop condition intact.
-- **[T12 - AUTHORITY; COST PROTECTED - D12]** `data/captain-decision-2026-08-31-outcome-record.md` is carried by S0, O1 through O8, and K3 with its fields, write moments, owner, evidence boundary, and reopen path intact.
+- **[T10 - MIXED AUTHORITY AND GAP; DEFERRED TEST - D10]** `data/captain-decision-2026-08-31-central-local.md` is carried by P1, P2, S25 through S27, G1, and K2 with both elevation paths, the deferred game-specific test, and the still-unspecified accountable mover visible.
+- **[T11 - EXPERIMENTAL, WEAK - D11]** `data/captain-decision-2026-08-31-discovery-safety.md` is carried by S21 through S24 with all accepted pre-code guardrails intact and the lightweight-or-drop condition identified as Firstmate's unaccepted proposal.
+- **[T12 - AUTHORITY; COST ACCEPTED - D12]** `data/captain-decision-2026-08-31-outcome-record.md` is carried by S0, O1 through O8, and K3 with its accepted write moments, owner, evidence boundary, and reopen path intact while Firstmate's exact check schema and permanent cost protection remain outside captain authority.
+
+## Fidelity repair notes <!-- trace:TRANSCRIPT/D5/D6/D7/D8/D9/D10/D11/D12 -->
+
+- **P0:** The prior document omitted the synthesis's global standing, while transcript line 1257 calls it an experimental attempt to triangulate the best possible process.
+- **P2:** The prior `AUTHORITY` label applied D10 to a workflow-wide no-overwrite rule, while D10 makes project runtime the starting point and D9 separately protects designer-owned sources without settling every workflow conflict.
+- **S10:** The prior statement said `before shaping work`, while the captain accepted claim routing `before building` in D7.
+- **S15:** The prior `PROVISIONAL` label made Firstmate's no-gate and exact cost-comparison mechanics part of the ruling, while transcript line 1441 accepts the four-field option and says to judge how it feels in use.
+- **S19:** The prior `AUTHORITY` label made `whether it created work` a captain-named field, while transcript line 1451 requires tracking and recording review value without naming that metric.
+- **S21:** The prior categorical trigger flattened the captain's `I think`, `Or more so`, and `kind of` wording at transcript line 1306, so the worked-example signals are now explicitly provisional and experimental.
+- **S23:** The prior statement carried the lightweight-or-drop condition as accepted, while transcript lines 1489 and 1493 place it in Firstmate's separate recommendation followed by the captain's one-word acceptance of Option B.
+- **O4:** The prior `CHECK FIELDS` label attributed a composite schema to the captain, while D7, D8, D9, and D12 support tracking value and judging provisional additions without naming that combined field list.
+- **O8:** The prior `PROTECTED COST` label created an absolute trimming exemption, while transcript line 1508 says recording is super important even if it costs something.
+- **T5:** The prior trace inherited S10's `before shaping` timing, while D7 supports `before building`.
+- **T6:** The prior trace called the tentative D6 example a corrected trigger, while D6 and D11 support only an experimental candidate with narrow accepted guardrails.
+- **T7:** The prior trace carried S15 and O4 as undifferentiated captain mechanism, while D7 accepts the plan fields and leaves the exact overhead implementation to Firstmate.
+- **T8:** The prior trace inherited Firstmate's exact review schema, while transcript line 1451 supports broad value tracking and leaves the metric open.
+- **T10:** The prior trace treated P2 as broad authority and said the open questions were intact without naming the missing mover, while transcript line 1518 supplies two elevation times but no accountable owner.
+- **T11:** The prior trace said the unaccepted lightweight-or-drop condition was intact, while transcript line 1493 accepts only Option B above the separate recommendation.
+- **T12:** The prior trace claimed cost protection and the whole composite schema as authority, while transcript line 1508 accepts real recording cost without a permanent exemption and does not name the check fields.
 
 ## Report trace ledger <!-- trace:D1/D2/D3/D4/D5/D6/D7/D8/D9/D10/D11/D12 -->
 
