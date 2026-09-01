@@ -10,7 +10,6 @@ metadata:
 
 ## Current owner and reconciliation
 
-The captain's 2026-08-31 decision in `data/captain-decision-2026-08-31-process-home.md` resolves G2 for current operation by placing the shared process in Firstmate as this agent-only skill, while G2 remains verbatim below as the synthesis's prior open-gap record.
 `companion-intake` owns intake transformation, project-source inspection, pertinent ambiguity, cold-readable task output, and the project-local orchestrator route.
 `delivery-doctrine` owns ship tier and outcome fields, task-local evidence depth, reviewer boundaries, false-canon correction, and documentation procedure.
 This skill owns the upstream shared-process switches, their uncertainty and evidence boundaries, the outcome-learning record, the visible corrections and gaps, and both trace ledgers.
@@ -40,7 +39,8 @@ This skill owns the upstream shared-process switches, their uncertainty and evid
 
 - **[S6 - TRIGGER - D4/D9]** Write an exact contract only when a boundary needs exact agreement about lifecycle, time, network ownership, persistence, or another meaning that the design and active plan do not already settle.
 - **[S7 - MODERATE - D4]** Build from the captain's design and a short active plan without a standing specification layer, while learning from outcomes where the exact-contract boundary belongs.
-- **[S8 - AUTHORITY - D9]** For active-plan source authority, apply `companion-intake`'s Authority boundary and `delivery-doctrine`'s Authority boundary.
+- **[S8 - AUTHORITY - D9]** The active plan points to or quotes the exact designer-owned source and never outranks it.
+  For operational handling, apply `companion-intake`'s Authority boundary and `delivery-doctrine`'s Authority boundary.
 - **[S8A - AUTHORITY - D9]** A worker count or system count does not decide whether precision is needed, and an architecture gap always returns to the captain before code.
 - **[S9 - EVIDENCE BOUNDARY - D4; R2]** The captain chose the conditional-contract setting after recommendation-led framing, so his acceptance is authority for the setting but not evidence that raises its confidence.
 
@@ -87,7 +87,8 @@ For task-local status semantics and proof limits, apply `delivery-doctrine`'s Ro
 - **[O2 - INTAKE WRITE - D12]** At intake, the accountable owner records the task context and the switch settings actually chosen.
 - **[O3 - CLOSURE WRITE - D12]** Before observed acceptance, refusal, no-work closure, or an unsuccessful handback, the accountable owner records the observable outcome and what it cost the captain.
 - **[O4 - CAPTAIN-AUTHORIZED PURPOSE, FIRSTMATE SCHEMA - D7/D8/D9/D12]** The record tracks whether checks and provisional additions earn their cost, while the combined fields for what each check caught, cost, or created are Firstmate's schema rather than captain-named fields.
-- **[O5 - EVIDENCE FIELD - D12]** For the task-local evidence-pointer contract, apply `delivery-doctrine`'s Authority boundary and Conditional evidence.
+- **[O5 - EVIDENCE FIELD - D12]** Evidence points to a runtime, player, or authoritative-source observation rather than the owner's verdict.
+  For operational handling, apply `delivery-doctrine`'s Authority boundary and Conditional evidence.
 - **[O6 - REOPEN PATH - D12]** A later-discovered escape reopens the same row instead of leaving the earlier closure standing as the final truth.
 - **[O7 - INTERPRETATION LIMIT - D12]** The record stays descriptive and never claims a switch caused an outcome without a fair comparison.
 - **[O8 - AUTHORITY, COST ACCEPTED - D12]** The captain called recording super important even when it costs something, but did not grant it a permanent exemption from overhead trimming.
@@ -102,7 +103,8 @@ For task-local status semantics and proof limits, apply `delivery-doctrine`'s Ro
 ## Open gaps <!-- trace:GAP -->
 
 - **[G1 - GAP - D10]** The test for purely game-specific material is deliberately deferred until two projects sit under one Firstmate banner.
-- **[G2 - GAP]** The permanent home and owner of this document are unsettled, so this file remains under `docs/` and is not converted into `AGENTS.md`, a loaded skill, or other agent instructions without a separate captain decision.
+- **[G2 - RESOLVED 2026-08-31; ORIGINAL GAP]** The permanent home and owner of this document are unsettled, so this file remains under `docs/` and is not converted into `AGENTS.md`, a loaded skill, or other agent instructions without a separate captain decision.
+  **Resolution:** The captain's 2026-08-31 decision in `data/captain-decision-2026-08-31-process-home.md` places the shared process in Firstmate as this agent-only skill.
 - **[G3 - GAP - D4]** The exact boundary that requires a separate written contract is not known and must be learned from recorded outcomes.
 - **[G4 - GAP; MODERATE, SINGLE-SOURCE - R1]** A separate decision lane prevented unrelated captain-dependent work from stalling in one prior report, but none of the twelve rulings adopts it into this process.
 - **[G5 - GAP - D3/D5/D6/D7/D8/D9/D11]** Fair comparisons have not yet settled the role retest, the coherent-slice threshold, the disposable-build value, which checks pay for themselves, or whether the provisional closure fields, handoffs, and different-question challenges earn their cost.
