@@ -13,6 +13,7 @@ metadata:
 
 This skill is the single owner of the Companion intake transformation.
 Keep the boundary modular as inputs plus output so existing dispatch and decision owners can consume it without a second protocol.
+For game-development work, the shared-process skill loaded from `AGENTS.md` section 13 owns the upstream situation switches and outcome record, while this skill owns intake transformation and the project-local orchestrator route.
 
 ## Design-question responsibility split
 

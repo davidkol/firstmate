@@ -12,6 +12,7 @@ metadata:
 
 Use this procedure to shape the task-local delivery contract before dispatch.
 The contract is an execution boundary, not a second intent database or completion receipt.
+For a game-development ship, the shared-process skill loaded from `AGENTS.md` section 13 owns the upstream situation switches, claim routing, and outcome record, while this skill owns their task-local delivery-contract translation.
 
 ## Authority boundary
 
