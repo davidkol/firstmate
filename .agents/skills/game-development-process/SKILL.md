@@ -43,7 +43,11 @@ This skill owns the captain-in-the-loop implementation process, its uncertainty 
 - **[S36 - LAUNCH - D13]** Launch one builder in an isolated copy with the target design, architecture, slice, and standing rule that a silent design is a question, then hand the captain that builder's window.
 - **[S37 - BUILD - D13]** The captain directs and the warm builder builds with no reader, evidence capture, round counting, checker-first test, or default unit-test requirement, then the builder runs the game and checks that the slice reaches its route before reporting it playable.
 - **[S38 - PLAY - D13]** The captain plays the builder's running game or a play branch in his own copy, names what is wrong, and has the builder fix it in the same context; any in-window answer that fills a design gap is written by the builder into the project's design record.
-- **[S39 - LAND - D13]** When the captain says land, start the one cold read while he performs the last play, let him select findings, have the same builder apply only those findings, record the rest as known issues, and let Firstmate use the project's ordinary landing tool.
+- **[S39 - LAND START - D13]** When the captain says land, the builder commits the current head and starts the one cold read through the same `fm-validate.sh` wrapper that the project's delivery mode already uses while the captain performs his last play.
+- **[S39A - ADVISORY HANDBACK - D13]** If the read returns findings, the builder shows the complete list in its window, records each in the dated play note as either a known issue or `captain picked, fixed after the run`, responds to the review gate with approve for every finding, never chooses fix, and makes no branch edit until the run is terminal.
+- **[S39B - WARM FIX - D13]** After the run is terminal, the same builder applies only the captain-picked findings, commits them, runs the game, and hands the fixed build to the captain; his dated play note records the check, and no second machine read runs.
+- **[S39C - SUPPORTED LANDING - D13]** The captain-directed loop is offered only on `direct-PR` and `local-only`: on `direct-PR`, the builder pushes the final branch and opens the PR on the captain's word before Firstmate merges it through `fm-pr-merge.sh`, which records the final PR head; on `local-only`, the builder reports the current post-run branch ready before Firstmate fast-forwards it through `fm-merge-local.sh`, which has no validated-head guard.
+- **[S39D - UNSUPPORTED LANDING - D13]** The loop is not offered on `validated-main`, whose landing guard rejects local commits absent from the validated origin head, or `no-mistakes`, whose full run has already published and checked the earlier head before a post-run warm fix could be applied.
 - **[S40 - RECORD - D13]** Firstmate writes the ledger line at landing, keeps the builder alive when the next slice remains in the same area, and otherwise cleans up that task.
 
 ## 4. More than one slice <!-- trace:D9/D13 -->
@@ -60,19 +64,19 @@ This skill owns the captain-in-the-loop implementation process, its uncertainty 
 ## 6. Turned off for captain-directed slices <!-- trace:D3/D5/D7/D8/D9/D13 -->
 
 - **[S46 - TRIAL SWITCH - D13]** No reader runs during the build.
-- **[S47 - TRIAL SWITCH - D13]** The pipeline's cold fixer is off, and the warm builder applies only findings the captain selects from the landing read.
+- **[S47 - TRIAL SWITCH - D13]** The pipeline's cold fixer is off through the advisory handback in S39A, and the warm builder applies the captain's selections only after terminal state through S39B.
 - **[S48 - TRIAL SWITCH - D13]** Evidence captures and agent-driven play replays are not required during the build.
 - **[S49 - PROVISIONAL AUTHORITY - D13]** Checker-first tests and unit tests are off by default for the first slices while the captain's explicit decision on their long-term place remains deferred.
 - **[S50 - TRIAL SWITCH - D13]** The carried phase chain and project-local orchestrator role are retired for implementation because the builder now owns orchestration inside the slice.
 - **[S51 - TRIAL SWITCH - D13]** Firstmate does not react to routine builder status while the captain is in the window.
-- **[S52 - TRIAL SWITCH - D13]** No one requests another review round; the one landing read is advisory and does not become a review-fix loop.
+- **[S52 - TRIAL SWITCH - D13]** No one requests another review round after the warm fix in S39B; the one landing read remains advisory.
 - **[S53 - TRIAL SWITCH - D13]** A question the captain answers in the builder window does not become a decision hold; the builder writes the answer into the project's design record.
 
 ## 7. What stays <!-- trace:D2/D5/D9/D10/D13 -->
 
 - **[S54 - AUTHORITY - D9/D13]** Design intake and its clean bulk questionnaire remain before code, and silence in design or architecture always means ask rather than invent.
 - **[S55 - SAFETY - D13]** Every builder works in an isolated copy, and direct captain intervention in that builder's window is authoritative.
-- **[S56 - DELIVERY - D13]** Firstmate treats GitHub as hosting only and lands through the project's current delivery mode and ordinary landing tools only after the captain says land.
+- **[S56 - DELIVERY - D13]** Firstmate treats GitHub as hosting only and lands captain-directed work through the supported ordinary landing tools in S39C after the captain's word.
 - **[S57 - REVIEW AND RECORD - D13]** One cold read at landing and one ledger line per landed slice remain.
 - **[S58 - SCOPE - D13]** Build no new machinery for this process unless a direct path exposes a concrete repeated need.
 

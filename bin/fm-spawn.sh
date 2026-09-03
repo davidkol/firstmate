@@ -841,6 +841,9 @@ if [ "$KIND" = ship ]; then
     if grep -Fxq '# Herdr isolation - HARD SAFETY CONTRACT' "$BRIEF"; then
       BRIEF_ARGS+=(--herdr-lab)
     fi
+    if [ "$("$SCRIPT_DIR/fm-doctrine-contract.sh" process "$BRIEF")" = captain-directed ]; then
+      BRIEF_ARGS+=(--captain-directed)
+    fi
     PROMOTED_SCOUT=0
     if grep -Fxq '# Promotion evidence and scout context' "$BRIEF"; then
       PROMOTED_SCOUT=1

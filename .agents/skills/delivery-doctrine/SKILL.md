@@ -43,6 +43,8 @@ Use these tiers:
 Escalate from T0 when the task changes an executable seam, public contract, safety or authority instruction, build artifact, or behavior.
 Escalate from T1 when work crosses a subsystem boundary, changes player-facing behavior instead of restoring it, or lacks a sensitive local oracle.
 Escalate from T2 when multiple systems must compose, a platform artifact changes, or separable parts can be present but inert.
+An accepted contract may explicitly contain one named change at a lower tier only when its authority receipt bounds that exception and its focused oracle executes every crossed seam at both the local and architecture-bearing representative tiers.
+Record that containment and oracle in the task's delivery contract; the exception does not lower the tier of later work on those seams.
 
 ## Parent-outcome proof
 
@@ -76,7 +78,7 @@ T4 searches only current authority-bearing owners and active descendants, correc
 T4 inherits the evidence depth of any attached runtime tier.
 
 Delivery topology is independent from this evidence depth.
-`direct-PR`, `local-only`, `validated-main`, and `no-mistakes` remain available at every tier.
+`direct-PR`, `local-only`, `validated-main`, and `no-mistakes` remain available at every tier on the ordinary route, while `game-development-process` owns the captain-directed loop's narrower landing compatibility.
 Never switch modes merely because a task is behavior, architecture, or correction work.
 
 ## Role boundaries

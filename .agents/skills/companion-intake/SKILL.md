@@ -48,7 +48,7 @@ Load [`delivery-doctrine`](../delivery-doctrine/SKILL.md) before shaping a ship 
 
 ## Design-to-implementation ownership
 
-When a request moves accepted game design toward implementation, route the first ship to the captain-directed builder scaffold from `bin/fm-brief.sh --captain-directed` and follow `game-development-process` for the implementation loop.
+When a request moves accepted game design toward implementation, route the first ship to the captain-directed builder scaffold from `bin/fm-brief.sh --captain-directed` when the delivery-mode boundary in `game-development-process` permits it, and stop on an unsupported mode instead of silently substituting the ordinary route.
 The project-local orchestrator role is retired.
 
 ## Intake transformation

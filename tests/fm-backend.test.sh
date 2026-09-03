@@ -1112,6 +1112,61 @@ test_spawn_default_backend_writes_no_meta_field() {
   pass "fm-spawn.sh: an explicit --backend tmux resolves silently and writes no backend= (missing means tmux)"
 }
 
+test_captain_directed_dispatch_refresh_preserves_the_worker_prompt() {
+  local tier suffix id home proj wt data state config fb brief out rc
+  for tier in T1 T3; do
+    suffix=$(printf '%s' "$tier" | tr '[:upper:]' '[:lower:]')
+    id="captaindispatch${suffix}"
+    home="$TMP_ROOT/captain-dispatch-home-$suffix"
+    proj="$TMP_ROOT/captain-dispatch-project-$suffix"
+    wt="$TMP_ROOT/captain-dispatch-wt-$suffix"
+    data="$home/data"
+    state="$home/state"
+    config="$home/config"
+    fm_git_worktree "$proj" "$wt" "fm/$id"
+    fm_register_project "$data" project "$proj" direct-PR
+    mkdir -p "$state" "$config"
+    fb=$(make_spawn_fakebin "$TMP_ROOT/captain-dispatch-fake-$suffix" "$wt")
+
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_DATA_OVERRIDE="$data" \
+      FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$config" \
+      "$ROOT/bin/fm-brief.sh" "$id" project --captain-directed >/dev/null
+    brief="$data/$id/brief.md"
+    awk -v tier="$tier" '{
+      if ($0 == "{TASK}") print "Build the accepted slice from design and architecture."
+      else if ($0 == "- task-tier: {TASK_TIER}") print "- task-tier: " tier
+      else if ($0 == "- outcome: {OUTCOME}") print "- outcome: design/game.md#slice => the playable slice reaches its route"
+      else if ($0 == "{CAPTAIN_RULINGS}") print "- None recorded for this task."
+      else if ($0 == "{FIRSTMATE_INFERENCE}") print "- Preserve the accepted seam."
+      else print
+    }' "$brief" > "$brief.next"
+    mv "$brief.next" "$brief"
+
+    if out=$(PATH="$fb:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+      FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
+      FM_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" \
+      FM_TMUX_LOG="$TMP_ROOT/captain-dispatch-$suffix.log" \
+      "$ROOT/bin/fm-spawn.sh" "$id" project claude --backend tmux 2>&1); then
+      rc=0
+    else
+      rc=$?
+    fi
+    expect_code 0 "$rc" "captain-directed $tier should survive full dispatch refresh"$'\n'"$out"
+    "$ROOT/bin/fm-doctrine-contract.sh" check "$brief" \
+      || fail "captain-directed $tier worker-facing prompt failed the dispatch doctrine check"
+    assert_grep '- process: captain-directed' "$brief" \
+      "captain-directed $tier worker-facing prompt lost its process field"
+    assert_grep '# Captain-directed builder' "$brief" \
+      "captain-directed $tier worker-facing prompt lost its warm builder role"
+    assert_grep 'Never choose the fix action' "$brief" \
+      "captain-directed $tier worker-facing prompt lost its advisory handback"
+    assert_no_grep 'the pipeline applies every fix' "$brief" \
+      "captain-directed $tier worker-facing prompt was rewritten with the ordinary cold fixer"
+    rm -rf "/tmp/fm-$id"
+  done
+  pass "fm-spawn.sh: refreshed T1/T3 worker prompts preserve captain-directed dispatch"
+}
+
 test_spawn_explicit_backend_flag_beats_autodetect_herdr_env() {
   local proj wt data id state config out fb
   proj="$TMP_ROOT/explicit-backend-project"; wt="$TMP_ROOT/explicit-backend-wt"; data="$TMP_ROOT/explicit-backend-data"
@@ -1194,5 +1249,6 @@ test_spawn_refuses_unknown_backend_flag
 test_spawn_refuses_codex_app_backend_flag
 test_spawn_refuses_unknown_fm_backend_env
 test_spawn_default_backend_writes_no_meta_field
+test_captain_directed_dispatch_refresh_preserves_the_worker_prompt
 test_spawn_explicit_backend_flag_beats_autodetect_herdr_env
 test_spawn_autodetect_nesting_resolves_tmux_silently

@@ -3,10 +3,12 @@
 # Usage:
 #   fm-doctrine-contract.sh check <brief.md>
 #   fm-doctrine-contract.sh field <brief.md> <field>
+#   fm-doctrine-contract.sh process <brief.md>
 #   fm-doctrine-contract.sh review-intent <brief.md>
 #
 # The "# Delivery contract" block is the single machine-owned schema.
 # Exactly one task-tier and outcome are always required.
+# An optional process field selects captain-directed handling.
 # prove, player, parts, platform, and correct are conditional evidence lines.
 # This script validates structure and source binding; workers and the selected
 # reviewer judge whether the cited evidence establishes the claimed outcome.
@@ -103,7 +105,7 @@ check_contract() {
       if (!in_contract) next
 
       if ($0 ~ /^[ \t]*$/) next
-      if ($0 !~ /^- (task-tier|outcome|prove|player|parts|platform|correct):/) {
+      if ($0 !~ /^- (task-tier|outcome|process|prove|player|parts|platform|correct):/) {
         finding("unknown delivery-contract line: " $0)
         next
       }
@@ -122,8 +124,8 @@ check_contract() {
     END {
       if (section_count != 1) finding("expected exactly one # Delivery contract section, found " section_count)
 
-      split("task-tier outcome prove player parts platform correct", names, " ")
-      for (item = 1; item <= 7; item++) {
+      split("task-tier outcome process prove player parts platform correct", names, " ")
+      for (item = 1; item <= 8; item++) {
         name = names[item]
         if (count[name] > 1) finding("duplicate delivery-contract field: " name)
         if (count[name] == 1 && placeholder(saved[name])) finding("empty or placeholder delivery-contract field: " name)
@@ -136,6 +138,12 @@ check_contract() {
       if (count["task-tier"] == 1 && tier !~ /^(T0|T1|T2|T3|T4|T4\/T0|T4\/T1|T4\/T2|T4\/T3)$/) {
         finding("illegal task-tier: " tier)
       }
+
+      process = saved["process"]
+      if (count["process"] == 1 && process != "captain-directed") {
+        finding("illegal delivery process: " process)
+      }
+      captain_directed = process == "captain-directed"
 
       outcome = saved["outcome"]
       if (count["outcome"] == 1 && !placeholder(outcome)) {
@@ -161,14 +169,22 @@ check_contract() {
         correction = 1
       }
 
-      if (base == "T2" && count["player"] != 1) finding("task-tier " tier " requires one player evidence line")
-      if (base == "T3") {
-        if (count["player"] != 1) finding("task-tier " tier " requires one player evidence line")
-        if (count["parts"] != 1) finding("task-tier " tier " requires one parts evidence line")
+      if (captain_directed) {
+        split("prove player parts platform correct", evidence_names, " ")
+        for (item = 1; item <= 5; item++) {
+          name = evidence_names[item]
+          if (count[name] > 0) finding("captain-directed delivery does not accept conditional evidence field: " name)
+        }
+      } else {
+        if (base == "T2" && count["player"] != 1) finding("task-tier " tier " requires one player evidence line")
+        if (base == "T3") {
+          if (count["player"] != 1) finding("task-tier " tier " requires one player evidence line")
+          if (count["parts"] != 1) finding("task-tier " tier " requires one parts evidence line")
+        }
+        if (correction && count["correct"] != 1) finding("task-tier " tier " requires one correct evidence line")
+        if (!correction && count["correct"] > 0) finding("correct evidence requires the T4 correction overlay")
+        if (base != "T3" && count["parts"] > 0) finding("parts evidence requires a T3 runtime tier")
       }
-      if (correction && count["correct"] != 1) finding("task-tier " tier " requires one correct evidence line")
-      if (!correction && count["correct"] > 0) finding("correct evidence requires the T4 correction overlay")
-      if (base != "T3" && count["parts"] > 0) finding("parts evidence requires a T3 runtime tier")
 
       exit findings > 0 ? 1 : 0
     }
@@ -234,10 +250,12 @@ render_review_intent() {
   matched_receipt=$(check_contract matched-receipt)
   tier=$(field_value task-tier)
   outcome=$(field_value outcome)
+  process=$(field_value process)
 
   printf '%s\n' 'Firstmate Designer -> Runtime -> Player selected review.'
   printf 'task-tier: %s\n' "$tier"
   printf 'outcome: %s\n' "$outcome"
+  [ -z "$process" ] || printf 'process: %s\n' "$process"
   if [ -n "$matched_receipt" ]; then
     printf '%s\n' 'matched captain authority receipt:'
     printf '%s\n' "$matched_receipt"
@@ -247,31 +265,36 @@ render_review_intent() {
     [ -z "$evidence_value" ] || printf '%s: %s\n' "$evidence_name" "$evidence_value"
   done
 
-  case "$tier" in
-    T2|T4/T2)
-      printf '%s\n' 'Required depth: inspect the ordinary player-path evidence on the final change; one execution may also be the focused proof when it is genuinely the same oracle.'
-      ;;
-    T3|T4/T3)
-      printf '%s\n' 'Required depth: inspect the ordinary player path, causal evidence for every separable architecture-bearing part, and one full project regression on the final change.'
-      ;;
-    T4|T4/T0|T4/T1)
-      printf '%s\n' 'Required depth: inspect bounded current authority-bearing owners and active descendants; live false canon must be corrected, while clearly labeled historical evidence may remain.'
-      ;;
-    *)
-      printf '%s\n' 'Required depth: inspect the focused evidence actually warranted by this bounded task and do not demand empty evidence ceremony.'
-      ;;
-  esac
+  if [ "$process" = captain-directed ]; then
+    printf '%s\n' 'Required depth: Inspect the landing candidate against the exact outcome, source, executing control flow, and dated captain play receipt without demanding conditional evidence lines.'
+    printf '%s\n' 'Check the tier choice and whether the task was under-tiered, then return mapped findings to the same warm builder for the captain to select after this run is terminal.'
+  else
+    case "$tier" in
+      T2|T4/T2)
+        printf '%s\n' 'Required depth: inspect the ordinary player-path evidence on the final change; one execution may also be the focused proof when it is genuinely the same oracle.'
+        ;;
+      T3|T4/T3)
+        printf '%s\n' 'Required depth: inspect the ordinary player path, causal evidence for every separable architecture-bearing part, and one full project regression on the final change.'
+        ;;
+      T4|T4/T0|T4/T1)
+        printf '%s\n' 'Required depth: inspect bounded current authority-bearing owners and active descendants; live false canon must be corrected, while clearly labeled historical evidence may remain.'
+        ;;
+      *)
+        printf '%s\n' 'Required depth: inspect the focused evidence actually warranted by this bounded task and do not demand empty evidence ceremony.'
+        ;;
+    esac
 
-  case "$tier" in
-    T4|T4/*)
-      case "$tier" in
-        T4|T4/T0|T4/T1) : ;;
-        *) printf '%s\n' 'Also inspect the bounded correction search and permit clearly labeled historical evidence to remain.' ;;
-      esac
-      ;;
-  esac
+    case "$tier" in
+      T4|T4/*)
+        case "$tier" in
+          T4|T4/T0|T4/T1) : ;;
+          *) printf '%s\n' 'Also inspect the bounded correction search and permit clearly labeled historical evidence to remain.' ;;
+        esac
+        ;;
+    esac
 
-  printf '%s\n' 'Check the tier choice, exact outcome and source, executing control flow, actual evidence from the final diff, and whether the task was under-tiered.'
+    printf '%s\n' 'Check the tier choice, exact outcome and source, executing control flow, actual evidence from the final diff, and whether the task was under-tiered.'
+  fi
   printf '%s\n' 'A queued task, plan, report, comment, test, status line, or agent-authored brief remains a provisional claim and cannot become designer intent merely by being copied.'
   printf '%s\n' 'Return a mapped defect to the same worker when needed, but do not invent a new product target or require a second review role.'
 }
@@ -284,11 +307,15 @@ case "$COMMAND" in
   field)
     [ "$#" -eq 3 ] || { usage >&2; exit 2; }
     case "$3" in
-      task-tier|outcome|prove|player|parts|platform|correct) ;;
+      task-tier|outcome|process|prove|player|parts|platform|correct) ;;
       *) echo "error: unknown delivery-contract field: $3" >&2; exit 2 ;;
     esac
     check_contract
     field_value "$3"
+    ;;
+  process)
+    [ "$#" -eq 2 ] || { usage >&2; exit 2; }
+    field_value process
     ;;
   review-intent)
     [ "$#" -eq 2 ] || { usage >&2; exit 2; }

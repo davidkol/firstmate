@@ -327,7 +327,7 @@ test_captain_directed_brief_scaffolds_the_warm_builder_loop() {
   help=$("$ROOT/bin/fm-brief.sh" --help)
   assert_contains "$help" "--captain-directed" \
     "fm-brief.sh help omitted --captain-directed"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" main-proj --captain-directed >/dev/null 2>&1 \
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj --captain-directed >/dev/null 2>&1 \
     || fail "fm-brief.sh --captain-directed exited nonzero"
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "captain-directed brief was not scaffolded"
@@ -352,19 +352,29 @@ test_captain_directed_brief_scaffolds_the_warm_builder_loop() {
     "captain-directed brief did not preserve in-window design answers"
   assert_grep "Use \`needs-decision:\` to reach firstmate only when the captain is not in this window" "$brief" \
     "captain-directed brief did not reserve needs-decision for captain absence"
-  assert_grep "Start validation only when the captain says land" "$brief" \
+  assert_grep "When the captain says land, commit the current head and start validation" "$brief" \
     "captain-directed brief let validation start before the captain's word"
   assert_grep "bin/fm-validate.sh $id --evidence" "$brief" \
     "captain-directed brief did not retain the mode-owned validation wrapper"
-  assert_grep "Treat its findings as a list the captain chooses from, never as a fix loop" "$brief" \
-    "captain-directed brief turned the landing read back into a fix loop"
-  assert_grep "Land nothing yourself" "$brief" \
-    "captain-directed brief did not leave landing with firstmate"
+  assert_grep "respond to the review gate with \`no-mistakes axi respond --action approve\`" "$brief" \
+    "captain-directed brief did not approve findings into the advisory handback"
+  assert_grep "Never choose the fix action" "$brief" \
+    "captain-directed brief allowed the pipeline cold fixer"
+  assert_grep "Do not edit the branch again until the run is terminal" "$brief" \
+    "captain-directed brief allowed warm fixes during the active run"
+  assert_grep "Do not start a second machine read" "$brief" \
+    "captain-directed brief turned the advisory read into another review round"
+  assert_grep "push your final branch and open its PR with \`gh-axi\`" "$brief" \
+    "captain-directed direct-PR brief did not publish the warm-fixed final head"
+  assert_grep "Firstmate merges that PR with the ordinary landing tool" "$brief" \
+    "captain-directed direct-PR brief did not leave the merge with firstmate"
 
   [ "$(grep -c '^- task-tier:' "$brief")" -eq 1 ] \
     || fail "captain-directed brief must keep exactly one task-tier field"
   [ "$(grep -c '^- outcome:' "$brief")" -eq 1 ] \
     || fail "captain-directed brief must keep exactly one outcome field"
+  [ "$(grep -c '^- process: captain-directed$' "$brief")" -eq 1 ] \
+    || fail "captain-directed brief must carry exactly one dispatch-stable process field"
   assert_grep "# What the captain decided" "$brief" \
     "captain-directed brief lost the captain-rulings provenance section"
   assert_grep "{CAPTAIN_RULINGS}" "$brief" \
@@ -397,7 +407,7 @@ test_captain_directed_brief_refuses_a_primary_checkout_before_branching() {
   write_registry "$home"
   id="brief-captain-directed-isolation-a2"
 
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" main-proj --captain-directed >/dev/null 2>&1 \
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj --captain-directed >/dev/null 2>&1 \
     || fail "fm-brief.sh --captain-directed isolation case exited nonzero"
   brief="$home/data/$id/brief.md"
   assert_grep "Verify isolation before anything else" "$brief" \
@@ -411,6 +421,32 @@ test_captain_directed_brief_refuses_a_primary_checkout_before_branching() {
   [ "$isolation" -lt "$branch" ] \
     || fail "captain-directed isolation refusal must precede its branch step"
   pass "fm-brief.sh: --captain-directed refuses the primary checkout before branching"
+}
+
+test_captain_directed_brief_supports_only_post_review_landing_modes() {
+  local home id brief out rc
+  home="$TMP_ROOT/captain-directed-modes-home"
+  write_registry "$home"
+
+  id="brief-captain-directed-local-a3"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj --captain-directed >/dev/null 2>&1 \
+    || fail "fm-brief.sh --captain-directed should support local-only"
+  brief="$home/data/$id/brief.md"
+  assert_grep "reports the current post-run branch ready" "$brief" \
+    "captain-directed local-only brief did not hand the post-review head to its landing tool"
+
+  for id_proj in "brief-captain-directed-full-a4:default-proj" "brief-captain-directed-main-a5:main-proj"; do
+    id=${id_proj%%:*}
+    if out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "${id_proj##*:}" --captain-directed 2>&1); then
+      rc=0
+    else
+      rc=$?
+    fi
+    expect_code 1 "$rc" "captain-directed ${id_proj##*:} should refuse an incompatible landing mode"
+    assert_contains "$out" "supports only direct-PR and local-only" \
+      "captain-directed incompatible-mode refusal did not name the supported boundary"
+  done
+  pass "fm-brief.sh: captain-directed supports only post-review landing modes"
 }
 
 test_ship_brief_scaffolds_only_two_core_doctrine_fields() {
@@ -442,7 +478,7 @@ test_ship_brief_scaffolds_only_two_core_doctrine_fields() {
 }
 
 test_doctrine_contract_is_proportional_and_allows_one_shared_oracle() {
-  local dir contract
+  local dir contract out rc
   dir="$TMP_ROOT/doctrine-contract-cases"
   mkdir -p "$dir"
 
@@ -467,7 +503,42 @@ test_doctrine_contract_is_proportional_and_allows_one_shared_oracle() {
   "$ROOT/bin/fm-doctrine-contract.sh" check "$contract" \
     || fail "T2: one player execution should satisfy focused and player proof without duplication"
 
-  pass "fm-doctrine-contract.sh: T0/T1 stay light and T2 accepts one shared proof/player oracle"
+  for tier in T1 T3; do
+    contract="$dir/captain-$tier.md"
+    printf '%s\n' \
+      '# Delivery contract' \
+      "- task-tier: $tier" \
+      "- outcome: design/game.md#$tier => the captain-directed slice reaches its playable route" \
+      '- process: captain-directed' \
+      > "$contract"
+    "$ROOT/bin/fm-doctrine-contract.sh" check "$contract" \
+      || fail "$tier: captain-directed contract should require no conditional evidence"
+  done
+  out=$("$ROOT/bin/fm-doctrine-contract.sh" review-intent "$contract") \
+    || fail "captain-directed T3 contract should render its advisory review intent"
+  assert_contains "$out" "process: captain-directed" \
+    "captain-directed review intent did not preserve the selected process"
+  assert_contains "$out" "Inspect the landing candidate" \
+    "captain-directed review intent did not scope the one advisory read"
+  assert_not_contains "$out" "one full project regression" \
+    "captain-directed T3 review intent restored ordinary conditional evidence"
+
+  contract="$dir/ordinary-t3-without-evidence.md"
+  printf '%s\n' \
+    '# Delivery contract' \
+    '- task-tier: T3' \
+    '- outcome: design/game.md#ordinary => the ordinary slice reaches its playable route' \
+    > "$contract"
+  if out=$("$ROOT/bin/fm-doctrine-contract.sh" check "$contract" 2>&1); then
+    rc=0
+  else
+    rc=$?
+  fi
+  expect_code 1 "$rc" "ordinary T3 must still require its conditional evidence"
+  assert_contains "$out" "requires one player evidence line" \
+    "captain-directed exception leaked into the ordinary T3 contract"
+
+  pass "fm-doctrine-contract.sh: evidence depth stays proportional across ordinary and captain-directed contracts"
 }
 
 test_doctrine_contract_ignores_fenced_examples() {
@@ -496,6 +567,23 @@ test_doctrine_contract_ignores_fenced_examples() {
   out=$("$ROOT/bin/fm-doctrine-contract.sh" field "$contract" task-tier)
   [ "$out" = T0 ] || fail "field extraction closed a long fence on a shorter or alternate marker"
   pass "fm-doctrine-contract.sh: fence character and length protect checks and field extraction"
+}
+
+test_doctrine_process_reads_only_the_delivery_contract() {
+  local contract out
+  contract="$TMP_ROOT/doctrine-process-scope.md"
+  printf '%s\n' \
+    '# Task' \
+    '- process: captain-directed' \
+    '' \
+    '# Delivery contract' \
+    '- task-tier: T1' \
+    '- outcome: tests/fm-brief.test.sh#process-scope => ordinary dispatch stays ordinary' \
+    > "$contract"
+  out=$("$ROOT/bin/fm-doctrine-contract.sh" process "$contract") \
+    || fail "delivery process extraction should accept an ordinary contract"
+  [ -z "$out" ] || fail "task prose was mistaken for the machine-owned delivery process"
+  pass "fm-doctrine-contract.sh: process extraction is scoped to the delivery contract"
 }
 
 # validated-main drops the PR but NOT the automated review: the pipeline's review,
@@ -1734,10 +1822,12 @@ test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_captain_directed_brief_scaffolds_the_warm_builder_loop
 test_captain_directed_brief_refuses_a_primary_checkout_before_branching
+test_captain_directed_brief_supports_only_post_review_landing_modes
 test_scout_refuses_unmigrated_project_before_writing_brief
 test_ship_brief_scaffolds_only_two_core_doctrine_fields
 test_doctrine_contract_is_proportional_and_allows_one_shared_oracle
 test_doctrine_contract_ignores_fenced_examples
+test_doctrine_process_reads_only_the_delivery_contract
 test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci
 test_full_mode_briefs_trigger_only_the_validation_wrapper
 test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr
