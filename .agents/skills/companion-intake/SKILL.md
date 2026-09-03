@@ -13,7 +13,7 @@ metadata:
 
 This skill is the single owner of the Companion intake transformation.
 Keep the boundary modular as inputs plus output so existing dispatch and decision owners can consume it without a second protocol.
-For game-development work, the shared-process skill loaded from `AGENTS.md` section 13 owns the upstream situation switches and outcome record, while this skill owns intake transformation and the project-local orchestrator route.
+For game-development work, the shared-process skill loaded from `AGENTS.md` section 13 owns the captain-in-the-loop implementation process and outcome ledger, while this skill owns intake transformation and routing accepted design to its builder.
 
 ## Design-question responsibility split
 
@@ -48,11 +48,8 @@ Load [`delivery-doctrine`](../delivery-doctrine/SKILL.md) before shaping a ship 
 
 ## Design-to-implementation ownership
 
-When a request moves accepted game design toward implementation, make the first dispatch an existing crewmate chartered as the project-local orchestrator for the complete chain required by that project's authoritative instructions.
-That orchestrator owns continuity from the first required phase through handoff, including producing or explicitly adapting every required phase artifact, and remains the owner while separate workers execute its implementation briefs.
-Firstmate relays captain questions, answers, corrections, and decisions between the orchestrator and captain; it does not author the project plan, choose proposals, write implementation briefs, split the chain into phase tasks, or substitute its ordinary lifecycle for the project-owned chain.
-The orchestrator alone advances the chain into implementation, and it stops before its implementation dispatch when any preceding artifact or pre-check is missing rather than handing the gap to Firstmate or proceeding.
-This is a task charter for an existing crewmate, not a new worker kind, delivery path, or dispatch mechanism.
+When a request moves accepted game design toward implementation, route the first ship to the captain-directed builder scaffold from `bin/fm-brief.sh --captain-directed` and follow `game-development-process` for the implementation loop.
+The project-local orchestrator role is retired.
 
 ## Intake transformation
 
@@ -84,12 +81,12 @@ Prepare one task-local intake block with these sections:
 - Relevant captain correction, when one changes the current interpretation.
 - Seam invariants and acceptance environment.
 - Observable done conditions.
-- Review risk and required evidence.
+- Review risk and required evidence as owned by `delivery-doctrine`.
 
 Carry an applicable parent-outcome pointer and proof role through the existing authoritative-source, desired-behavior, done-condition, and evidence prose.
 Do not add a delivery-contract field or a separate intake section for that relation.
 
-For a ship, translate that block into the two required delivery-contract fields and only the applicable conditional evidence lines through `delivery-doctrine`.
+For a ship, translate that block through `delivery-doctrine`, including its captain-directed exception.
 
 Keep the result cold-readable and decision-free before dispatch: a worker may choose implementation mechanics inside the accepted contract, but may not receive an unresolved product or design choice.
 Link to repository truth instead of embedding a context dump.
@@ -102,6 +99,9 @@ Use [`ask-user-authority`](../ask-user-authority/SKILL.md) if an ask-user findin
 Do not copy those procedures into this skill or create another handoff document.
 
 ## Proportional review evidence
+
+For a captain-directed slice, apply the cross-referenced exception in `delivery-doctrine` and do not add evidence from this section.
+The remaining rules apply only outside that path.
 
 Name the review risk in the task content without replacing the selected delivery path.
 Keep planner or architect, executor, and fresh reviewer separation available when risk warrants it, but do not instantiate extra roles by default.

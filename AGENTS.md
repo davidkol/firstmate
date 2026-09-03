@@ -246,7 +246,7 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 ### Intake and authority
 
 When a game-development request arrives in natural or dictated language, load `companion-intake` before writing the task brief.
-When that request moves accepted design toward implementation, follow `companion-intake`'s project-local-orchestrator routing; Firstmate relays captain decisions and does not author the project plan.
+When that request moves accepted design toward implementation, follow `companion-intake`'s captain-directed-builder route; `game-development-process` owns the implementation loop.
 When a natural or dictated request asks for the status or report of a resolved registered game itself, `companion-intake` takes precedence over generic status or report routing, while explicit `/bearings` and fleet, session, Firstmate, or work-status requests remain Bearings-owned even when they mention that game.
 When the captain is collaboratively constructing or revising a broad game-design target, launch the target-design intake scout and follow `companion-intake`'s bulk-questionnaire path.
 When a concrete design ambiguity affects ordinary work now, launch the separate design-intake scout and follow its one-question decision-hold path; loading `companion-intake` is not a substitute for either discovery process.
@@ -303,6 +303,8 @@ Never hold work outside no-mistakes for a manual clean verdict, stack serial man
 A separate review or audit is allowed only when the captain explicitly requests that deliverable or the authorized task is a knowledge-only review; one named question remains scoped to that question.
 Run the task tier's required focused, player, contribution, platform, correction, and regression evidence without changing `direct-PR`, `local-only`, `validated-main`, or `no-mistakes` merely because the tier is deeper.
 The path's worker, automated gates, and captain approval remain authoritative:
+
+When the captain will sit with a game builder, scaffold the ship with `bin/fm-brief.sh --captain-directed`; `game-development-process` owns that path and its exceptions to the ordinary modes below.
 
 - **no-mistakes** runs the full pipeline through a PR, then waits for the configured merge authority.
 - **validated-main** runs that same pipeline with only its PR and CI steps skipped, then waits for the configured merge authority before firstmate lands the validated branch on the default branch and pushes it; no PR is opened at any point.
@@ -389,6 +391,9 @@ Session start is the only exception because its one-shot digest already drained 
 Treat any `OPEN DECISIONS` section from the drain as actionable reconciliation input even when no wake record was queued.
 A status line is a wake event, not current state; use `bin/fm-crew-state.sh` when current state matters, especially before re-escalating an old decision, blocker, or pause.
 A declared `paused:` event means a bounded external wait expected to clear on its own, while `blocked:` means firstmate action is needed.
+
+When the captain sits with a captain-directed builder, Firstmate wakes only for a design question while he is away, a playable build while he is away, a failure, or a landing.
+Treat every other routine status line from that builder as a non-event.
 
 Handle actionable wakes as follows:
 

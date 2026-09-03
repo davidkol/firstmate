@@ -2,14 +2,18 @@
 # Scaffold a crewmate brief or persistent secondmate charter at
 # data/<task-id>/brief.md under the active firstmate home.
 # For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
-# filled in. Firstmate then replaces the {TASK} placeholder with the task
-# description, acceptance criteria, and context, and may adjust other sections
-# when the task genuinely deviates (e.g. working an existing external PR instead
-# of shipping a new one).
+# filled in. The --captain-directed ship variant keeps the safety, orientation,
+# status, daemon, and delivery-mode contracts while replacing autonomous review
+# and evidence ceremony with the warm builder loop the captain directs.
+# Firstmate then replaces the {TASK} placeholder with the task description,
+# acceptance criteria, target-design and architecture pointers, and context, and
+# may adjust other sections when the task genuinely deviates (e.g. working an
+# existing external PR instead of shipping a new one).
 # Every ship scaffold also carries exactly two always-required delivery fields:
 # {TASK_TIER} and {OUTCOME}. Firstmate replaces them with one legal tier and a
-# canonical authoritative-source-pointer => observable-result outcome, then adds
-# only the prove/player/parts/platform/correct evidence lines the tier needs.
+# canonical authoritative-source-pointer => observable-result outcome. Ordinary
+# ships then add only the prove/player/parts/platform/correct evidence lines the
+# tier needs; captain-directed ships carry no conditional evidence lines.
 # Ship and scout scaffolds also split the brief's provenance into two sections
 # firstmate fills in before dispatch. "What the captain decided" takes
 # {CAPTAIN_RULINGS}: one bullet per ruling carrying his own words and the date
@@ -23,7 +27,7 @@
 # result and bin/fm-spawn.sh runs it before launch. A secondmate charter is
 # standing scope rather than a task built from rulings, so it carries neither
 # section.
-# Usage: fm-brief.sh <task-id> <repo-name> [--scout|--design-intake|--target-design-intake] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> [--scout|--design-intake|--target-design-intake|--captain-directed] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
@@ -34,6 +38,10 @@
 #   an internal report and a separate clean bulk questionnaire. Launch it through
 #   the existing fm-spawn.sh --scout path. It is incompatible with
 #   --design-intake, --secondmate, and --herdr-lab.
+#   --captain-directed writes the ship contract for a builder the captain directs
+#   in its own window. The task content must name the target design and architecture.
+#   It is incompatible with scout, design-intake, target-design-intake, and
+#   secondmate variants.
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
@@ -73,10 +81,11 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
-# Ship and scout scaffolds both carry an orientation step in their setup section
-# and a completion checklist inside their definition of done, because a rule
-# holds where the worker is already reading and fails in a document nobody
-# reopens.
+# Ship and scout scaffolds both carry an orientation step in their setup section.
+# Ordinary ship and scout scaffolds carry their completion checklist inside the
+# definition of done because a rule holds where the worker is already reading
+# and fails in a document nobody reopens.
+# Captain-directed ships omit checker-first and evidence checklist instructions.
 # The orientation step has the crewmate read `git status` and recent commits
 # before trusting any plan, status doc, or handoff.
 # The scout checklist is deliberately the shorter one: a scout delivers a report
@@ -126,6 +135,7 @@ KIND=ship
 HERDR_LAB=0
 DESIGN_INTAKE=0
 TARGET_DESIGN_INTAKE=0
+CAPTAIN_DIRECTED=0
 SECONDMATE=0
 NO_PROJECTS=0
 POS=()
@@ -136,6 +146,7 @@ for a in "$@"; do
     --herdr-lab) HERDR_LAB=1 ;;
     --design-intake) DESIGN_INTAKE=1 ;;
     --target-design-intake) TARGET_DESIGN_INTAKE=1 ;;
+    --captain-directed) CAPTAIN_DIRECTED=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
     *) POS+=("$a") ;;
   esac
@@ -173,6 +184,11 @@ fi
 
 if [ "$TARGET_DESIGN_INTAKE" -eq 1 ]; then
   KIND=scout
+fi
+
+if [ "$CAPTAIN_DIRECTED" -eq 1 ] && [ "$KIND" != ship ]; then
+  echo "error: --captain-directed applies only to ship briefs" >&2
+  exit 1
 fi
 
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
@@ -947,6 +963,47 @@ Update an existing documentation owner only when its present contract, operator 
 EOF
 IMPLEMENTATION_DOCTRINE=${IMPLEMENTATION_DOCTRINE%$'\n'}
 
+ROLE_SECTION=$IMPLEMENTATION_DOCTRINE
+COMPLETION_CHECKLIST=$CHECKLIST
+IFS= read -r -d '' DECISION_RULE <<'EOF' || true
+6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
+   append `needs-decision: {summary of options}` and stop. Firstmate will apply the configured authority and reply with the decision.
+EOF
+DECISION_RULE=${DECISION_RULE%$'\n'}
+
+if [ "$CAPTAIN_DIRECTED" -eq 1 ]; then
+  IFS= read -r -d '' ROLE_SECTION <<'EOF' || true
+# Captain-directed builder
+This is a CAPTAIN-DIRECTED implementation slice governed by Firstmate's `game-development-process` skill.
+The task section points to the authoritative target design and architecture for this slice; read both before building.
+When either source is silent, ask the captain directly in this window and never invent.
+Run the game yourself from this isolated copy and confirm the slice reaches its route before calling it playable.
+Fix what the captain finds in your own context while it is still warm.
+Fan out to sub-agents only for genuinely independent parts, and integrate their work yourself.
+Write the captain's in-window design answers into the project's design record.
+EOF
+  ROLE_SECTION=${ROLE_SECTION%$'\n'}
+  COMPLETION_CHECKLIST=""
+  IFS= read -r -d '' DECISION_RULE <<'EOF' || true
+6. Ask the captain directly in this window whenever the design or architecture is silent; never invent an answer.
+   Use `needs-decision:` to reach firstmate only when the captain is not in this window, then stop until the answer returns.
+EOF
+  DECISION_RULE=${DECISION_RULE%$'\n'}
+  IFS= read -r -d '' DOD <<EOF || true
+Keep building, running, and fixing this slice in your own context until the captain says it is good enough.
+Start validation only when the captain says land, using the delivery mode's existing wrapper:
+
+\`$FM_ROOT/bin/fm-validate.sh $ID --evidence <project-relative-dated-captain-play-note>\`
+
+The captain's dated play note is the receipt for the ordinary route.
+Treat its findings as a list the captain chooses from, never as a fix loop.
+Apply only the findings the captain selects, in this same builder context.
+Land nothing yourself.
+After the selected findings are handled, append \`done: ready for firstmate to land\` and stop.
+EOF
+  DOD=${DOD%$'\n'}
+fi
+
 if [ "${FM_PROMOTED_SCOUT:-0}" = 1 ]; then
   PROMOTION_SETUP2=$(printf '%s\n' "$SETUP2" | sed 's/^3\./7./')
   IFS= read -r -d '' SHIP_SETUP <<EOF || true
@@ -1000,7 +1057,7 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 - task-tier: {TASK_TIER}
 - outcome: {OUTCOME}
 
-$IMPLEMENTATION_DOCTRINE
+$ROLE_SECTION
 
 $PROVENANCE
 
@@ -1028,8 +1085,7 @@ $RULE1
    a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
    cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
-6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
-   append \`needs-decision: {summary of options}\` and stop. Firstmate will apply the configured authority and reply with the decision.
+$DECISION_RULE
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    If you key a decision, the \`[key=<slug>]\` token goes BETWEEN the verb and the colon, never after it, and the slug is letters, digits, dot, underscore or hyphen only - no spaces.
    A token written after the colon, or one whose slug uses any other character, does NOT carry the key you wrote: the decision opens under the key \`default\` instead, and the answer then has to be sent against \`default\` rather than the slug you wrote.
@@ -1049,10 +1105,14 @@ For anything the codebase already shows, prefer a pointer to the authoritative f
 If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, add that short self-governance section from \`$FM_ROOT/bin/fm-ensure-agents-md.sh\` in the same pass.
 
 # Definition of done
-$CHECKLIST
+$COMPLETION_CHECKLIST
 
 <!-- firstmate-delivery-done:start -->
 $DOD
 <!-- firstmate-delivery-done:end -->
 EOF
-echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK}, {TASK_TIER}, {OUTCOME}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE}; add only applicable evidence lines)"
+if [ "$CAPTAIN_DIRECTED" -eq 1 ]; then
+  echo "scaffolded: $BRIEF (captain-directed ship, mode=$MODE; replace {TASK}, {TASK_TIER}, {OUTCOME}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE})"
+else
+  echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK}, {TASK_TIER}, {OUTCOME}, {CAPTAIN_RULINGS}, {FIRSTMATE_INFERENCE}; add only applicable evidence lines)"
+fi

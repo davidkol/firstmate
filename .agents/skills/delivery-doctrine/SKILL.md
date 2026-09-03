@@ -12,7 +12,7 @@ metadata:
 
 Use this procedure to shape the task-local delivery contract before dispatch.
 The contract is an execution boundary, not a second intent database or completion receipt.
-For a game-development ship, the shared-process skill loaded from `AGENTS.md` section 13 owns the upstream situation switches, claim routing, and outcome record, while this skill owns their task-local delivery-contract translation.
+For a game-development ship, the shared-process skill loaded from `AGENTS.md` section 13 owns the captain-in-the-loop implementation process and outcome ledger, while this skill owns their task-local delivery-contract translation.
 
 ## Authority boundary
 
@@ -29,6 +29,8 @@ Every ship brief contains exactly one legal `task-tier` and one canonical `outco
 The outcome has the shape `<authoritative human/source pointer> => <observable result>`.
 It names one source that actually owns the target and one result that a worker and reviewer can observe.
 Do not fill either core field with an agent summary, `N/A`, a placeholder, or a copied claim whose authority has not been checked.
+
+A captain-directed slice carries the same two-field core and no conditional evidence lines; the captain's dated play note is its ordinary-route receipt, while `game-development-process` owns the loop itself.
 
 Use these tiers:
 

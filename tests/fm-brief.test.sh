@@ -314,6 +314,105 @@ test_ship_modes_generate_clean_briefs() {
   pass "fm-brief.sh: no-mistakes/validated-main/direct-PR/local-only briefs generate cleanly"
 }
 
+# A captain-directed builder keeps one warm implementation context from design
+# through play, then starts the existing validation wrapper only on the
+# captain's landing word. The scaffold must carry that operating contract
+# without reintroducing the autonomous worker's evidence and fix-loop ceremony.
+test_captain_directed_brief_scaffolds_the_warm_builder_loop() {
+  local home id brief help
+  home="$TMP_ROOT/captain-directed-home"
+  write_registry "$home"
+  id="brief-captain-directed-a1"
+
+  help=$("$ROOT/bin/fm-brief.sh" --help)
+  assert_contains "$help" "--captain-directed" \
+    "fm-brief.sh help omitted --captain-directed"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" main-proj --captain-directed >/dev/null 2>&1 \
+    || fail "fm-brief.sh --captain-directed exited nonzero"
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "captain-directed brief was not scaffolded"
+
+  assert_grep "This is a CAPTAIN-DIRECTED implementation slice" "$brief" \
+    "captain-directed brief did not identify the warm builder process"
+  assert_grep "The task section points to the authoritative target design and architecture" "$brief" \
+    "captain-directed brief did not require both source pointers"
+  assert_grep "ask the captain directly in this window and never invent" "$brief" \
+    "captain-directed brief lost the ask-when-silent rule"
+  assert_grep "Run the game yourself from this isolated copy" "$brief" \
+    "captain-directed brief did not make the builder run the game"
+  assert_grep "the slice reaches its route before calling it playable" "$brief" \
+    "captain-directed brief did not require a route check before playable"
+  assert_grep "Fix what the captain finds in your own context" "$brief" \
+    "captain-directed brief did not keep captain-found fixes in the warm builder"
+  assert_grep "Fan out to sub-agents only for genuinely independent parts" "$brief" \
+    "captain-directed brief did not bound sub-agent fan-out"
+  assert_grep "integrate their work yourself" "$brief" \
+    "captain-directed brief did not keep integration with the builder"
+  assert_grep "Write the captain's in-window design answers into the project's design record" "$brief" \
+    "captain-directed brief did not preserve in-window design answers"
+  assert_grep "Use \`needs-decision:\` to reach firstmate only when the captain is not in this window" "$brief" \
+    "captain-directed brief did not reserve needs-decision for captain absence"
+  assert_grep "Start validation only when the captain says land" "$brief" \
+    "captain-directed brief let validation start before the captain's word"
+  assert_grep "bin/fm-validate.sh $id --evidence" "$brief" \
+    "captain-directed brief did not retain the mode-owned validation wrapper"
+  assert_grep "Treat its findings as a list the captain chooses from, never as a fix loop" "$brief" \
+    "captain-directed brief turned the landing read back into a fix loop"
+  assert_grep "Land nothing yourself" "$brief" \
+    "captain-directed brief did not leave landing with firstmate"
+
+  [ "$(grep -c '^- task-tier:' "$brief")" -eq 1 ] \
+    || fail "captain-directed brief must keep exactly one task-tier field"
+  [ "$(grep -c '^- outcome:' "$brief")" -eq 1 ] \
+    || fail "captain-directed brief must keep exactly one outcome field"
+  assert_grep "# What the captain decided" "$brief" \
+    "captain-directed brief lost the captain-rulings provenance section"
+  assert_grep "{CAPTAIN_RULINGS}" "$brief" \
+    "captain-directed brief lost the captain-rulings placeholder"
+  assert_grep "# What firstmate worked out" "$brief" \
+    "captain-directed brief lost the firstmate-inference provenance section"
+  assert_grep "{FIRSTMATE_INFERENCE}" "$brief" \
+    "captain-directed brief lost the firstmate-inference placeholder"
+  assert_grep "Never stop, restart, or update the shared \`no-mistakes\` daemon" "$brief" \
+    "captain-directed brief lost the shared-daemon rule"
+
+  assert_no_grep "# Delivery doctrine - implementation slice" "$brief" \
+    "captain-directed brief retained the autonomous delivery-doctrine evidence slice"
+  assert_no_grep "Run each applicable oracle once" "$brief" \
+    "captain-directed brief retained generic evidence-capture instructions"
+  assert_no_grep "tier-proportional checks pass" "$brief" \
+    "captain-directed brief retained the checker-first completion checklist"
+  assert_no_grep "the pipeline applies every fix" "$brief" \
+    "captain-directed brief retained the autonomous pipeline fix loop"
+  pass "fm-brief.sh: --captain-directed emits the warm builder loop without autonomous evidence ceremony"
+}
+
+# The captain-directed path changes who drives the build, never where project
+# writes may happen. Its negative primary-checkout case must remain ahead of the
+# branch step so a present captain cannot accidentally direct work in Firstmate's
+# canonical project copy.
+test_captain_directed_brief_refuses_a_primary_checkout_before_branching() {
+  local home id brief isolation branch
+  home="$TMP_ROOT/captain-directed-isolation-home"
+  write_registry "$home"
+  id="brief-captain-directed-isolation-a2"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" main-proj --captain-directed >/dev/null 2>&1 \
+    || fail "fm-brief.sh --captain-directed isolation case exited nonzero"
+  brief="$home/data/$id/brief.md"
+  assert_grep "Verify isolation before anything else" "$brief" \
+    "captain-directed brief lost the isolation-first instruction"
+  assert_grep "blocked: launched in primary checkout, not an isolated worktree" "$brief" \
+    "captain-directed brief does not stop on the negative primary-checkout case"
+  isolation=$(grep -n 'launched in primary checkout, not an isolated worktree' "$brief" | head -1 | cut -d: -f1)
+  branch=$(grep -n 'git checkout -b fm/' "$brief" | head -1 | cut -d: -f1)
+  [ -n "$isolation" ] && [ -n "$branch" ] \
+    || fail "captain-directed brief is missing its isolation refusal or branch step"
+  [ "$isolation" -lt "$branch" ] \
+    || fail "captain-directed isolation refusal must precede its branch step"
+  pass "fm-brief.sh: --captain-directed refuses the primary checkout before branching"
+}
+
 test_ship_brief_scaffolds_only_two_core_doctrine_fields() {
   local home id brief
   home="$TMP_ROOT/doctrine-core-home"
@@ -1633,6 +1732,8 @@ test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
+test_captain_directed_brief_scaffolds_the_warm_builder_loop
+test_captain_directed_brief_refuses_a_primary_checkout_before_branching
 test_scout_refuses_unmigrated_project_before_writing_brief
 test_ship_brief_scaffolds_only_two_core_doctrine_fields
 test_doctrine_contract_is_proportional_and_allows_one_shared_oracle
