@@ -77,9 +77,13 @@ done
   echo "error: promotion needs --task-tier and explicit authoritative --outcome; the scout report is evidence only and task $ID remains a scout" >&2
   exit 1
 }
-if [ "$CAPTAIN_DIRECTED" -eq 1 ] && { [ -z "$TARGET_DESIGN" ] || [ -z "$ARCHITECTURE" ]; }; then
-  echo "error: captain-directed promotion needs --target-design and --architecture; task $ID remains a scout" >&2
-  exit 1
+if [ "$CAPTAIN_DIRECTED" -eq 1 ]; then
+  TARGET_DESIGN=$(printf '%s\n' "$TARGET_DESIGN" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  ARCHITECTURE=$(printf '%s\n' "$ARCHITECTURE" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  if [ -z "$TARGET_DESIGN" ] || [ -z "$ARCHITECTURE" ]; then
+    echo "error: captain-directed promotion needs --target-design and --architecture; task $ID remains a scout" >&2
+    exit 1
+  fi
 fi
 
 META="$STATE/$ID.meta"
@@ -266,7 +270,7 @@ BRIEF_ARGS=()
 [ -z "$HERDR_ARG" ] || BRIEF_ARGS+=("$HERDR_ARG")
 [ "$CAPTAIN_DIRECTED" -eq 0 ] || BRIEF_ARGS+=(--captain-directed)
 FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_BRIEF_YOLO_OVERRIDE="$PROMOTION_YOLO" FM_PROMOTED_SCOUT=1 \
-  "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" "${BRIEF_ARGS[@]}" >/dev/null
+  "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" "${BRIEF_ARGS[@]+"${BRIEF_ARGS[@]}"}" >/dev/null
 
 awk -v task_file="$SHIP_TASK" -v context_file="$PROMOTION_CONTEXT" -v provenance_file="$PROVENANCE" -v contract_file="$CONTRACT" '
   function emit(file, line) {

@@ -46,7 +46,7 @@ run_promote() {
   local dir=$1; shift
   FM_GATE_REFUSE_BYPASS=1 FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$dir/home" \
     FM_DATA_OVERRIDE="$dir/home/data" FM_STATE_OVERRIDE="$dir/home/state" \
-    "$PROMOTE" scout-a "$@"
+    /bin/bash "$PROMOTE" scout-a "$@"
 }
 
 prompt_command() {
@@ -177,10 +177,40 @@ test_promotion_preserves_the_captain_directed_process() {
 
   expect_code 1 "$rc" "captain-directed promotion must reject a missing target-design pointer"
 
+  set +e
+  run_promote "$dir" \
+    --captain-directed \
+    --target-design '   ' \
+    --architecture 'docs/architecture.md#runtime-x' \
+    --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X with the captain in the builder window.' \
+    > "$dir/blank-target-design.out" 2> "$dir/blank-target-design.err"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "captain-directed promotion must reject a whitespace-only target-design pointer"
+
+  set +e
   run_promote "$dir" \
     --captain-directed \
     --target-design 'design/target.md#slice-x' \
-    --architecture 'docs/architecture.md#runtime-x' \
+    --architecture $' \t ' \
+    --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X with the captain in the builder window.' \
+    > "$dir/blank-architecture.out" 2> "$dir/blank-architecture.err"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "captain-directed promotion must reject a whitespace-only architecture pointer"
+  cmp "$original" "$brief" >/dev/null \
+    || fail "captain-directed promotion rewrote the scout brief for whitespace-only pointers"
+  [ "$(sed -n 's/^kind=//p' "$dir/home/state/scout-a.meta")" = scout ] \
+    || fail "captain-directed promotion changed kind for whitespace-only pointers"
+
+  run_promote "$dir" \
+    --captain-directed \
+    --target-design '  design/target.md#slice-x  ' \
+    --architecture $'\tdocs/architecture.md#runtime-x ' \
     --task-tier T1 \
     --outcome 'captain decision 1 => Ship X with the captain in the builder window.' \
     > "$dir/promote.out" 2> "$dir/promote.err" \
