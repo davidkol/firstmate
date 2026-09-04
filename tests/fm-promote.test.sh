@@ -130,12 +130,57 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
 }
 
 test_promotion_preserves_the_captain_directed_process() {
-  local dir brief
+  local dir brief original rc task_text
   dir=$(make_scout captain-directed)
   brief="$dir/home/data/scout-a/brief.md"
+  original="$dir/original-brief.md"
+  cp "$brief" "$original"
+
+  set +e
+  run_promote "$dir" \
+    --captain-directed \
+    --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X with the captain in the builder window.' \
+    > "$dir/missing-pointers.out" 2> "$dir/missing-pointers.err"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "captain-directed promotion must require its target-design and architecture pointers"
+  cmp "$original" "$brief" >/dev/null \
+    || fail "captain-directed promotion rewrote the scout brief without its required pointers"
+  [ "$(sed -n 's/^kind=//p' "$dir/home/state/scout-a.meta")" = scout ] \
+    || fail "captain-directed promotion changed kind without its required pointers"
+  assert_grep '--target-design and --architecture' "$dir/missing-pointers.err" \
+    "captain-directed promotion did not identify both missing context pointers"
+
+  set +e
+  run_promote "$dir" \
+    --captain-directed \
+    --target-design 'design/target.md#slice-x' \
+    --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X with the captain in the builder window.' \
+    > "$dir/missing-architecture.out" 2> "$dir/missing-architecture.err"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "captain-directed promotion must reject a missing architecture pointer"
+
+  set +e
+  run_promote "$dir" \
+    --captain-directed \
+    --architecture 'docs/architecture.md#runtime-x' \
+    --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X with the captain in the builder window.' \
+    > "$dir/missing-target-design.out" 2> "$dir/missing-target-design.err"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "captain-directed promotion must reject a missing target-design pointer"
 
   run_promote "$dir" \
     --captain-directed \
+    --target-design 'design/target.md#slice-x' \
+    --architecture 'docs/architecture.md#runtime-x' \
     --task-tier T1 \
     --outcome 'captain decision 1 => Ship X with the captain in the builder window.' \
     > "$dir/promote.out" 2> "$dir/promote.err" \
@@ -147,6 +192,11 @@ test_promotion_preserves_the_captain_directed_process() {
     "captain-directed promotion emitted the ordinary autonomous worker role"
   assert_grep 'spawn one fresh-context reviewer sub-agent' "$brief" \
     "captain-directed promotion lost the normal landing review"
+  task_text=$(awk '$0 == "# Task" { active = 1; next } active && $0 == "# Delivery contract" { exit } active { print }' "$brief")
+  assert_contains "$task_text" 'Target design: design/target.md#slice-x' \
+    "captain-directed promotion omitted its target-design pointer from the promoted Task"
+  assert_contains "$task_text" 'Architecture: docs/architecture.md#runtime-x' \
+    "captain-directed promotion omitted its architecture pointer from the promoted Task"
   assert_no_grep 'bin/fm-validate.sh' "$brief" \
     "captain-directed promotion invoked the validation wrapper"
   assert_no_grep 'no-mistakes axi' "$brief" \

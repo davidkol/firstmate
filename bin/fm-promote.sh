@@ -5,7 +5,7 @@
 # remains evidence, and captain-sourced outcomes bind to existing provenance.
 # Promotion refuses without a non-empty scout report and publishes the rebuilt
 # brief plus ship metadata through a recoverable transaction.
-# Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<authoritative source> => <observable result>' [--captain-directed] [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
+# Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<authoritative source> => <observable result>' [--captain-directed --target-design <pointer> --architecture <pointer>] [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +26,8 @@ PARTS=
 PLATFORM=
 CORRECT=
 CAPTAIN_DIRECTED=0
+TARGET_DESIGN=
+ARCHITECTURE=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --task-tier)
@@ -57,6 +59,16 @@ while [ "$#" -gt 0 ]; do
     --platform=*) PLATFORM=${1#--platform=}; shift ;;
     --correct=*) CORRECT=${1#--correct=}; shift ;;
     --captain-directed) CAPTAIN_DIRECTED=1; shift ;;
+    --target-design|--architecture)
+      [ "$#" -ge 2 ] || { echo "error: $1 needs a value" >&2; exit 1; }
+      case "$1" in
+        --target-design) TARGET_DESIGN=$2 ;;
+        --architecture) ARCHITECTURE=$2 ;;
+      esac
+      shift 2
+      ;;
+    --target-design=*) TARGET_DESIGN=${1#--target-design=}; shift ;;
+    --architecture=*) ARCHITECTURE=${1#--architecture=}; shift ;;
     *) echo "error: unknown promotion argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -65,6 +77,10 @@ done
   echo "error: promotion needs --task-tier and explicit authoritative --outcome; the scout report is evidence only and task $ID remains a scout" >&2
   exit 1
 }
+if [ "$CAPTAIN_DIRECTED" -eq 1 ] && { [ -z "$TARGET_DESIGN" ] || [ -z "$ARCHITECTURE" ]; }; then
+  echo "error: captain-directed promotion needs --target-design and --architecture; task $ID remains a scout" >&2
+  exit 1
+fi
 
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
@@ -204,6 +220,9 @@ grep -q '[^[:space:]]' "$SCOUT_TASK" || { echo "error: scout brief has no task b
 grep -Fx '{TASK}' "$SCOUT_TASK" >/dev/null && { echo "error: scout brief still has an unresolved task placeholder" >&2; exit 1; }
 
 printf 'Deliver the accepted outcome: %s\n' "$OUTCOME_RESULT" > "$SHIP_TASK"
+if [ "$CAPTAIN_DIRECTED" -eq 1 ]; then
+  printf 'Target design: %s\nArchitecture: %s\n' "$TARGET_DESIGN" "$ARCHITECTURE" >> "$SHIP_TASK"
+fi
 {
   printf '%s\n' '# Promotion evidence and scout context' \
     'The original scout task and report below are provisional evidence only; the accepted outcome above owns the ship target.' \
