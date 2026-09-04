@@ -332,6 +332,10 @@ test_captain_directed_brief_scaffolds_the_warm_builder_loop() {
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "captain-directed brief was not scaffolded"
 
+  assert_grep "You are a captain-directed builder managed by firstmate" "$brief" \
+    "captain-directed brief did not identify the worker role at entry"
+  assert_no_grep "Work on your own; do not wait for a human" "$brief" \
+    "captain-directed brief opened with the ordinary autonomous-worker instruction"
   assert_grep "This is a CAPTAIN-DIRECTED implementation slice" "$brief" \
     "captain-directed brief did not identify the warm builder process"
   assert_grep "The task section points to the authoritative target design and architecture" "$brief" \

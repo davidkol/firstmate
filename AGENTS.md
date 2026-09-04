@@ -392,8 +392,7 @@ Treat any `OPEN DECISIONS` section from the drain as actionable reconciliation i
 A status line is a wake event, not current state; use `bin/fm-crew-state.sh` when current state matters, especially before re-escalating an old decision, blocker, or pause.
 A declared `paused:` event means a bounded external wait expected to clear on its own, while `blocked:` means firstmate action is needed.
 
-When the captain sits with a captain-directed builder, Firstmate wakes only for a design question while he is away, a playable build while he is away, a failure, or a landing.
-Treat every other routine status line from that builder as a non-event.
+When supervising a captain-directed builder, load `game-development-process`; it owns which events require Firstmate action.
 
 Handle actionable wakes as follows:
 

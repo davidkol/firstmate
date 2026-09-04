@@ -978,6 +978,7 @@ IMPLEMENTATION_DOCTRINE=${IMPLEMENTATION_DOCTRINE%$'\n'}
 ROLE_SECTION=$IMPLEMENTATION_DOCTRINE
 COMPLETION_CHECKLIST=$CHECKLIST
 PROCESS_SUFFIX=
+WORKER_INTRO="You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human."
 IFS= read -r -d '' DECISION_RULE <<'EOF' || true
 6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
    append `needs-decision: {summary of options}` and stop. Firstmate will apply the configured authority and reply with the decision.
@@ -986,6 +987,7 @@ DECISION_RULE=${DECISION_RULE%$'\n'}
 
 if [ "$CAPTAIN_DIRECTED" -eq 1 ]; then
   PROCESS_SUFFIX=$'\n- process: captain-directed'
+  WORKER_INTRO=$'You are a captain-directed builder managed by firstmate.\nWork with the captain in this window and keep the same warm context through building, play feedback, and landing.'
   IFS= read -r -d '' ROLE_SECTION <<'EOF' || true
 # Captain-directed builder
 This is a CAPTAIN-DIRECTED implementation slice governed by Firstmate's `game-development-process` skill.
@@ -1082,7 +1084,7 @@ fi
 SHIP_SETUP=${SHIP_SETUP%$'\n'}
 
 cat > "$BRIEF" <<EOF
-You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
+$WORKER_INTRO
 
 # Task
 {TASK}
