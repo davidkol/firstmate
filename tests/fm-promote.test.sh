@@ -129,6 +129,31 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
   pass "fm-promote.sh: promotion constructs a validated role-specific ship prompt"
 }
 
+test_promotion_preserves_the_captain_directed_process() {
+  local dir brief
+  dir=$(make_scout captain-directed)
+  brief="$dir/home/data/scout-a/brief.md"
+
+  run_promote "$dir" \
+    --captain-directed \
+    --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X with the captain in the builder window.' \
+    > "$dir/promote.out" 2> "$dir/promote.err" \
+    || fail "captain-directed promotion should preserve the selected implementation process: $(cat "$dir/promote.err")"
+
+  assert_grep '- process: captain-directed' "$brief" \
+    "captain-directed promotion lost the dispatch-stable process field"
+  assert_grep 'You are a captain-directed builder managed by firstmate' "$brief" \
+    "captain-directed promotion emitted the ordinary autonomous worker role"
+  assert_grep 'spawn one fresh-context reviewer sub-agent' "$brief" \
+    "captain-directed promotion lost the normal landing review"
+  assert_no_grep 'bin/fm-validate.sh' "$brief" \
+    "captain-directed promotion invoked the validation wrapper"
+  assert_no_grep 'no-mistakes axi' "$brief" \
+    "captain-directed promotion invoked the no-mistakes pipeline"
+  pass "fm-promote.sh: --captain-directed preserves the warm builder and normal landing review"
+}
+
 test_promoted_setup_recovers_across_separate_shells() {
   local dir brief worktree command snapshot
   dir=$(make_scout separate-shells)
@@ -458,6 +483,7 @@ test_promotion_refuses_a_generic_decision_pointer() {
 }
 
 test_promotion_builds_a_validated_ship_prompt_before_changing_kind
+test_promotion_preserves_the_captain_directed_process
 test_promoted_setup_recovers_across_separate_shells
 test_promoted_setup_refuses_an_unrelated_existing_branch
 test_promoted_import_refuses_residue_on_a_valid_task_branch

@@ -40,8 +40,8 @@
 #   --design-intake, --secondmate, and --herdr-lab.
 #   --captain-directed writes the ship contract for a builder the captain directs
 #   in its own window. The task content must name the target design and architecture.
-#   It supports direct-PR and local-only, whose landing tools accept a final head
-#   committed after the advisory review run reaches terminal state.
+#   It supports every delivery mode through that mode's existing guarded landing
+#   tool, but invokes no validation wrapper or no-mistakes pipeline step.
 #   It is incompatible with scout, design-intake, target-design-intake, and
 #   secondmate variants.
 #   --secondmate writes a persistent secondmate charter. The project list
@@ -811,16 +811,6 @@ $("$FM_ROOT/bin/fm-project-mode.sh" "$REPO")
 EOF
 fi
 
-if [ "$CAPTAIN_DIRECTED" -eq 1 ]; then
-  case "$MODE" in
-    direct-PR|local-only) ;;
-    *)
-      echo "error: --captain-directed supports only direct-PR and local-only; mode=$MODE cannot land post-review warm fixes" >&2
-      exit 1
-      ;;
-  esac
-fi
-
 VALIDATE_COMMAND="\`$FM_ROOT/bin/fm-validate.sh $ID --evidence <project-relative-result-or-capture>\`"
 IFS= read -r -d '' VALIDATE_EVIDENCE <<'EOF' || true
 Run each applicable oracle once after the final change and save its executed output or capture inside this worktree.
@@ -999,40 +989,59 @@ Fan out to sub-agents only for genuinely independent parts, and integrate their 
 Write the captain's in-window design answers into the project's design record.
 EOF
   ROLE_SECTION=${ROLE_SECTION%$'\n'}
+  ROLE_SECTION="$ROLE_SECTION
+Whenever you hand the captain a build or a question and have no other direction, append \`$PAUSED_VERB: waiting for the captain in the window on <what>\`; resume in this same context when he responds."
   COMPLETION_CHECKLIST=""
+  SETUP2=""
   IFS= read -r -d '' DECISION_RULE <<'EOF' || true
 6. Ask the captain directly in this window whenever the design or architecture is silent; never invent an answer.
    Use `needs-decision:` to reach firstmate only when the captain is not in this window, then stop until the answer returns.
 EOF
   DECISION_RULE=${DECISION_RULE%$'\n'}
+  CAPTAIN_REVIEW_PREP=""
+  if [ "$MODE" = local-only ]; then
+    CAPTAIN_REVIEW_PREP="Before you start the fresh review and hand the rebased build to the captain for his final play, rebase \`fm/$ID\` onto the current local default branch if another slice has advanced it."
+  fi
   IFS= read -r -d '' CAPTAIN_REVIEW_HANDOFF <<EOF || true
 Keep building, running, and fixing this slice in your own context until the captain says it is good enough.
-When the captain says land, commit the current head and start validation with the delivery mode's existing wrapper:
-
-\`$FM_ROOT/bin/fm-validate.sh $ID --evidence <project-relative-dated-captain-play-note>\`
-
+When the captain says land, commit the current head.
+$CAPTAIN_REVIEW_PREP
+Then spawn one fresh-context reviewer sub-agent and give it only the final diff, the slice's outcome, and pointers to the target design and architecture.
+The reviewer must not receive the build conversation.
+Asking yourself to review your own work does not satisfy this step.
+Have that reviewer report its complete findings back into this builder window within minutes while the captain performs his final play.
 The captain's dated play note is the receipt for the ordinary route.
-If the review returns findings, show the complete list to the captain in this window and let him choose which ones to fix.
-Record every finding in the dated play note as either a known issue or \`captain picked, fixed after the run\`, then respond to the review gate with \`no-mistakes axi respond --action approve\`.
-Never choose the fix action, because that would start the pipeline's cold fixer and another machine read.
-Do not edit the branch again until the run is terminal.
-After the run is terminal, apply only the findings the captain selected and commit them in this same warm context.
-Run the game, hand the fixed build to the captain, and put his dated play result in the play note.
+The review succeeds only when that fresh reviewer completes and reports either no findings or one complete findings list.
+If the reviewer fails, is cancelled, or returns no usable report, append \`blocked: fresh-context landing review did not complete\` and stop without pushing or declaring the branch ready.
+Show the complete findings list to the captain in this window and let him choose which ones to fix.
+Apply only the findings the captain selects in this same warm context.
+Record every finding the captain does not select as a known issue in the dated play note, and record each selected finding as \`captain picked, fixed after review\`.
+Run the game, hand the fixed build to the captain, and put his final dated play result in the play note.
+Commit every post-review code change and the final dated play-note update together before publishing or declaring the branch ready.
 Do not start a second machine read.
 EOF
   CAPTAIN_REVIEW_HANDOFF=${CAPTAIN_REVIEW_HANDOFF%$'\n'}
   case "$MODE" in
-    direct-PR)
+    no-mistakes|direct-PR)
+      RULE1='1. Never push to the default branch and never merge a PR. Push only your `fm/'"$ID"'` branch, and only after the captain says to ship the reviewed build.'
       IFS= read -r -d '' CAPTAIN_LANDING <<EOF || true
 When the captain says to ship the fixed build, push your final branch and open its PR with \`gh-axi\`.
 Append \`done: PR {url} ready for firstmate to land\` and stop without merging it yourself.
 Firstmate merges that PR with the ordinary landing tool, which records the final PR head.
 EOF
       ;;
-    local-only)
+    validated-main)
+      RULE1="1. Never push to any remote and never merge. Work only on your \`fm/$ID\` branch; firstmate handles the guarded landing into \`main\` and its push."
       IFS= read -r -d '' CAPTAIN_LANDING <<EOF || true
 When the captain approves the fixed build, append \`done: ready in branch fm/$ID\` and stop.
-This reports the current post-run branch ready; Firstmate's ordinary local-only landing tool fast-forwards it into local \`main\`.
+Firstmate's ordinary validated-main landing tool fast-forwards it into \`main\` and pushes; this path has no pipeline-published head.
+EOF
+      ;;
+    local-only)
+      RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the guarded merge into local \`main\`."
+      IFS= read -r -d '' CAPTAIN_LANDING <<EOF || true
+When the captain approves the fixed build, append \`done: ready in branch fm/$ID\` and stop.
+Firstmate's ordinary local-only landing tool fast-forwards it into local \`main\`.
 EOF
       ;;
   esac

@@ -78,7 +78,7 @@ T4 searches only current authority-bearing owners and active descendants, correc
 T4 inherits the evidence depth of any attached runtime tier.
 
 Delivery topology is independent from this evidence depth.
-`direct-PR`, `local-only`, `validated-main`, and `no-mistakes` remain available at every tier on the ordinary route, while `game-development-process` owns the captain-directed loop's narrower landing compatibility.
+`direct-PR`, `local-only`, `validated-main`, and `no-mistakes` remain available at every tier, while `game-development-process` owns the captain-directed loop's distinct review and landing procedure.
 Never switch modes merely because a task is behavior, architecture, or correction work.
 
 ## Role boundaries

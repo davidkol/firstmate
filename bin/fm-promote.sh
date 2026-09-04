@@ -5,7 +5,7 @@
 # remains evidence, and captain-sourced outcomes bind to existing provenance.
 # Promotion refuses without a non-empty scout report and publishes the rebuilt
 # brief plus ship metadata through a recoverable transaction.
-# Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<authoritative source> => <observable result>' [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
+# Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<authoritative source> => <observable result>' [--captain-directed] [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,6 +25,7 @@ PLAYER=
 PARTS=
 PLATFORM=
 CORRECT=
+CAPTAIN_DIRECTED=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --task-tier)
@@ -55,6 +56,7 @@ while [ "$#" -gt 0 ]; do
     --parts=*) PARTS=${1#--parts=}; shift ;;
     --platform=*) PLATFORM=${1#--platform=}; shift ;;
     --correct=*) CORRECT=${1#--correct=}; shift ;;
+    --captain-directed) CAPTAIN_DIRECTED=1; shift ;;
     *) echo "error: unknown promotion argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -229,6 +231,7 @@ grep -Fx '# What firstmate worked out' "$PROVENANCE" >/dev/null || {
 
 {
   printf '%s\n' "- task-tier: $TASK_TIER" "- outcome: $OUTCOME"
+  [ "$CAPTAIN_DIRECTED" -eq 0 ] || printf '%s\n' '- process: captain-directed'
   [ -z "$PROVE" ] || printf '%s\n' "- prove: $PROVE"
   [ -z "$PLAYER" ] || printf '%s\n' "- player: $PLAYER"
   [ -z "$PARTS" ] || printf '%s\n' "- parts: $PARTS"
@@ -240,13 +243,11 @@ HERDR_ARG=
 if grep -Fx '# Herdr isolation - HARD SAFETY CONTRACT' "$BRIEF" >/dev/null; then
   HERDR_ARG=--herdr-lab
 fi
-if [ -n "$HERDR_ARG" ]; then
-  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_BRIEF_YOLO_OVERRIDE="$PROMOTION_YOLO" FM_PROMOTED_SCOUT=1 \
-    "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" "$HERDR_ARG" >/dev/null
-else
-  FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_BRIEF_YOLO_OVERRIDE="$PROMOTION_YOLO" FM_PROMOTED_SCOUT=1 \
-    "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" >/dev/null
-fi
+BRIEF_ARGS=()
+[ -z "$HERDR_ARG" ] || BRIEF_ARGS+=("$HERDR_ARG")
+[ "$CAPTAIN_DIRECTED" -eq 0 ] || BRIEF_ARGS+=(--captain-directed)
+FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_BRIEF_YOLO_OVERRIDE="$PROMOTION_YOLO" FM_PROMOTED_SCOUT=1 \
+  "$FM_ROOT/bin/fm-brief.sh" "$ID" "$REPO" "${BRIEF_ARGS[@]}" >/dev/null
 
 awk -v task_file="$SHIP_TASK" -v context_file="$PROMOTION_CONTEXT" -v provenance_file="$PROVENANCE" -v contract_file="$CONTRACT" '
   function emit(file, line) {

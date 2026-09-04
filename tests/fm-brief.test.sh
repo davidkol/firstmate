@@ -315,11 +315,11 @@ test_ship_modes_generate_clean_briefs() {
 }
 
 # A captain-directed builder keeps one warm implementation context from design
-# through play, then starts the existing validation wrapper only on the
+# through play, then starts one genuinely cold advisory review only on the
 # captain's landing word. The scaffold must carry that operating contract
-# without reintroducing the autonomous worker's evidence and fix-loop ceremony.
+# without reintroducing the autonomous worker's pipeline and fix-loop ceremony.
 test_captain_directed_brief_scaffolds_the_warm_builder_loop() {
-  local home id brief help
+  local home id brief help note_line publish_line
   home="$TMP_ROOT/captain-directed-home"
   write_registry "$home"
   id="brief-captain-directed-a1"
@@ -356,22 +356,49 @@ test_captain_directed_brief_scaffolds_the_warm_builder_loop() {
     "captain-directed brief did not preserve in-window design answers"
   assert_grep "Use \`needs-decision:\` to reach firstmate only when the captain is not in this window" "$brief" \
     "captain-directed brief did not reserve needs-decision for captain absence"
-  assert_grep "When the captain says land, commit the current head and start validation" "$brief" \
-    "captain-directed brief let validation start before the captain's word"
-  assert_grep "bin/fm-validate.sh $id --evidence" "$brief" \
-    "captain-directed brief did not retain the mode-owned validation wrapper"
-  assert_grep "respond to the review gate with \`no-mistakes axi respond --action approve\`" "$brief" \
-    "captain-directed brief did not approve findings into the advisory handback"
-  assert_grep "Never choose the fix action" "$brief" \
-    "captain-directed brief allowed the pipeline cold fixer"
-  assert_grep "Do not edit the branch again until the run is terminal" "$brief" \
-    "captain-directed brief allowed warm fixes during the active run"
+  assert_grep "paused: waiting for the captain in the window on <what>" "$brief" \
+    "captain-directed brief did not declare its ordinary wait for the captain"
+  assert_grep "When the captain says land, commit the current head" "$brief" \
+    "captain-directed brief let the landing review start before the captain's word"
+  assert_grep "spawn one fresh-context reviewer sub-agent" "$brief" \
+    "captain-directed brief did not require a separate cold reviewer"
+  assert_grep "only the final diff, the slice's outcome, and pointers to the target design and architecture" "$brief" \
+    "captain-directed brief gave the reviewer more than the bounded landing context"
+  assert_grep "must not receive the build conversation" "$brief" \
+    "captain-directed brief let the reviewer inherit the warm build context"
+  assert_grep "Asking yourself to review your own work does not satisfy this step" "$brief" \
+    "captain-directed brief allowed the builder to grade itself"
+  assert_grep "report its complete findings back into this builder window" "$brief" \
+    "captain-directed brief did not return findings to the warm builder"
+  assert_grep "reports either no findings or one complete findings list" "$brief" \
+    "captain-directed brief did not define a successful normal review"
+  assert_grep "fails, is cancelled, or returns no usable report" "$brief" \
+    "captain-directed brief let an unsuccessful review reach landing"
+  assert_grep "stop without pushing or declaring the branch ready" "$brief" \
+    "captain-directed brief let a failed review publish or land"
+  assert_grep "Apply only the findings the captain selects" "$brief" \
+    "captain-directed brief did not keep review-fix authority with the captain"
+  assert_grep "Record every finding the captain does not select as a known issue" "$brief" \
+    "captain-directed brief did not preserve unselected findings"
+  assert_grep "Commit every post-review code change and the final dated play-note update together" "$brief" \
+    "captain-directed brief did not commit the final play note"
   assert_grep "Do not start a second machine read" "$brief" \
     "captain-directed brief turned the advisory read into another review round"
   assert_grep "push your final branch and open its PR with \`gh-axi\`" "$brief" \
     "captain-directed direct-PR brief did not publish the warm-fixed final head"
   assert_grep "Firstmate merges that PR with the ordinary landing tool" "$brief" \
     "captain-directed direct-PR brief did not leave the merge with firstmate"
+  assert_no_grep "bin/fm-validate.sh" "$brief" \
+    "captain-directed brief invoked the validation wrapper"
+  assert_no_grep "no-mistakes doctor" "$brief" \
+    "captain-directed brief invoked pipeline setup"
+  assert_no_grep "no-mistakes axi" "$brief" \
+    "captain-directed brief invoked the no-mistakes pipeline"
+
+  note_line=$(grep -nF 'Commit every post-review code change and the final dated play-note update together' "$brief" | cut -d: -f1)
+  publish_line=$(grep -nF 'push your final branch and open its PR' "$brief" | cut -d: -f1)
+  [ -n "$note_line" ] && [ -n "$publish_line" ] && [ "$note_line" -lt "$publish_line" ] \
+    || fail "captain-directed brief publishes before committing the final play note"
 
   [ "$(grep -c '^- task-tier:' "$brief")" -eq 1 ] \
     || fail "captain-directed brief must keep exactly one task-tier field"
@@ -427,30 +454,47 @@ test_captain_directed_brief_refuses_a_primary_checkout_before_branching() {
   pass "fm-brief.sh: --captain-directed refuses the primary checkout before branching"
 }
 
-test_captain_directed_brief_supports_only_post_review_landing_modes() {
-  local home id brief out rc
+test_captain_directed_brief_uses_each_modes_guarded_landing_without_a_pipeline() {
+  local home id brief rebase_line review_line
   home="$TMP_ROOT/captain-directed-modes-home"
   write_registry "$home"
 
-  id="brief-captain-directed-local-a3"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj --captain-directed >/dev/null 2>&1 \
-    || fail "fm-brief.sh --captain-directed should support local-only"
-  brief="$home/data/$id/brief.md"
-  assert_grep "reports the current post-run branch ready" "$brief" \
-    "captain-directed local-only brief did not hand the post-review head to its landing tool"
-
-  for id_proj in "brief-captain-directed-full-a4:default-proj" "brief-captain-directed-main-a5:main-proj"; do
+  for id_proj in \
+    "brief-captain-directed-full-a4:default-proj" \
+    "brief-captain-directed-main-a5:main-proj" \
+    "brief-captain-directed-direct-a6:direct-proj" \
+    "brief-captain-directed-local-a7:local-proj"; do
     id=${id_proj%%:*}
-    if out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "${id_proj##*:}" --captain-directed 2>&1); then
-      rc=0
-    else
-      rc=$?
-    fi
-    expect_code 1 "$rc" "captain-directed ${id_proj##*:} should refuse an incompatible landing mode"
-    assert_contains "$out" "supports only direct-PR and local-only" \
-      "captain-directed incompatible-mode refusal did not name the supported boundary"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "${id_proj##*:}" --captain-directed >/dev/null 2>&1 \
+      || fail "fm-brief.sh --captain-directed should support ${id_proj##*:} through its guarded landing tool"
+    brief="$home/data/$id/brief.md"
+    assert_no_grep 'bin/fm-validate.sh' "$brief" \
+      "$id: captain-directed mode invoked the validation wrapper"
+    assert_no_grep 'no-mistakes doctor' "$brief" \
+      "$id: captain-directed mode invoked pipeline setup"
+    assert_no_grep 'no-mistakes axi' "$brief" \
+      "$id: captain-directed mode invoked the no-mistakes pipeline"
   done
-  pass "fm-brief.sh: captain-directed supports only post-review landing modes"
+
+  brief="$home/data/brief-captain-directed-full-a4/brief.md"
+  assert_grep "push your final branch and open its PR with \`gh-axi\`" "$brief" \
+    "captain-directed no-mistakes topology did not use the guarded PR landing"
+  brief="$home/data/brief-captain-directed-main-a5/brief.md"
+  assert_grep "ordinary validated-main landing tool fast-forwards it into \`main\` and pushes" "$brief" \
+    "captain-directed validated-main topology did not use its guarded main landing"
+  brief="$home/data/brief-captain-directed-direct-a6/brief.md"
+  assert_grep "push your final branch and open its PR with \`gh-axi\`" "$brief" \
+    "captain-directed direct-PR topology did not use the guarded PR landing"
+  brief="$home/data/brief-captain-directed-local-a7/brief.md"
+  assert_grep "rebase \`fm/brief-captain-directed-local-a7\` onto the current local default branch" "$brief" \
+    "captain-directed local-only path did not reconcile a parallel slice before review"
+  rebase_line=$(grep -nF "rebase \`fm/brief-captain-directed-local-a7\` onto the current local default branch" "$brief" | cut -d: -f1)
+  review_line=$(grep -nF 'spawn one fresh-context reviewer sub-agent' "$brief" | cut -d: -f1)
+  [ -n "$rebase_line" ] && [ -n "$review_line" ] && [ "$rebase_line" -lt "$review_line" ] \
+    || fail "captain-directed local-only path rebased after the landing candidate was reviewed"
+  assert_grep "ordinary local-only landing tool fast-forwards it into local \`main\`" "$brief" \
+    "captain-directed local-only topology did not use its guarded local landing"
+  pass "fm-brief.sh: captain-directed supports every mode through its existing guarded landing tool without a pipeline"
 }
 
 test_ship_brief_scaffolds_only_two_core_doctrine_fields() {
@@ -1826,7 +1870,7 @@ test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_captain_directed_brief_scaffolds_the_warm_builder_loop
 test_captain_directed_brief_refuses_a_primary_checkout_before_branching
-test_captain_directed_brief_supports_only_post_review_landing_modes
+test_captain_directed_brief_uses_each_modes_guarded_landing_without_a_pipeline
 test_scout_refuses_unmigrated_project_before_writing_brief
 test_ship_brief_scaffolds_only_two_core_doctrine_fields
 test_doctrine_contract_is_proportional_and_allows_one_shared_oracle
