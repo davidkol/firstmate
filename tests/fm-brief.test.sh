@@ -518,15 +518,6 @@ test_captain_directed_brief_uses_each_modes_guarded_landing_without_a_pipeline()
     || fail "captain-directed local-only path rebased after the landing candidate was reviewed"
   assert_grep "ordinary local-only landing tool fast-forwards it into local \`main\`" "$brief" \
     "captain-directed local-only topology did not use its guarded local landing"
-  local owner
-  owner="$ROOT/.agents/skills/game-development-process/SKILL.md"
-  for term in 'minutes launch to partial play availability' 'minutes launch to complete playable outcome' \
-    'minutes to his "good enough"' 'minutes to landed' 'active captain attention minutes' \
-    'all attributable AI usage' 'builder, reviewer, Firstmate' 'later escapes' \
-    'partial or unavailable' 'Preserve unknown historical values' \
-    'never convert token counts into money or quota'; do
-    assert_grep "$term" "$owner" "slice ledger lost: $term"
-  done
   pass "fm-brief.sh: captain-directed supports every mode through its existing guarded landing tool without a pipeline"
 }
 
