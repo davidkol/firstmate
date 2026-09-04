@@ -376,10 +376,10 @@ test_captain_directed_brief_scaffolds_the_warm_builder_loop() {
     "captain-directed brief let an unsuccessful review reach landing"
   assert_grep "stop without pushing or declaring the branch ready" "$brief" \
     "captain-directed brief let a failed review publish or land"
-  assert_grep "Apply only the findings the captain selects" "$brief" \
-    "captain-directed brief did not keep review-fix authority with the captain"
-  assert_grep "Record every finding the captain does not select as a known issue" "$brief" \
-    "captain-directed brief did not preserve unselected findings"
+  assert_grep "Apply bounded routine technical fixes in this same warm context" "$brief" \
+    "captain-directed brief did not return routine fixes to the warm builder"
+  assert_grep "Record explicitly accepted remaining defects" "$brief" \
+    "captain-directed brief did not require explicit known-defect acceptance"
   assert_grep "Commit every post-review code change and the final dated play-note update together" "$brief" \
     "captain-directed brief did not commit the final play note"
   assert_grep "Do not start a second machine read" "$brief" \
@@ -468,6 +468,30 @@ test_captain_directed_brief_uses_each_modes_guarded_landing_without_a_pipeline()
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "${id_proj##*:}" --captain-directed >/dev/null 2>&1 \
       || fail "fm-brief.sh --captain-directed should support ${id_proj##*:} through its guarded landing tool"
     brief="$home/data/$id/brief.md"
+    assert_grep "Resolve routine concrete technical defects within accepted scope autonomously" "$brief" \
+      "$id: an in-scope bug fix still needs captain selection"
+    assert_grep "design changes, material scope or architecture expansion, and intentional acceptance of remaining known defects" "$brief" \
+      "$id: captain authority over changed intent or accepted defects is missing"
+    assert_grep "Preserve existing destructive and security boundaries" "$brief" \
+      "$id: technical autonomy weakened the safety boundary"
+    assert_grep "observe the changed route" "$brief" \
+      "$id: runtime verification does not observe changed behavior"
+    assert_grep "Run applicable existing checks and add focused regression tests when they protect important changed behavior" "$brief" \
+      "$id: important behavior has no proportionate technical verification"
+    assert_grep "Do not demand tests for trivial prose or tests that mirror implementation" "$brief" \
+      "$id: trivial changes still invite unnecessary tests"
+    assert_grep "Captain play judges feel and intent; it does not replace your technical verification" "$brief" \
+      "$id: captain play substitutes for technical checks"
+    assert_grep "$ROOT/.agents/skills/game-development-process/SKILL.md" "$brief" \
+      "$id: a cold builder cannot locate the accounting owner"
+    assert_grep "provide Firstmate the available slice measurements and their sources and gaps" "$brief" \
+      "$id: accounting has no builder handoff"
+    assert_grep "Report any issue remaining after this bounded fix and check" "$brief" \
+      "$id: unresolved fixes can silently reach landing"
+    assert_no_grep "Apply only the findings the captain selects" "$brief" \
+      "$id: obsolete fix selection contradicts technical autonomy"
+    assert_no_grep "let him choose which ones to fix" "$brief" \
+      "$id: obsolete advisory handback survives"
     assert_no_grep 'bin/fm-validate.sh' "$brief" \
       "$id: captain-directed mode invoked the validation wrapper"
     assert_no_grep 'no-mistakes doctor' "$brief" \
@@ -494,6 +518,15 @@ test_captain_directed_brief_uses_each_modes_guarded_landing_without_a_pipeline()
     || fail "captain-directed local-only path rebased after the landing candidate was reviewed"
   assert_grep "ordinary local-only landing tool fast-forwards it into local \`main\`" "$brief" \
     "captain-directed local-only topology did not use its guarded local landing"
+  local owner
+  owner="$ROOT/.agents/skills/game-development-process/SKILL.md"
+  for term in 'minutes launch to partial play availability' 'minutes launch to complete playable outcome' \
+    'minutes to his "good enough"' 'minutes to landed' 'active captain attention minutes' \
+    'all attributable AI usage' 'builder, reviewer, Firstmate' 'later escapes' \
+    'partial or unavailable' 'Preserve unknown historical values' \
+    'never convert token counts into money or quota'; do
+    assert_grep "$term" "$owner" "slice ledger lost: $term"
+  done
   pass "fm-brief.sh: captain-directed supports every mode through its existing guarded landing tool without a pipeline"
 }
 
@@ -568,6 +601,10 @@ test_doctrine_contract_is_proportional_and_allows_one_shared_oracle() {
     "captain-directed review intent did not preserve the selected process"
   assert_contains "$out" "Inspect the landing candidate" \
     "captain-directed review intent did not scope the one advisory read"
+  assert_contains "$out" "game-development-process correction and decision boundaries" \
+    "captain-directed review intent lost the current authority owner"
+  assert_not_contains "$out" "for the captain to select" \
+    "captain-directed review intent restored captain-picked routine fixes"
   assert_not_contains "$out" "one full project regression" \
     "captain-directed T3 review intent restored ordinary conditional evidence"
 

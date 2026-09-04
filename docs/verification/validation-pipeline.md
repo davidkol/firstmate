@@ -6,6 +6,23 @@ This record supports four current ordinary-route guarantees: that a no-mistakes 
 `AGENTS.md` section 7 owns the operating contract and `bin/fm-crew-state.sh` owns the state mapping.
 Task-specific chronology, temporary paths, run identifiers, and delivery transcripts remain in private reports or PR evidence.
 
+## Captain-directed instruction delivery
+
+The [game-development-process skill](../../.agents/skills/game-development-process/SKILL.md) owns the captain-directed exception and its correction, verification, and outcome-ledger obligations.
+Verified on 2026-09-04 with macOS Bash 5.3.15 and the repository's `bin/fm-brief.sh` and `bin/fm-doctrine-contract.sh`; the changed shell files also passed `/bin/bash -n` under stock Bash 3.2.57.
+The `tests/fm-brief.test.sh` family executed through `bin/fm-test-run.sh --changed --require-nonempty` generated disposable-home briefs for all four delivery modes and exercised the linked ledger owner and review-intent output.
+Relevant exact output:
+
+```text
+ok - fm-brief.sh: --captain-directed emits the warm builder loop without autonomous evidence ceremony
+ok - fm-brief.sh: captain-directed supports every mode through its existing guarded landing tool without a pipeline
+ok - fm-doctrine-contract.sh: evidence depth stays proportional across ordinary and captain-directed contracts
+```
+
+The assertions cover routine correction versus reserved captain decisions, focused checks versus trivial changes, partial and complete play clocks, attention, attribution gaps, and the absence of obsolete captain-picked-fix instructions.
+Separately generated briefs were read alongside their linked owner, including an ordinary validated-main control that retained its existing pipeline instructions.
+This verifies instruction delivery and preservation of the ordinary route, not future game correctness, actual slice measurements, live harness behavior, or a newly executed no-mistakes pipeline.
+
 ## No registered checks is a CI-ready result
 
 Verified on 2026-07-28 against `no-mistakes version v1.41.2 (867d64d) 2026-07-24T06:16:23Z`.

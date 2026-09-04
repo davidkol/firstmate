@@ -267,7 +267,7 @@ render_review_intent() {
 
   if [ "$process" = captain-directed ]; then
     printf '%s\n' 'Required depth: Inspect the landing candidate against the exact outcome, source, executing control flow, and dated captain play receipt without demanding conditional evidence lines.'
-    printf '%s\n' 'Check the tier choice and whether the task was under-tiered, then return mapped findings to the same warm builder for the captain to select after this run is terminal.'
+    printf '%s\n' 'Check the tier choice and whether the task was under-tiered, then return mapped findings to the same warm builder under game-development-process correction and decision boundaries; do not start another review round.'
   else
     case "$tier" in
       T2|T4/T2)

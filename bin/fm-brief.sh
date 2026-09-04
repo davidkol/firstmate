@@ -40,6 +40,8 @@
 #   --design-intake, --secondmate, and --herdr-lab.
 #   --captain-directed writes the ship contract for a builder the captain directs
 #   in its own window. The task content must name the target design and architecture.
+#   It delivers the game-development-process obligations for technical fixes,
+#   proportionate verification, and the measurement handoff to Firstmate.
 #   It supports every delivery mode through that mode's existing guarded landing
 #   tool, but invokes no validation wrapper or no-mistakes pipeline step.
 #   It is incompatible with scout, design-intake, target-design-intake, and
@@ -982,19 +984,27 @@ if [ "$CAPTAIN_DIRECTED" -eq 1 ]; then
 # Captain-directed builder
 This is a CAPTAIN-DIRECTED implementation slice governed by Firstmate's `game-development-process` skill.
 The task section points to the authoritative target design and architecture for this slice; read both before building.
-When either source is silent, ask the captain directly in this window and never invent.
-Run the game yourself from this isolated copy and confirm the slice reaches its route before calling it playable.
+When design intent or an architectural decision is missing, ask the captain directly in this window and never invent.
+Resolve routine concrete technical defects within accepted scope autonomously.
+Ask the captain about design changes, material scope or architecture expansion, and intentional acceptance of remaining known defects.
+Preserve existing destructive and security boundaries.
+Run the game yourself from this isolated copy, observe the changed route, and confirm the slice reaches its route before calling it playable.
+Run applicable existing checks and add focused regression tests when they protect important changed behavior.
+Do not demand tests for trivial prose or tests that mirror implementation, a mandatory large suite per slice, or a blanket pipeline.
+Captain play judges feel and intent; it does not replace your technical verification.
+Report any verification limitation explicitly.
 Fix what the captain finds in your own context while it is still warm.
 Fan out to sub-agents only for genuinely independent parts, and integrate their work yourself.
 Write the captain's in-window design answers into the project's design record.
 EOF
   ROLE_SECTION=${ROLE_SECTION%$'\n'}
   ROLE_SECTION="$ROLE_SECTION
+Read \`$FM_ROOT/.agents/skills/game-development-process/SKILL.md\` for the governing correction, verification, and outcome-ledger contract; provide Firstmate the available slice measurements and their sources and gaps under its Outcome ledger section, without maintaining a second ledger.
 Whenever you hand the captain a build or a question and have no other direction, append \`$PAUSED_VERB: waiting for the captain in the window on <what>\`; resume in this same context when he responds."
   COMPLETION_CHECKLIST=""
   SETUP2=""
   IFS= read -r -d '' DECISION_RULE <<'EOF' || true
-6. Ask the captain directly in this window whenever the design or architecture is silent; never invent an answer.
+6. Ask the captain directly in this window for decisions reserved by the authority rules above; never invent missing design intent or architecture.
    Use `needs-decision:` to reach firstmate only when the captain is not in this window, then stop until the answer returns.
 EOF
   DECISION_RULE=${DECISION_RULE%$'\n'}
@@ -1013,10 +1023,11 @@ Have that reviewer report its complete findings back into this builder window wi
 The captain's dated play note is the receipt for the ordinary route.
 The review succeeds only when that fresh reviewer completes and reports either no findings or one complete findings list.
 If the reviewer fails, is cancelled, or returns no usable report, append \`blocked: fresh-context landing review did not complete\` and stop without pushing or declaring the branch ready.
-Show the complete findings list to the captain in this window and let him choose which ones to fix.
-Apply only the findings the captain selects in this same warm context.
-Record every finding the captain does not select as a known issue in the dated play note, and record each selected finding as \`captain picked, fixed after review\`.
-Run the game, hand the fixed build to the captain, and put his final dated play result in the play note.
+Apply bounded routine technical fixes in this same warm context under the authority and verification rules above; send reserved decisions to the captain.
+Show the complete findings list and dispositions to the captain; silence or an unselected finding does not accept a known defect.
+Record explicitly accepted remaining defects and fixed findings in the dated play note.
+Repeat the applicable technical verification on the changed result, hand the fixed build to the captain, and put his final dated play result in the play note.
+Report any issue remaining after this bounded fix and check to the captain; do not silently accept it or restart review.
 Commit every post-review code change and the final dated play-note update together before publishing or declaring the branch ready.
 Do not start a second machine read.
 EOF

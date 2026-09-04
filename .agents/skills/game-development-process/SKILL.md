@@ -18,34 +18,47 @@ This skill owns the captain-in-the-loop implementation process, its uncertainty 
 - **[P1 - AUTHORITY - D2/D10]** One process and one learning destination serve every game so a lesson in one project improves the others.
 - **[P2 - MIXED AUTHORITY AND GAP - D9/D10/D13]** Project design authority and runtime facts remain inputs to the shared process, D9 bars an active plan from outranking designer-owned sources, and D13 replaces only the hands-off implementation chain while leaving design intake unchanged.
 
-## 1. Outcome ledger <!-- trace:D7/D8/D9/D12/D13 -->
+## 1. Outcome ledger <!-- trace:D7/D8/D9/D12/D13/D15 -->
 
 - **[O1 - FIRSTMATE IMPLEMENTATION - D13]** Keep one line per landed slice in `data/captain-in-the-loop-process/ledger.md` in the Firstmate home, not in a new subsystem, dashboard, schema, gate, or project file.
 - **[O2 - INTAKE WRITE - D12/D13]** At intake, record the slice and its authoritative target in the active task record before work begins.
 - **[O3 - LANDING WRITE - D12/D13]** At landing, Firstmate writes the completed ledger line rather than asking the builder to maintain a second record.
-- **[O4 - ONE-LINE SCHEMA - D13]** Use exactly `date | project | slice | production lines | fresh tokens | minutes launch to first playable in his hands | minutes to his "good enough" | minutes to landed | defects he found | read findings he acted on | one word on how it felt`.
+- **[O4 - ONE-LINE FORMAT - D13/D15]** Use `date | project | slice | production lines | all attributable AI usage (coverage, sources, units) | minutes launch to partial play availability | minutes launch to complete playable outcome | minutes to his "good enough" | minutes to landed | active captain attention minutes | defects he found and later escapes | read findings and disposition | one word on how it felt`.
 - **[O5 - RECEIPT BOUNDARY - D12/D13]** The dated captain play note supplies the ordinary-route receipt, while executing code and observed runtime remain the authority for the present.
 - **[O6 - REOPEN PATH - D12]** A later-discovered escape corrects the same slice record instead of leaving the earlier closure standing as the final truth.
 - **[O7 - INTERPRETATION LIMIT - D12/D13]** The ledger stays descriptive and never claims that the process caused an outcome without a fair comparison.
-- **[O8 - FALSIFIABLE TRIAL - D13]** After the first three slices, the process is wrong if two of these three do not move: launch to the captain's hands inside one hour, fresh tokens below 2.6 million per slice, and fewer than four agent sessions per slice.
+- **[O8 - ORIGINAL TRIAL PREDICTION - D13; INTERPRETATION LIMITED BY D15]** The original three-slice prediction was launch to the captain's hands inside one hour, fresh tokens below 2.6 million per slice, and fewer than four agent sessions per slice, with two unmoved metrics falsifying the trial; retain that historical prediction without treating partial availability as complete delivery or fresh tokens as total cost.
+- **[O9 - CLOCK AND ATTENTION BOUNDARY - D15]** All elapsed clocks start at launch; partial play names the available subset, while complete playable outcome means the whole accepted slice reaches its intended route in the captain's hands.
+  Keep the accepted (his "good enough") and landed clocks even when a slice lands with explicitly accepted incompleteness, and mark a never-reached complete outcome as not reached rather than copying the partial clock.
+  Active captain attention counts time spent directing, answering, playing, and deciding, separate from elapsed or passive waiting time.
+- **[O10 - ACCOUNTING BOUNDARY - D15]** Account for all attributable AI work across builder, reviewer, Firstmate, and any contributing sub-agents or sessions, including work before launch or after first play when attributable to the slice.
+  Use available records, identify sources and covered roles or sessions, and report partial or unavailable accounting with the missing coverage; do not pass a builder-only subtotal off as a slice total.
+  Keep fresh input, cached input, and output tokens separately labeled with their reported units and provider semantics, avoid double-counting overlapping totals, and never convert token counts into money or quota without independent measured billing or quota evidence.
+  Preserve unknown historical values as unknown, label estimates as estimates with their basis, and never invent missing measurements or backfill unknowns with zero.
+  Firstmate uses the existing one-line record and available handoffs; this adds no service, dashboard, database, telemetry collector, or global quota change.
 
 ## 2. Roles <!-- trace:D9/D13 -->
 
 - **[S30 - AUTHORITY - D13] Captain.** The captain dictates design before code, answers design questions, directs the builder in its own window, plays every build, names what is wrong, and says when to land without reviewing code.
-- **[S31 - FIRSTMATE IMPLEMENTATION - D9/D13] Builder.** One builder owns one slice in an isolated copy, stays warm across the slice and its sessions, builds from the target design, architecture, and captain direction, asks in the window when either source is silent, runs the game before calling the slice playable, fixes what the captain finds in its own context, integrates any genuinely independent sub-agent work itself, and never reads its own work as the reviewer.
-- **[S32 - AUTHORITY AND FIRSTMATE IMPLEMENTATION - D13/D14] Reader.** One fresh-context reviewer starts only when the captain says land, sees only the final diff, the slice outcome, and target-design and architecture pointers, never sees the build conversation, reports into the builder's window while the captain performs his last play, and remains advisory because the captain chooses which findings the builder fixes.
+- **[S31 - FIRSTMATE IMPLEMENTATION - D9/D13/D15] Builder.** One builder owns one slice in an isolated copy, stays warm across its sessions, builds from the target design, architecture, and captain direction under S36-S37, fixes concrete defects within that scope, integrates any genuinely independent sub-agent work itself, and never reads its own work as the reviewer.
+- **[S32 - AUTHORITY AND FIRSTMATE IMPLEMENTATION - D13/D14/D15] Reader.** One fresh-context reviewer starts only when the captain says land, sees only the final diff, the slice outcome, and target-design and architecture pointers, never sees the build conversation, reports into the builder's window while the captain performs his last play, and remains advisory under the correction and decision boundaries in S39A-S39B.
 - **[S33 - FIRSTMATE IMPLEMENTATION - D13] Firstmate.** Firstmate keeps design intake unchanged, checks seams before dispatch, launches the builder with design and architecture pointers, hands the captain its window, keeps it alive, lands on his word, writes the ledger line, and wakes only for a design question while the captain is away, a playable build while he is away, a failure, or a landing; every other routine builder status is a non-event.
 
-## 3. Loop for one slice <!-- trace:D13/D14 -->
+## 3. Loop for one slice <!-- trace:D13/D14/D15 -->
 
 - **[S34 - SLICE - D13]** The captain names the slice, or the builder proposes the next slice from the design in dependency order, and the slice is sized to reach his hands as one playable thing.
 - **[S35 - SEAM CHECK - D13]** Before dispatch, Firstmate identifies every owner the slice touches and compares them with other live slices; disjoint work starts, a connecting joint is written first, and inseparable shared state stays under one builder.
-- **[S36 - LAUNCH - D13]** Launch one builder in an isolated copy with the target design, architecture, slice, and standing rule that a silent design is a question, then hand the captain that builder's window.
-- **[S37 - BUILD - D13]** The captain directs and the warm builder builds with no reader, evidence capture, round counting, checker-first test, or default unit-test requirement, then the builder runs the game and checks that the slice reaches its route before reporting it playable.
+- **[S36 - LAUNCH - D13]** Launch one builder in an isolated copy with the target design, architecture, slice, and standing rule that missing design intent or an architectural decision is a question, then hand the captain that builder's window.
+- **[S37 - BUILD AND VERIFICATION - D13/D15]** Resolve routine concrete technical defects within accepted scope autonomously; design changes, material scope or architecture expansion, intentional acceptance of remaining known defects, and existing destructive or security decisions stay with the captain.
+  Run the game and observe the changed route before calling it playable, run applicable existing checks, and add focused regression tests when they protect important changed behavior.
+  Verification is proportionate to the actual change: no tests for trivial prose or tests that mirror implementation, no mandatory large suite per slice, and no blanket pipeline or new evidence schema.
+  Captain play judges feel and intent and does not replace the builder's technical verification; report any verification limitation explicitly.
 - **[S38 - PLAY - D13]** The captain plays the builder's running game or a play branch in his own copy, names what is wrong, and has the builder fix it in the same context; any in-window answer that fills a design gap is written by the builder into the project's design record, and a builder with no further direction after handing him a build or question declares `paused: waiting for the captain in the window on <what>` until he responds.
 - **[S39 - LAND START - D13/D14]** When the captain says land, the builder commits the current head and spawns one fresh-context reviewer sub-agent with only the final diff, the slice outcome, and target-design and architecture pointers; asking itself does not satisfy the cold-read requirement, no build conversation reaches the reviewer, and no validation wrapper or pipeline step runs.
-- **[S39A - ADVISORY HANDBACK - D13/D14]** A successful read reports either no findings or one complete findings list into the builder's window within minutes; a failed, cancelled, or missing report stops landing, while a complete list goes to the captain and every finding he does not select is recorded as a known issue in the dated play note.
-- **[S39B - WARM FIX - D13/D14]** The same warm builder applies only the captain-picked findings, runs the game, hands the fixed build to the captain, updates the dated play note with his final result, and commits every post-read code and play-note change before publishing or declaring ready; no second machine read runs.
+- **[S39A - ADVISORY HANDBACK - D13/D14/D15]** A successful read reports either no findings or one complete findings list into the builder's window within minutes; a failed, cancelled, or missing report stops landing, while the warm builder resolves routine concrete defects under S37 and sends only decisions reserved there to the captain.
+  Show the complete findings and their dispositions to the captain; silence or an unselected finding never authorizes accepting a known defect.
+- **[S39B - WARM FIX - D13/D14/D15]** The same warm builder applies bounded fixes, repeats the applicable S37 verification on the changed result, hands the fixed build to the captain, and updates the dated play note with his final result, fixed findings, and any remaining defects he explicitly accepts.
+  Report any issue remaining after that bounded fix and check to the captain instead of silently accepting it or restarting review; commit every post-read code and play-note change before publishing or declaring ready, and run no second machine read.
 - **[S39C - SUPPORTED LANDING - D13/D14]** The captain-directed loop is offered on all four delivery modes because their guarded landing tools do not require a pipeline-published head: `no-mistakes` and `direct-PR` use the final branch and PR through `fm-pr-merge.sh`, `validated-main` uses the local final branch through `fm-merge-main.sh`, and `local-only` uses it through `fm-merge-local.sh`.
 - **[S39D - LANDING GUARDS - D13/D14]** No landing guard is weakened: the PR tool records the final PR head, the validated-main tool accepts the local branch when no origin task branch exists, both main-landing tools still require a clean fast-forward, and a second parallel local-only slice rebases onto the current local default branch before its fresh read and final captain play.
 - **[S40 - RECORD - D13]** Firstmate writes the ledger line at landing, keeps the builder alive when the next slice remains in the same area, and otherwise cleans up that task.
@@ -64,9 +77,9 @@ This skill owns the captain-in-the-loop implementation process, its uncertainty 
 ## 6. Turned off for captain-directed slices <!-- trace:D3/D5/D7/D8/D9/D13/D14 -->
 
 - **[S46 - TRIAL SWITCH - D13]** No reader runs during the build.
-- **[S47 - TRIAL SWITCH - D13/D14]** Every pipeline step is off throughout a captain-directed slice, including review, fix, test, document, lint, push, PR, and CI machinery; S39-S39B supply the one normal review and warm captain-selected fixes instead.
-- **[S48 - TRIAL SWITCH - D13]** Evidence captures and agent-driven play replays are not required during the build.
-- **[S49 - PROVISIONAL AUTHORITY - D13]** Checker-first tests and unit tests are off by default for the first slices while the captain's explicit decision on their long-term place remains deferred.
+- **[S47 - TRIAL SWITCH - D13/D14/D15]** Every pipeline step remains off throughout a captain-directed slice; S37 owns direct technical verification and S39-S39B supply the one normal review and bounded warm fixes.
+- **[S48 - TRIAL SWITCH - D13/D15]** Evidence captures and scripted play replays are not mandatory during the build; S37 still requires actual game execution and observation of the changed route.
+- **[S49 - VERIFICATION BOUNDARY - D13/D15]** S37 supersedes the initial deferral of local and unit tests; checker-first ceremony remains off.
 - **[S50 - TRIAL SWITCH - D13]** The carried phase chain and project-local orchestrator role are retired for implementation because the builder now owns orchestration inside the slice.
 - **[S51 - TRIAL SWITCH - D13]** Firstmate does not react to routine builder status while the captain is in the window.
 - **[S52 - TRIAL SWITCH - D13/D14]** No one requests another review round after the warm fix in S39B; the one normal landing read remains advisory.
@@ -74,13 +87,16 @@ This skill owns the captain-in-the-loop implementation process, its uncertainty 
 
 ## 7. What stays <!-- trace:D2/D5/D9/D10/D13/D14 -->
 
-- **[S54 - AUTHORITY - D9/D13]** Design intake and its clean bulk questionnaire remain before code, and silence in design or architecture always means ask rather than invent.
+- **[S54 - AUTHORITY - D9/D13]** Design intake and its clean bulk questionnaire remain before code, and missing design intent or an architectural decision means ask rather than invent; routine technical corrections follow S37.
 - **[S55 - SAFETY - D13]** Every builder works in an isolated copy, and direct captain intervention in that builder's window is authoritative.
 - **[S56 - DELIVERY - D13/D14]** Firstmate treats GitHub as hosting only and lands captain-directed work through the supported ordinary landing tools in S39C after the captain's word.
 - **[S57 - REVIEW AND RECORD - D13/D14]** One fresh-context normal read at landing and one ledger line per landed slice remain.
 - **[S58 - SCOPE - D13]** Build no new machinery for this process unless a direct path exposes a concrete repeated need.
 
 ## Superseded implementation switches <!-- trace:D1/D3/D4/D5/D6/D7/D8/D9/D11/D12/D13 -->
+
+The 2026-09-04 thin adjustments (D15) supersede only the earlier captain-picked-every-finding rule, testing deferral, and incomplete measurement line; their earlier decision records remain historical trace.
+The standalone optional-Firstmate route remains deferred.
 
 The 2026-09-03 captain-in-the-loop direction supersedes the hands-off implementation settings below without deleting their trace or the evidence boundaries that qualified them.
 
@@ -105,8 +121,8 @@ The 2026-09-03 captain-in-the-loop direction supersedes the hands-off implementa
 - **[G2 - RESOLVED 2026-08-31; ORIGINAL GAP]** The permanent home and owner of this document were unsettled until `data/captain-decision-2026-08-31-process-home.md` placed the shared process in Firstmate as this agent-only skill.
 - **[G3 - SUPERSEDED 2026-09-03; ORIGINAL GAP - D4/D13]** The exact-contract boundary is no longer an active implementation question for captain-directed slices beyond the seam rule.
 - **[G4 - SUPERSEDED 2026-09-03; ORIGINAL GAP - D3/D5/D6/D7/D8/D9/D11/D13]** Fair comparisons never settled the hands-off role, coherent-slice, disposable-build, closure-field, handoff, or challenge switches before D13 replaced their implementation process.
-- **[G5 - GAP - D13]** Whether the captain should direct code-level questions or only what to build and what is wrong remains open.
-- **[G6 - GAP - D13]** The long-term place of local and unit tests remains deferred until the first captain-directed slices show what the captain finds.
+- **[G5 - RESOLVED 2026-09-04 - D13/D15]** Routine technical corrections are builder-owned under S37; design and scope decisions remain captain-owned.
+- **[G6 - RESOLVED 2026-09-04 - D13/D15]** S37 replaces the deferred testing question with proportionate technical verification.
 - **[G7 - GAP - D13]** No captain-directed slice has yet tested the one-hour, token, and session-count prediction in O8.
 
 ## Evidence boundaries <!-- trace:D2/D3/D4/D5/D6/D7/D8/D9/D10/D11/D13 -->
@@ -118,7 +134,7 @@ The 2026-09-03 captain-in-the-loop direction supersedes the hands-off implementa
 - **[E5 - NOT BROKEN, NOT VALIDATED - D5]** Coherent playable slices were not broken by the red team, but no comparative result validated their threshold.
 - **[E6 - STEERING BOUNDARY - D2/D3/D4/D5/D6]** Firstmate materially steered all four original switch questions, especially role shape and specification, while the captain still rejected one location recommendation and independently changed the cadence and discovery triggers.
 - **[E7 - LOW - D3/D8]** Model version, context size, reviewer count, and phase compliance have low support as explanations of outcomes and do not raise confidence in any switch.
-- **[E8 - TRANSLATION BOUNDARY - D13/D14]** The detailed loop is Firstmate's translation of the captain's 2026-09-03 rulings, so the dated decision records win wherever the loop conflicts with them.
+- **[E8 - TRANSLATION BOUNDARY - D13/D14/D15]** The detailed loop is Firstmate's translation of the captain's dated rulings, so those decision records win wherever the loop conflicts with them.
 - **[E9 - TRIAL BOUNDARY - D13]** The captain authorized testing this direction rather than declaring that it already works.
 - **[E10 - MEASUREMENT BOUNDARY - D13]** Baseline timings, tokens, and session counts are bounded observations from four prior chunks, not a universal performance law.
 
@@ -138,6 +154,8 @@ The 2026-09-03 captain-in-the-loop direction supersedes the hands-off implementa
 - **[T12 - AUTHORITY; COST ACCEPTED - D12]** `data/captain-decision-2026-08-31-outcome-record.md` is carried by O1-O7 with its write moments, evidence boundary, reopen path, and causal limit intact.
 - **[D13 - AUTHORITY AND EXPERIMENTAL DIRECTION]** `data/captain-decision-2026-09-03-captain-in-the-loop.md` is carried by P0, O1-O5, O8, S30-S58, G5-G7, and E8-E10 as the ruling that parks the hands-off implementation goal and tests the captain in the builder's window.
 - **[D14 - AUTHORITY AND CORRECTION]** `data/captain-decision-2026-09-03-landing-read-is-a-normal-review.md` is carried by S32, S39-S39D, S47, S52, S56-S57, and E8 as the ruling that keeps one advisory fresh-context review while removing the no-mistakes pipeline from captain-directed slices.
+
+- **[D15 - AUTHORITY AND BOUNDED CORRECTION]** On 2026-09-04 the captain said "do it" to the three-item proposal in `data/captain-decision-2026-09-04-thin-process-adjustments.md`; O4/O8-O10, S31-S32, S37, S39A-S39B, S47-S49, G5-G6, and E8 carry the approved technical-fix, verification, and accounting adjustments without changing the ordinary non-game delivery policy.
 
 ## Report trace ledger <!-- trace:D1/D2/D3/D4/D5/D6/D7/D8/D9/D10/D11/D12/D13 -->
 
