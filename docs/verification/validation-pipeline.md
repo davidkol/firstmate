@@ -2,7 +2,7 @@
 
 Audience: maintainer verification.
 
-This record supports four current guarantees: that a no-mistakes ship task reports its PR at the pipeline's CI-ready return point, including on a repository whose PR registers no checks, that the `validated-main` delivery mode validates through the same pipeline without ever opening a PR, that the pipeline reads repository `commands` and `agent` from the trusted default-branch config, and that `bin/fm-teardown.sh` can conclude a task's own parked run before removing the worker that would have answered its gate.
+This record supports four current ordinary-route guarantees: that a no-mistakes ship task reports its PR at the pipeline's CI-ready return point, including on a repository whose PR registers no checks, that the `validated-main` delivery mode validates through the same pipeline without ever opening a PR, that the pipeline reads repository `commands` and `agent` from the trusted default-branch config, and that `bin/fm-teardown.sh` can conclude a task's own parked run before removing the worker that would have answered its gate.
 `AGENTS.md` section 7 owns the operating contract and `bin/fm-crew-state.sh` owns the state mapping.
 Task-specific chronology, temporary paths, run identifiers, and delivery transcripts remain in private reports or PR evidence.
 
@@ -63,7 +63,7 @@ Nothing in firstmate should be built on the assumption that a repository can dec
 
 Verified on 2026-07-28 against the same binary version.
 
-This is the evidence the `validated-main` delivery mode rests on, and it settles a question that is easy to get wrong in the opposite direction.
+This is the evidence the ordinary `validated-main` route rests on, and it settles a question that is easy to get wrong in the opposite direction.
 
 The pipeline refuses to run on the default branch at all, so no flag combination makes it push the default branch itself.
 The shipped skill at `~/.claude/skills/no-mistakes/SKILL.md` states it under "Before you start":
@@ -117,7 +117,7 @@ pr_state: none
 
 The review step ran for 28.7 seconds and parked at its gate with a real finding before anything else advanced, so skipping `pr` does not skip `review`.
 Only `pr` and `ci` report `skipped`; the entire local review surface completed, and `pr_state: none` confirms no pull request was ever created.
-Dropping the PR drops ceremony, not the reviewer; a change that reads "no PR" as "no pipeline" has removed the only thing between an unread change and the default branch.
+On this ordinary route, dropping the PR drops ceremony, not the reviewer; reading "no PR" as "no pipeline" would remove the route's only independent read before the default branch.
 
 The same run also pins why landing must read the published head rather than the local branch:
 
@@ -154,7 +154,7 @@ The two failure modes matter too: an unparseable trusted config, or a default br
 
 Verified on 2026-07-30 against `no-mistakes version v1.41.2 (867d64d) 2026-07-24T06:16:23Z`.
 
-This is the evidence the `direct-PR` and `local-only` review-only runs rest on.
+This is the evidence the ordinary `direct-PR` and `local-only` review-only runs rest on.
 It answers two separate questions: whether the pipeline can run review with every other step omitted, and whether the agent that performs that review is a different context from the worker that wrote the change.
 
 `--skip` accepts every step except the one being kept, so a review-only run is expressible with the shipped flag and needs no new mechanism:
@@ -208,7 +208,7 @@ On a separate 6-line shell helper it returned three findings including a confirm
 
 ### The local-only review publishes nothing
 
-`local-only` forbids reaching any remote, so its review is only safe because `push` is one of the eight skipped steps.
+On the ordinary route, `local-only` forbids reaching any remote, so its pipeline review is only safe because `push` is one of the eight skipped steps.
 Verified on 2026-07-30 against the same binary, on a repository shaped like the registry's `local-only` project: an `origin` pointing at a local filesystem path rather than a forge.
 
 `bin/fm-validate.sh` announced the derived set, and the review ran:
@@ -224,7 +224,7 @@ The task branch was never published, and no other ref appeared.
 ### A repository with no remote at all cannot run this review
 
 Verified on 2026-07-30 against the same binary.
-This is a real limit, not a configuration mistake, and it is the one case where a delivery mode cannot carry the reviewer.
+This is a real limit, not a configuration mistake, and it is the one case where the ordinary pipeline route cannot carry its reviewer.
 
 `no-mistakes axi run` refuses without an initialized gate:
 

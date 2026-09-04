@@ -11,7 +11,9 @@
 #   canonical Git root: "  path: /absolute/path".
 #   Secondmate entries may omit it and resolve their provisioned projects/<name> clone.
 #
-# mode = how a finished change reaches main:
+# On the ordinary ship route, mode selects validation and how a finished change
+# reaches main. The game-development-process skill owns the captain-directed
+# route's distinct review and use of the same guarded landing modes:
 #   no-mistakes    full pipeline -> PR -> captain merge (default)
 #   validated-main same full pipeline, PR and CI steps skipped -> guarded merge to
 #                  main -> push to origin; no PR is ever opened

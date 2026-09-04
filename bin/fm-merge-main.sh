@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
 # Land an approved validated-main ship task: fast-forward the project's default
-# branch onto the validated task branch, then push it to the host.
+# branch onto the approved task head, then push it to the host.
 #
-# This is firstmate's merge gate-action for mode=validated-main. The no-mistakes
-# pipeline validates the task branch locally (review, tests, documentation, lint)
-# and publishes it with its push step; this script then moves the default branch
-# onto that validated head and pushes it. No pull request exists at any point -
-# the host stores the repository and is not a step in the workflow.
+# This is firstmate's merge action for mode=validated-main. On the ordinary route,
+# the no-mistakes pipeline validates and publishes the task branch; on the
+# captain-directed route owned by the game-development-process skill, the final
+# approved task branch remains local. This script selects the published head when
+# one exists, otherwise the local branch, then moves the default branch onto that
+# head and pushes it. No pull request exists at any point.
 #
 # Like fm-merge-local.sh this is a sanctioned exception to hard rule #1 "never run
 # state-changing git in projects/", and it is equally narrow: it runs only for
 # mode=validated-main tasks, only after the configured merge authority approves
 # (captain approval, or yolo=on), and only as a clean fast-forward. It refuses a
 # diverged branch, a dirty or off-default project checkout, a task branch carrying
-# local commits the validated head does not contain, a branch published to a remote
+# local commits an existing published head does not contain, a branch published to a remote
 # other than origin (the local no-mistakes gate remote is bookkeeping, not
 # publication, and does not count), and a default branch that has moved on the host.
 # See AGENTS.md prime directives and task lifecycle.
 #
 # The merge source is the published head (origin/fm/<id>) whenever it exists,
-# because the pipeline commits its own fix rounds and pushes them - the local task
-# branch can legitimately be behind it, and merging the stale local head would land
-# unvalidated code. The local branch is used only when nothing was published.
+# because an ordinary pipeline may commit and push its own fix rounds while the
+# local task branch remains behind. The local branch is used only when nothing was
+# published, including on the captain-directed route.
 # Usage: fm-merge-main.sh <task-id>
 set -eu
 

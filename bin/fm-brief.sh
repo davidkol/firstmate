@@ -60,7 +60,7 @@
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo string cannot reliably identify this repo. Briefs made
 #   without it carry a loud declaration so an omitted contract cannot be silent.
-# For ship tasks, the delivery path inside the definition of done is shaped by the
+# For ordinary ship tasks, the delivery path inside the definition of done is shaped by the
 # project's delivery mode (data/projects.md via fm-project-mode.sh; see the
 # project-management skill and AGENTS.md task lifecycle):
 #   no-mistakes    implement -> fm-validate.sh -> full pipeline -> PR -> captain merge

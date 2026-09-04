@@ -11,8 +11,8 @@
 # reachable remote PR head). If neither PR head can be resolved, fall back to
 # the local branch with a warning.
 #
-# A validated-main task never opens a PR, so it never records pr=, but its
-# pipeline still runs the push step and commits its own fix rounds - the local
+# An ordinary validated-main task never opens a PR, so it never records pr=, but
+# its pipeline still runs the push step and commits its own fix rounds - the local
 # branch is routinely behind what was published, and bin/fm-merge-main.sh lands
 # origin/<branch> whenever it exists. Reviewing the local branch there would show
 # a diff that is not the one that lands, so for mode=validated-main the compare

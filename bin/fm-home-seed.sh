@@ -916,8 +916,9 @@ sync_project_registry() {
 initialize_no_mistakes_project() {
   local home=$1 project=$2 created=$3 mode dst
   mode=$(project_mode_in_home "$home" "$project")
-  # Every delivery mode now drives at least the pipeline's review step, so every
-  # project with an origin remote needs a local gate. The seed still creates it
+  # Every delivery mode supports an ordinary route that drives at least the
+  # pipeline's review step, so every project with an origin remote needs a local
+  # gate. The seed still creates it
   # only for the full-pipeline modes, which need it before their first run:
   # validated-main drives the same pipeline as no-mistakes and only skips its PR
   # and CI steps at run time. A light-path clone gets its gate lazily instead,
