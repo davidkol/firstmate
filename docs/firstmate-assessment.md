@@ -127,7 +127,7 @@ Those facts do not have to advance through a fixed workflow: a change may remain
 
 - **Planned:** Replace the hands-off implementation chain with a captain-directed builder in its own window, less machine iteration, and one advisory read at landing.
 - **Made:** The shared `game-development-process` skill now owns that implementation path, while the carried phase chain and project-local orchestrator no longer own captain-directed slices.
-- **Learned:** The direction remains an untested hypothesis whose falsifiable prediction is that, within three slices, launch to the captain's hands falls below one hour, fresh tokens per slice fall below 2.6 million, and agent sessions per slice fall below four; if two of the three do not move, the process is wrong.
+- **Learned:** The direction remains an untested hypothesis; the [process owner's Outcome ledger](../.agents/skills/game-development-process/SKILL.md#1-outcome-ledger) preserves the original trial prediction and owns its current measurement and interpretation boundaries.
 
 ## Human-owned evaluation standard
 
