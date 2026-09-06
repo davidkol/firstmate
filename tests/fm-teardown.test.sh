@@ -572,10 +572,14 @@ SH
 }
 
 # Run teardown with PATH mocking. Args: case_dir [extra args...]
+# FM_DATA_OVERRIDE is deliberate: without it the run resolves data/ from the
+# checkout itself, so a gitignored data/projects.md left behind in a reused pool
+# worktree would decide whether these cases pass.
 run_teardown() {
   local case_dir=$1; shift
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_DATA_OVERRIDE="$case_dir/data" \
   FM_CONFIG_OVERRIDE="$case_dir/config" \
   PATH="$case_dir/fakebin:${FM_TEARDOWN_TEST_PATH:-$PATH}" \
     "$TEARDOWN" task-x1 "$@"
@@ -852,6 +856,7 @@ test_pr_check_does_not_refresh_stale_pr_head() {
 
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_DATA_OVERRIDE="$case_dir/data" \
   PATH="$case_dir/fakebin:$PATH" \
     "$PR_CHECK" task-x1 https://github.com/example/repo/pull/7 >/dev/null
 
@@ -860,6 +865,7 @@ test_pr_check_does_not_refresh_stale_pr_head() {
 
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_DATA_OVERRIDE="$case_dir/data" \
   PATH="$case_dir/fakebin:$PATH" \
     "$PR_CHECK" task-x1 https://github.com/example/repo/pull/7 >/dev/null
 
@@ -889,6 +895,7 @@ test_pr_check_records_remote_head_when_local_lags() {
 
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_DATA_OVERRIDE="$case_dir/data" \
   PATH="$case_dir/fakebin:$PATH" \
     "$PR_CHECK" task-x1 https://github.com/example/repo/pull/7 >/dev/null
 
@@ -1984,6 +1991,7 @@ test_teardowns_own_invoking_shell_is_never_reaped() {
   ( cd "$case_dir/wt" && exec bash -c '
       printf "%s\n" "$$" > "$1/holder.pid"
       ( cd "$1" && FM_ROOT_OVERRIDE="$2" FM_STATE_OVERRIDE="$1/state" \
+        FM_DATA_OVERRIDE="$1/data" \
         FM_CONFIG_OVERRIDE="$1/config" PATH="$1/fakebin:$PATH" "$3" task-x1 )
       exit $?
     ' _ "$case_dir" "$ROOT" "$TEARDOWN" ) > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?

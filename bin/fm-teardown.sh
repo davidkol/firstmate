@@ -87,6 +87,24 @@
 # checks before any destructive return. Teardown output notes every wait, retry, and
 # removal so the operator can see what happened.
 #
+# Slot ownership. A task's recorded worktree= is a durable claim, not proof that the
+# task still holds that pool slot: once its worker exits, treehouse frees the slot
+# immediately and may hand it to a different task - in this home, in a secondmate
+# home, or in an independent peer home that appears in no registry anywhere. Before
+# the safety inspection and again immediately before the return, teardown resolves
+# ownership through bin/fm-treehouse-lib.sh, which decides from the pool's own
+# allocation record for that exact path (recorded as wt_alloc= at spawn) and from the
+# fm/<task-id> branch the slot currently has checked out. Ownership that reads as
+# FOREIGN stops teardown before any process is signalled, any file or branch is
+# deleted, and any slot is returned, and --force does NOT override it: --force
+# authorizes discarding this task's work, never another task's. Ownership that can be
+# proven neither way refuses the same way, but there --force is the documented escape
+# once the operator has inspected the slot. A worktree that is no pool slot at all
+# (Orca, a plain git worktree) has nothing for this boundary to decide.
+# A secondmate home is returned under the pool's own --if-lease-holder guard, so a
+# lease that moved to another holder is refused by the pool itself rather than by a
+# check that could go stale between reading and acting.
+#
 # Pre-teardown cleanup, both running after every landed/discard-work refusal has
 # passed and before ANY destructive step:
 #   Fix 1 - conclude a parked no-mistakes run. A ship task could be torn down
@@ -149,6 +167,8 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
 # shellcheck source=bin/fm-project-lib.sh
 . "$SCRIPT_DIR/fm-project-lib.sh"
+# shellcheck source=bin/fm-treehouse-lib.sh
+. "$SCRIPT_DIR/fm-treehouse-lib.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
@@ -186,6 +206,10 @@ fi
 "$FM_ROOT/bin/fm-guard.sh" || true
 HOME_PATH=$(grep '^home=' "$META" | cut -d= -f2- || true)
 PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
+# The pool allocation this task was handed at spawn (bin/fm-treehouse-lib.sh).
+# Absent for a task spawned before it was recorded; ownership then rests on the
+# slot's own branch instead.
+WT_ALLOC=$(fm_meta_get "$META" wt_alloc)
 # tasktmp is recorded by fm-spawn for tasks that set up a per-task temp root
 # (/tmp/fm-<id>/); absent for tasks spawned before that change, so tolerate empty.
 TASK_TMP=$(grep '^tasktmp=' "$META" | cut -d= -f2- || true)
@@ -668,6 +692,19 @@ cleanup_stale_lock_for_safety_check() {
   return "$TEARDOWN_TREEHOUSE_LOCK_REFUSED"
 }
 
+# Run one `treehouse return --force`, adding the pool's own lease guard when the
+# caller set RETURN_LEASE_HOLDER_GUARD. That guard makes the pool itself refuse a
+# return whose lease has since moved to another holder, so the ownership check and
+# the destructive act are one operation with no gap between them.
+teardown_treehouse_return_once() {  # <dir> <cd_dir>
+  local dir=$1 cd_dir=$2
+  if [ -n "${RETURN_LEASE_HOLDER_GUARD:-}" ]; then
+    ( cd "$cd_dir" && treehouse return --force --if-lease-holder "$RETURN_LEASE_HOLDER_GUARD" "$dir" ) 2>&1
+  else
+    ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1
+  fi
+}
+
 # Return a worktree/home via `treehouse return --force`, tolerating a transient or
 # stale git index.lock left by a killed crew process. See the script header.
 teardown_treehouse_return() {
@@ -676,7 +713,7 @@ teardown_treehouse_return() {
 
   # Capture stdout+stderr so non-lock failures stay visible and lock failures can
   # be matched by signature even when the lock file is already gone mid-check.
-  if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+  if out=$(teardown_treehouse_return_once "$dir" "$cd_dir"); then
     [ -n "$out" ] && printf '%s\n' "$out"
     return 0
   fi
@@ -701,7 +738,7 @@ teardown_treehouse_return() {
     echo "teardown: $label return failed with transient git lock ($lock_desc); waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${max_retries})" >&2
     sleep "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"
 
-    if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+    if out=$(teardown_treehouse_return_once "$dir" "$cd_dir"); then
       [ -n "$out" ] && printf '%s\n' "$out"
       echo "teardown: $label return succeeded on retry; lock cleared on its own" >&2
       return 0
@@ -728,7 +765,7 @@ teardown_treehouse_return() {
           return 1
         fi
       fi
-      if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+      if out=$(teardown_treehouse_return_once "$dir" "$cd_dir"); then
         [ -n "$out" ] && printf '%s\n' "$out"
         echo "teardown: $label return succeeded after stale-lock cleanup" >&2
         return 0
@@ -1000,7 +1037,7 @@ EOF
 }
 
 remove_firstmate_home() {
-  local home=$1 label=$2 expected_id=${3:-} abs_home_path
+  local home=$1 label=$2 expected_id=${3:-} abs_home_path lease_holder
   [ -n "$home" ] || return 0
   [ -e "$home" ] || return 0
   abs_home_path=$(validate_firstmate_home_for_removal "$home" "$label" "$expected_id") || return 1
@@ -1010,10 +1047,25 @@ remove_firstmate_home() {
       echo "error: treehouse command not found; cannot return $label $abs_home_path" >&2
       return 1
     }
+    # A secondmate home holds its slot by a durable lease under its own id. Refuse
+    # when the pool says that lease has moved to somebody else, then let the pool
+    # enforce the same thing atomically on the return itself, so a lease that
+    # changes hands between the two is still caught.
+    RETURN_LEASE_HOLDER_GUARD=
+    if [ -n "$expected_id" ] && lease_holder=$(fm_treehouse_lease_holder "$abs_home_path" 2>/dev/null); then
+      if [ -n "$lease_holder" ] && [ "$lease_holder" != "$expected_id" ]; then
+        echo "REFUSED: $label $abs_home_path is leased from the worktree pool by $lease_holder, not $expected_id." >&2
+        echo "Nothing was removed or returned. Retire the home that actually holds it." >&2
+        return 1
+      fi
+      [ -z "$lease_holder" ] || RETURN_LEASE_HOLDER_GUARD=$expected_id
+    fi
     teardown_treehouse_return "$abs_home_path" "$FM_ROOT" "$label" || {
+      RETURN_LEASE_HOLDER_GUARD=
       echo "error: treehouse return failed for $label $abs_home_path; lease may still be held" >&2
       return 1
     }
+    RETURN_LEASE_HOLDER_GUARD=
     return 0
   fi
   safe_rm_rf "$abs_home_path" "$label"
@@ -1553,6 +1605,56 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ] &&
   ORCA_PATH_MATCH_VERIFIED=1
 fi
 
+# Shared refusal for the pre-teardown steps below: they refuse rather than proceed
+# with cleanup they could not confirm, and this is where --force converts such a
+# refusal into a loud discard that names what it leaves behind.
+teardown_precheck_force_or_exit() {
+  [ "$FORCE" = "--force" ] || exit 1
+  echo "warning: --force tears the task down anyway, leaving behind: ${TEARDOWN_PRECHECK_SURVIVORS:-unidentified live work under $WT}" >&2
+}
+
+# Refuse every destructive step below unless this task still holds the pool slot its
+# record names. A recorded worktree= is a claim, not tenancy: once a worker exits the
+# pool frees the slot at once and may hand it to another task - in this home, in a
+# secondmate home, or in an independent peer home that no registry anywhere lists.
+# bin/fm-treehouse-lib.sh owns how ownership is decided; this is where it is enforced.
+#
+# foreign   never proceeds, and --force does not override it. --force authorizes
+#           discarding THIS task's work; it can never authorize discarding another
+#           task's, and the operator's path is to correct the stale record, not to
+#           overrule the pool.
+# ambiguous refuses too, but --force is the documented escape once the operator has
+#           looked at the slot and accepted what is in it.
+# unmanaged means the path is no pool slot at all (an Orca worktree, a plain git
+#           worktree), where this boundary has nothing to decide.
+require_worktree_slot_ownership() {  # <phase>
+  local phase=$1 classified verdict reason
+  [ "$KIND" != secondmate ] || return 0
+  [ -n "$WT" ] || return 0
+  classified=$(fm_treehouse_classify_slot "$WT" "$ID" "$WT_ALLOC")
+  verdict=${classified%%$'\t'*}
+  reason=${classified#*$'\t'}
+  case "$verdict" in
+    owned|unmanaged) return 0 ;;
+    foreign)
+      echo "REFUSED: $ID no longer holds the worktree its record names, so $phase would destroy another task's work." >&2
+      echo "Evidence: $reason." >&2
+      echo "Nothing was killed, deleted or returned. Correct the stale worktree record for $ID (or let the current holder finish); --force does not override this, because it authorizes discarding this task's work, never another task's." >&2
+      exit 1
+      ;;
+    *)
+      TEARDOWN_PRECHECK_SURVIVORS="whatever currently occupies $WT"
+      echo "REFUSED: $ID cannot prove it still holds $WT, so $phase is unsafe." >&2
+      echo "Evidence: $reason." >&2
+      echo "Inspect the slot with 'treehouse status' before deciding; --force proceeds once you accept what is in it." >&2
+      teardown_precheck_force_or_exit
+      return 0
+      ;;
+  esac
+}
+
+require_worktree_slot_ownership "cleanup"
+
 if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
   if validate_worktree_teardown_safety; then
     :
@@ -1573,14 +1675,6 @@ fi
 # leaked process can own live work in this exact worktree. Not for
 # kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
 # firstmate-home removal machinery further below, not by task-worktree cleanup.
-# Both refuse rather than let teardown proceed with cleanup they could not
-# confirm; this is the one place --force converts either refusal into a loud
-# discard that names what it leaves behind.
-teardown_precheck_force_or_exit() {
-  [ "$FORCE" = "--force" ] || exit 1
-  echo "warning: --force tears the task down anyway, leaving behind: ${TEARDOWN_PRECHECK_SURVIVORS:-unidentified live work under $WT}" >&2
-}
-
 if [ "$KIND" != secondmate ]; then
   conclude_task_no_mistakes_run "$WT" || teardown_precheck_force_or_exit
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP" || teardown_precheck_force_or_exit
@@ -1606,6 +1700,7 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
   [ -z "$T_ORCA" ] || fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
   fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
 elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
+  require_worktree_slot_ownership "returning the worktree"
   branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
   if [ "$branch" != "HEAD" ]; then
     if git -C "$WT" checkout --detach -q 2>/dev/null; then
