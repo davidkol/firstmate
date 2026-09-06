@@ -34,7 +34,9 @@ unset TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION HERDR_SOCKET_PATH \
   CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_SOCKET_PATH CMUX_TAB_ID CMUX_PANEL_ID 2>/dev/null || true
 
 # A fake toolchain where every required tool is present and gh is authenticated.
-# treehouse's `get --help` advertises --lease only when FM_FAKE_TREEHOUSE_LEASE_HELP=1.
+# treehouse's `get --help` advertises --lease only when FM_FAKE_TREEHOUSE_LEASE_HELP=1,
+# and `return --help` advertises the --if-lease-id/--if-lease-holder preconditions
+# only when FM_FAKE_TREEHOUSE_RETURN_HELP=1 (defaulting to the same switch).
 make_fake_toolchain() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
@@ -54,6 +56,14 @@ if [ "${1:-}" = get ] && [ "${2:-}" = --help ]; then
     printf '%s\n' 'Usage: treehouse get [--lease] [--lease-holder <holder>]'
   else
     printf '%s\n' 'Usage: treehouse get'
+  fi
+  exit 0
+fi
+if [ "${1:-}" = return ] && [ "${2:-}" = --help ]; then
+  if [ "${FM_FAKE_TREEHOUSE_RETURN_HELP:-${FM_FAKE_TREEHOUSE_LEASE_HELP:-}}" = 1 ]; then
+    printf '%s\n' 'Usage: treehouse return [--force] [--if-lease-id <id>] [--if-lease-holder <holder>]'
+  else
+    printf '%s\n' 'Usage: treehouse return [--force]'
   fi
   exit 0
 fi
@@ -576,6 +586,22 @@ test_treehouse_lease_check_follows_resolved_backend() {
     "$ROOT/bin/fm-bootstrap.sh")
   assert_contains "$out" "MISSING: treehouse" "backend=herdr must still require treehouse with durable lease support"
   assert_not_contains "$out" "MISSING: tmux" "backend=herdr must not demand tmux even when treehouse is too old"
+
+  # A build that can reserve a slot but cannot release it under a lease
+  # precondition passes spawn and then strands teardown with no safe return, so it
+  # is reported the same way as one that cannot lease at all.
+  case_dir="$TMP_ROOT/tmux-no-conditional-return"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_FAKE_TREEHOUSE_RETURN_HELP=0 "$ROOT/bin/fm-bootstrap.sh")
+  assert_contains "$out" "MISSING: treehouse" \
+    "a treehouse that cannot make a return conditional on its lease must report an upgrade"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_FAKE_TREEHOUSE_RETURN_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  assert_not_contains "$out" "MISSING: treehouse" \
+    "a treehouse with both lease and conditional-return support must be accepted"
   pass "bootstrap: the treehouse lease check follows the resolved backend's worktree provider"
 }
 

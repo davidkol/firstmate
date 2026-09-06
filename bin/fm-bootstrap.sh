@@ -46,7 +46,9 @@
 #          on a feature branch instead of its default branch - a crewmate's work
 #          landed in the primary instead of its own worktree; restore it per the line.
 #          treehouse is also MISSING when its installed version lacks
-#          "treehouse get --lease" support.
+#          "treehouse get --lease" support, or lacks the "treehouse return"
+#          --if-lease-id/--if-lease-holder preconditions teardown returns a
+#          leased slot under.
 #          no-mistakes is also MISSING when its installed version is older than
 #          1.31.2.
 #          tasks-axi and quota-axi are required bootstrap tools (same class as
@@ -120,6 +122,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-project-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-project-lib.sh"
+# shellcheck source=bin/fm-treehouse-lib.sh disable=SC1091
+. "$SCRIPT_DIR/fm-treehouse-lib.sh"
 
 fleet_sync_origin_backed_project_count() {
   local count records project_id
@@ -555,10 +559,6 @@ NO_MISTAKES_MIN_MAJOR=1
 NO_MISTAKES_MIN_MINOR=31
 NO_MISTAKES_MIN_PATCH=2
 
-treehouse_supports_lease() {
-  treehouse get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'
-}
-
 no_mistakes_version_parts() {
   local output
   command -v no-mistakes >/dev/null 2>&1 || return 1
@@ -877,8 +877,14 @@ done
 # The treehouse lease-support upgrade check is only relevant when the resolved
 # backend actually requires treehouse (every backend except orca, which owns its
 # own worktrees); an orca home must not be told to upgrade a provider it never uses.
+# Both capabilities are probed because a task worktree needs both: `get --lease`
+# reserves the slot for the task's whole life, and `return --if-lease-id` /
+# `--if-lease-holder` release it under a precondition the pool evaluates atomically.
+# A build with one and not the other passes spawn and then leaves teardown with no
+# safe way to return the slot (bin/fm-treehouse-lib.sh).
 if fm_backend_list_contains "$TOOLS" treehouse \
-  && command -v treehouse >/dev/null 2>&1 && ! treehouse_supports_lease; then
+  && command -v treehouse >/dev/null 2>&1 \
+  && { ! fm_treehouse_supports_lease || ! fm_treehouse_supports_conditional_return; }; then
   echo "MISSING: treehouse (install: $(install_cmd treehouse))"
 fi
 if command -v no-mistakes >/dev/null 2>&1 && ! no_mistakes_compatible; then

@@ -332,6 +332,9 @@ Backend tool availability uses the adapter's own executable resolver, so bootstr
 An unknown resolved backend emits `BACKEND_INVALID` and blocks dispatch instead of silently dropping its dependency delta or falling back to tmux.
 Orca provides both the task worktree and terminal endpoint (see "Runtime backend" above), so `backend=orca` requires only `orca` on top of the universal toolchain and skips both `treehouse` and every other backend's session CLI.
 A herdr, zellij, or cmux home is therefore never told `tmux` is missing, and the `treehouse` durable-lease upgrade check runs only for the backends that actually use treehouse.
+That upgrade check covers both capabilities a task worktree depends on: `treehouse get --lease`, which reserves the slot for the task's whole life so the pool cannot hand it to another task mid-cleanup, and `treehouse return --if-lease-id` / `--if-lease-holder`, which releases it under a precondition the pool evaluates atomically with the return.
+A build with one and not the other reports `MISSING: treehouse` rather than leaving teardown with no safe way to give the slot back.
+Worktree-pool ownership itself is read with `node` from the universal toolchain, so it needs no additional JSON tool on any backend.
 When `config/crew-dispatch.json` exists, bootstrap also requires `jq` for dispatch profile validation.
 When X mode is opted in, bootstrap also requires `curl` and `jq` before arming the relay poll shim.
 `tasks-axi` and `quota-axi` are required bootstrap tools in every profile, the same class as `lavish-axi`.

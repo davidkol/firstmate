@@ -241,6 +241,10 @@ fi
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
+# Set to this task's id once the pool has been asked for a durable lease under it,
+# and cleared once the task record exists to own that lease. While it is set, an
+# aborted spawn is the only thing that can release the slot again.
+TREEHOUSE_LEASE_ABORT_HOLDER=
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
 HERDR_PROJECTION_ABORT_TASK_PANE=
@@ -319,6 +323,23 @@ spawn_abort_cleanup() {
             [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
           } > "$STATE/$ID.meta" 2>/dev/null || true
         fi
+      fi
+    fi
+  fi
+  # A spawn that leased a pool slot and then failed still holds that slot: a lease
+  # outlives the process that took it, which is exactly why it can reserve a slot
+  # through cleanup, and so it never frees itself. Release it under the same holder
+  # the pool recorded, so the pool refuses if the lease has meanwhile moved on.
+  if [ "$status" -ne 0 ] && [ -n "$TREEHOUSE_LEASE_ABORT_HOLDER" ] \
+     && command -v treehouse >/dev/null 2>&1; then
+    local abort_holder=$TREEHOUSE_LEASE_ABORT_HOLDER abort_slot
+    TREEHOUSE_LEASE_ABORT_HOLDER=
+    if abort_slot=$(fm_treehouse_leased_slot_path "$PROJ_ABS" "$abort_holder" 2>/dev/null); then
+      if ( cd "$PROJ_ABS" && treehouse return --force --if-lease-holder "$abort_holder" \
+             "$abort_slot" >/dev/null 2>&1 ); then
+        echo "spawn: released the worktree lease $abort_holder held on $abort_slot after an aborted launch" >&2
+      else
+        echo "warning: could not release the worktree lease $abort_holder holds on $abort_slot; return it with: treehouse return --force --if-lease-holder $abort_holder $abort_slot" >&2
       fi
     fi
   fi
@@ -1442,9 +1463,19 @@ kimi_spawn_fail() {  # <detail>
 }
 
 if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
+  # Reserve the slot with the pool's own DURABLE lease, not a plain `treehouse get`.
+  # A plain get ties the slot to the worker process, so the pool frees it the instant
+  # that process exits and may hand it to another task while this one's cleanup is
+  # still killing, deleting and returning things inside it. A lease is held under this
+  # task's own id for the task's whole life: no later get can take the slot, and
+  # teardown releases it with `treehouse return --if-lease-id`, whose precondition the
+  # pool evaluates atomically with the return. See bin/fm-treehouse-lib.sh.
+  # From here until the task record exists, an aborted spawn owns releasing it.
+  TREEHOUSE_LEASE_ABORT_HOLDER=$ID
+  spawn_send_text_line "$WT_TARGET" \
+    "__fm_wt=\$(treehouse get --lease --lease-holder $(shell_quote "$ID")) && cd \"\$__fm_wt\""
 
-  # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
+  # Wait for the lease to land: the pane's cwd moves from the project to the worktree.
   # Target the stable window id, not the name: if the name is ever lost (e.g. an
   # automatic-rename slips through), display-message -t <bad-name> falls back to the
   # active client's window, which would misread firstmate's OWN pane path as the
@@ -1484,16 +1515,17 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     sleep 1
   done
   if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
+    echo "error: treehouse get --lease did not enter a worktree within 60s; inspect window $T (a treehouse without --lease support cannot reserve a slot - see bin/fm-bootstrap.sh)" >&2
     exit 1
   fi
 
-  validate_spawn_worktree "treehouse get" "$T"
+  validate_spawn_worktree "treehouse get --lease" "$T"
 
   # Capture the pool's own record of the allocation this task was just handed, so
   # cleanup can later tell "still ours" from "the pool has since given this slot to
   # somebody else" without enumerating homes. See bin/fm-treehouse-lib.sh. An
-  # unreadable pool leaves this empty: cleanup then falls back to the branch signal.
+  # unreadable pool leaves this empty: cleanup then falls back to the branch signal
+  # and to the lease holder the pool itself reports, which is this task's own id.
   WT_ALLOC=$(fm_treehouse_allocation "$WT" 2>/dev/null) || WT_ALLOC=
 fi
 
@@ -1796,6 +1828,9 @@ META_WINDOW=$T
     echo "projects=$SECONDMATE_PROJECTS"
   fi
 } > "$STATE/$ID.meta"
+# The task record now names the slot and the lease it holds, so teardown owns
+# releasing that lease from here on.
+TREEHOUSE_LEASE_ABORT_HOLDER=
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
 sq_brief=$(shell_quote "$BRIEF")
