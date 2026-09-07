@@ -295,7 +295,6 @@ FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=117611
 The captain-visible Codex supervision-noise correction was deterministically verified in this repository on 2026-08-10.
 The quiet checkpoint returned status 124 with no output, a preexisting durable queue returned an immediate `queue:` reason, and a real signal still passed through with its queue record intact for the drain.
 Routine drains suppressed an unchanged buried decision while boundedly reading only new status bytes, surfaced an identically worded decision after resolution made it newly actionable again, and `--open-decisions all` restored the complete durable set for session recovery.
-A session-start Codex preflight suppressed only the impossible pre-first-checkpoint watcher-down banner, while the next ordinary guard call still emitted the full liveness alarm.
 A surfaced signal absorbed its one following bare stale duplicate into the stuck timer, changed pipeline step-log evidence reset that timer, and unchanged pipeline evidence still wedge-escalated.
 Declared pauses and captain-held dead endpoints recorded their bounded internal rechecks without queueing another captain wake, while a live external-decision gate still surfaced once.
 An explicit `branch_sync.state: pipeline_owned` fixture kept a divergent live fix round attributable, while the historical same-branch rewritten-head negative control still fell back from run-step state.
@@ -309,10 +308,9 @@ tests/fm-watch-triage.test.sh
 ```
 
 All five commands exited zero.
-The opt-in `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` passed with codex-cli 0.147.0, starting no checkpoint for the idle home and delivering plus draining the live home's real actionable wake.
 
 The Codex foreground-checkpoint correction and concise fleet-status projection were deterministically verified in this repository on 2026-08-09.
-The pull guard accepted a fresh checkpoint beacon without a live watcher only mid-turn, while the Codex Stop hook still emitted a typed block that required the next foreground checkpoint, and that block deferred to the away-mode instruction instead of contradicting it.
+The pull guard accepted a fresh between-turns beacon without a live watcher only mid-turn, while the Codex Stop hook still emitted a typed block carrying the harness repair line, and that block deferred to the away-mode instruction instead of contradicting it.
 A secondmate launch pinned the supervision model of its OWN harness from the single mapping owner, so a spawned Codex secondmate stayed quiet mid-turn while a persistent-watcher secondmate still alarmed.
 The default fleet view counted only run-step or semantic-busy work as active, marked every other working report unverified, listed terminal work with its PR or report pointer, and left only records with no live, terminal, or blocked state for reconciliation.
 Every registered primary guard integration remained covered by the shared guard suite, and the runtime backends remained outside this change because the view renders only the backend-agnostic fleet snapshot contract.
@@ -366,7 +364,7 @@ grok 0.2.103 (89c3d36fb6f1) [stable]
 | Harness | Exact opt-in command | Observed guarantee |
 | --- | --- | --- |
 | Claude | `FM_CLAUDE_LIVE_E2E=1 tests/fm-claude-stop-autoarm-live-e2e.test.sh` | Session start reclaimed a stale owner before two Stop-owned cycles, and a competing live owner prevented arm, rewake, epoch write, or lock replacement. |
-| Codex | `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` | The one-second foreground checkpoint returned without switching to the arm wrapper. |
+| Codex | `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` | An idle home armed nothing; one turn end armed a detached supervisor that resumed the same conversation on a worker event. |
 | OpenCode | `FM_OPENCODE_LIVE_E2E=1 tests/fm-opencode-primary-live-e2e.test.sh` | A verified successor existed before prompt handling, with no model re-arm or turn-end fallback. |
 | Pi | `FM_PI_LIVE_E2E=1 tests/fm-pi-primary-live-e2e.test.sh` | One initial tool call led to extension-owned successors and clean child retirement on exit. |
 | Grok | `FM_GROK_LIVE_E2E=1 tests/fm-grok-continuity-live-e2e.test.sh` | Native task completion surfaced the actionable close and the cycle ledger recorded `reason=actionable-signal`. |
@@ -395,6 +393,52 @@ tests/fm-subagent-pretool-check.test.sh
 tests/fm-claude-stop-autoarm.test.sh
 tests/fm-turnend-guard.test.sh
 ```
+
+### Codex Stop-owned background wake
+
+The Codex primary's routine supervision moved from a bounded foreground checkpoint to a Stop-launched detached supervisor on 2026-09-07.
+The capability probes and the live pass ran on macOS 15.7.7 (Darwin 24.6.0, arm64) under tmux 3.5a, against isolated project and home state, with no credential material copied into a fixture.
+
+```text
+codex-cli 0.153.4
+```
+
+Two supported interfaces carry the behavior, and both were verified against that executing client rather than inferred from schema acceptance.
+The `Stop` hook payload carries this conversation's own `session_id`, which is the only supported source of the thread id to wake.
+`codex queue --thread <id> --message <text>` publishes into an existing conversation and resumes it while it is idle.
+
+Observed on that client:
+
+- A queued message resumed a parked interactive conversation, which ran a turn and answered.
+- A 90-second idle window with no queued message produced a byte-identical pane and no additional `Stop` firing.
+- A message queued while the conversation was mid-turn was held, not dropped: the running turn finished first, then the queued message ran as its own turn.
+- A `Stop` hook returned within the same second while the process it launched through `bin/fm-codex-detach.sh` reached `ppid=1` with its own process group, survived, and then resumed the idle conversation.
+- An unknown thread id failed loudly with exit 1 and `no rollout found for thread id`.
+- **A thread that had already exited returned exit 0 and reported the message queued.** A successful publication is therefore never delivery evidence; the durable `state/.wake-queue` record is what makes that safe, because the next session start drains it.
+
+macOS ships no `setsid(1)`, so `bin/fm-codex-detach.sh` uses a core `POSIX::setsid` double-fork.
+Linux is untested for that helper.
+
+The live pass drove a real interactive conversation in its own tmux session against a disposable home.
+An idle home ended a turn and armed neither a supervisor nor a watcher.
+With work in flight, one turn end recorded a supervisor bound to that conversation, detached to `ppid=1`, with `bin/fm-watch-arm.sh` and `bin/fm-watch.sh` alive beneath it and no foreground checkpoint anywhere in the transcript.
+A 45-second parked window left the pane byte-identical, so the wait cost no model or tool call.
+A captain message during that window was answered normally and reused the same supervisor pid rather than starting a second cycle.
+A worker's `needs-decision:` status append then resumed that same idle conversation with one marked `watcher` operational input, which it drained to the worker's own request, and the handling turn's own `Stop` armed a fresh supervisor for the same conversation with no model action.
+
+```sh
+FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh
+tests/fm-codex-stop-autoarm.test.sh
+tests/fm-turnend-guard.test.sh
+tests/fm-guard-stale-banner.test.sh
+tests/fm-session-start.test.sh
+```
+
+All five commands exited zero.
+Four mutations were run against the new oracles and each failed as intended: restoring the retired `codex` -> `checkpoint` supervision-model mapping, dropping the guard's conversation-identity check on the supervisor record, dropping stale-supervisor retirement, and publishing the wake body unmarked.
+
+Codex now shares Claude's `autoarm` supervision model, which retires the Codex-only `checkpoint` model and the session-start banner suppression that depended on it.
+That suppression was correct only while a Codex watcher could not exist before the first checkpoint; a detached supervisor outlives its conversation, so an absent watcher at session start is now a genuine lapse and alarms as it does for every other harness.
 
 ## Wedge-alarm channels
 
