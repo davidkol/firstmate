@@ -21,7 +21,7 @@ set -eu
 [ "$#" -ge 1 ] || { echo "usage: $(basename "$0") <command> [args...]" >&2; exit 2; }
 case "${1:-}" in
   -h|--help)
-    sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
 esac

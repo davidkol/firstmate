@@ -25,11 +25,6 @@ fail() {
 command -v codex >/dev/null 2>&1 || fail "codex not found"
 command -v tmux >/dev/null 2>&1 || fail "tmux not found"
 
-# The candidate's own liveness and watcher-health predicates, so the successor
-# check below asks the same question the guard and the arm layer ask.
-# shellcheck source=bin/fm-wake-lib.sh
-. "$ROOT/bin/fm-wake-lib.sh"
-
 LAB="$ROOT/.codex-live-e2e.$$"
 PROJECT="$LAB/project"
 HOME_DIR="$LAB/fmhome"
@@ -140,6 +135,16 @@ git clone -q "$ROOT" "$PROJECT"
 git -C "$ROOT" diff --binary HEAD | git -C "$PROJECT" apply - \
   || fail "could not project the candidate diff into the isolated Codex clone"
 mkdir -p "$HOME_DIR/state" "$HOME_DIR/config"
+
+# The candidate's own liveness and watcher-health predicates, so the successor
+# check below asks the same question the guard and the arm layer ask. Source it
+# only once the isolated home exists and is pointed at, because the library
+# resolves and creates a state directory from the environment as it loads; at
+# the top of this file that would be the developer's own checkout.
+FM_HOME="$HOME_DIR"
+FM_STATE_OVERRIDE="$HOME_DIR/state"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$PROJECT/bin/fm-wake-lib.sh"
 
 PROMPT='You are a Firstmate primary session for this isolated test home. Reply with exactly READY and nothing else. Later, if you receive a firstmate supervision notification, run bin/fm-wake-drain.sh once and report in one line what it said.'
 

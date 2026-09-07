@@ -159,6 +159,8 @@ fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 # --- the actual predicate ----------------------------------------------------
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
 BUDGET_FILE="$STATE/.turnend-claude-blocks"
 BUDGET_LOCK="$STATE/.turnend-claude-blocks.lock"
@@ -272,14 +274,48 @@ codex_autoarm_delivered_wake() {
   [ "$age" -ge 0 ] && [ "$age" -lt "$CODEX_OUTCOME_FRESH" ]
 }
 
-codex_autoarm_owns_recovery() {
+# A usable delivery route for THIS conversation, judged without reference to the
+# failure episode. The cooperative allow below withholds trust from a merely
+# started supervisor while an episode stands; this predicate answers the
+# different question of whether the route itself is intact, which is what
+# decides when an episode has actually ended.
+codex_delivery_route_ok() {
   codex_binding_snapshot || return 1
   # The wake target must be this conversation; a supervisor bound to a closed
   # one would publish where nobody is reading.
   [ "$CODEX_BIND_SESSION" = "$SESSION_ID" ] || return 1
+  codex_supervisor_process_live && return 0
+  codex_autoarm_delivered_wake
+}
+
+codex_autoarm_owns_recovery() {
+  codex_binding_snapshot || return 1
+  [ "$CODEX_BIND_SESSION" = "$SESSION_ID" ] || return 1
   codex_autoarm_supervisor_live && return 0
   codex_autoarm_delivered_wake
 }
+
+# Supervision belongs to the session holding state/.lock. The Stop-owned wake
+# applies exactly this gate before it arms, and a session it declines to arm for
+# must not then be told to repair the owner's supervision: a read-only Codex
+# session sits beside a healthy watcher it neither started nor may touch. So the
+# Codex-specific delivery proof is asked ONLY of the owning session; a session
+# with a live foreign owner keeps the shared harness behavior and never writes
+# or clears this home's episode state.
+#
+# Only a LIVE foreign owner is someone else's home. A missing, malformed or dead
+# recorded owner is not another session, so the owning-session rules still apply
+# and a genuine diagnostic still reaches the conversation.
+CODEX_FOREIGN_OWNER=0
+if [ "$CODEX_MODE" -eq 1 ] && ! fm_session_lock_owned_by_self "$STATE"; then
+  codex_lock_pid=$(cat "$STATE/.lock" 2>/dev/null || true)
+  case "$codex_lock_pid" in
+    ''|*[!0-9]*) : ;;
+    *) fm_harness_pid_alive "$codex_lock_pid" && CODEX_FOREIGN_OWNER=1 ;;
+  esac
+fi
+CODEX_OWNS_HOME=0
+[ "$CODEX_MODE" -eq 1 ] && [ "$CODEX_FOREIGN_OWNER" -eq 0 ] && CODEX_OWNS_HOME=1
 
 fm_supervision_status "$STATE" "$GRACE"
 if [ "$FM_SUP_NEEDED" = false ]; then
@@ -287,21 +323,31 @@ if [ "$FM_SUP_NEEDED" = false ]; then
   # cause. No supervisor survives a failed cycle to reach this boundary, and the
   # auto-arm hook returns even earlier, so this is the one place that can retire
   # it before a later batch of work inherits a stale, misleading block.
-  [ "$CODEX_MODE" -eq 1 ] && codex_failure_episode_clear
+  [ "$CODEX_OWNS_HOME" -eq 1 ] && codex_failure_episode_clear
   [ -e "$FAILURE_NOTICE" ] || budget_reset
   exit 0
 fi
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-  if [ "$CODEX_MODE" -eq 1 ]; then
-    # A verified healthy watcher is the episode's other real ending.
-    codex_failure_episode_clear
-    # It is NOT, on its own, a stop proof for Codex. The watcher observes the
-    # home; the supervisor is what turns an observed event into a message in a
-    # conversation. A watcher that is healthy while the only supervisor is bound
-    # to a conversation that has been replaced leaves this one with no route at
-    # all, which is exactly how a handoff goes missing. Away mode is the one
-    # exception: there the daemon owns triage and delivery.
-    [ -e "$STATE/.afk" ] && exit 0
+  if [ "$CODEX_OWNS_HOME" -eq 1 ]; then
+    # A healthy watcher is NOT, on its own, a stop proof for Codex. The watcher
+    # observes the home; the supervisor is what turns an observed event into a
+    # message in a conversation. A watcher that is healthy while the only
+    # supervisor is bound to a conversation that has been replaced leaves this
+    # one with no route at all, which is exactly how a handoff goes missing.
+    #
+    # It is not, on its own, the end of a failure episode either. An episode
+    # opened by a routing or publication failure is about the route to this
+    # conversation, and the stuck supervisor's own watcher is usually still
+    # beating; only a watcher that is healthy AND a route that is intact says
+    # the episode is over. Away mode is the one exception to both: there the
+    # daemon owns triage and delivery.
+    if [ -e "$STATE/.afk" ]; then
+      codex_failure_episode_clear
+      exit 0
+    fi
+    codex_delivery_route_ok && codex_failure_episode_clear
+  elif [ "$CODEX_MODE" -eq 1 ]; then
+    exit 0
   else
     [ "$CLAUDE_MODE" -eq 1 ] || exit 0
     fm_failure_episode_reset "$STATE" && exit 0
@@ -316,24 +362,68 @@ if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
   fi
 fi
 
+# What the Codex guard actually refused, in one sentence, or empty when the
+# generic repair line already says it. The repair line names the hook
+# registration and the watcher; when neither of those is the failure, saying so
+# alone would send the session to inspect two working things. This states the
+# condition; bin/fm-supervision-instructions.sh still owns the instruction.
+codex_refusal_detail() {
+  codex_binding_snapshot || {
+    printf '%s\n' 'No Stop-owned supervisor is bound to this conversation, so nothing is holding a delivery route for it.'
+    return 0
+  }
+  if [ "$CODEX_BIND_SESSION" != "$SESSION_ID" ]; then
+    if codex_supervisor_process_live; then
+      printf 'The running Stop-owned supervisor (pid %s) is bound to conversation "%s", so its wake would be published there and not to this one; this conversation has no delivery route until a Stop rebinds it.\n' \
+        "$CODEX_BIND_PID" "$CODEX_BIND_SESSION"
+    else
+      printf 'The only supervisor record belongs to conversation "%s" and its process is gone, so this conversation has no delivery route.\n' \
+        "$CODEX_BIND_SESSION"
+    fi
+    return 0
+  fi
+  if codex_failure_episode_open; then
+    printf '%s\n' 'An unresolved arm-failure episode is open for this home, so a supervisor that has only just started is not yet evidence that a watcher came up.'
+    return 0
+  fi
+  case "$CODEX_BIND_OUTCOME" in
+    wake-unpublished)
+      printf '%s\n' 'The last wake for this conversation could not be published; the event is still durable in state/.wake-queue and is drained by bin/fm-wake-drain.sh.'
+      return 0
+      ;;
+  esac
+  return 0
+}
+
 block_stop() {
-  local afk x_mode reason rule continuation
+  local afk x_mode read_only reason rule continuation detail
   local -a instr_args
   afk=0
   [ -e "$STATE/.afk" ] && afk=1
   x_mode=0
   [ -f "$CONFIG/x-mode.env" ] && x_mode=1
-  instr_args=(--afk "$afk" --x-mode "$x_mode" --repair-line)
+  # A session that does not own the home must be told repair belongs to the
+  # lock holder, not handed the owner's repair instruction.
+  read_only=0
+  [ "${CODEX_FOREIGN_OWNER:-0}" -eq 1 ] && read_only=1
+  instr_args=(--afk "$afk" --x-mode "$x_mode" --read-only "$read_only" --repair-line)
   [ -n "$HARNESS_PIN" ] && instr_args=(--harness "$HARNESS_PIN" "${instr_args[@]}")
   reason=$("$SCRIPT_DIR/fm-supervision-instructions.sh" "${instr_args[@]}" 2>/dev/null \
     || printf '%s\n' 'tasks in flight, no live watcher - repair missing watcher supervision according to the session-start operating block before ending the turn')
   if [ "$CODEX_MODE" -eq 1 ]; then
-    # bin/fm-supervision-instructions.sh owns what this session must actually do,
-    # and every branch of its line is already a complete imperative. Send it
-    # verbatim: a hardcoded lead-in would contradict or reorder the instruction
-    # it introduces, which is exactly what an "start the next checkpoint" prefix
-    # did once the routine Codex cycle stopped being a foreground checkpoint.
-    continuation=$reason
+    # bin/fm-supervision-instructions.sh owns what this session must actually
+    # do, and every branch of its line is already a complete imperative, so the
+    # line itself is still sent unaltered. What it does NOT carry is which
+    # condition failed, and the Codex refusals are not all about the hook
+    # registration it names. Lead with the observed condition, then the
+    # instruction, so the session repairs the thing that is actually broken.
+    detail=
+    [ "$afk" -eq 1 ] || [ "$read_only" -eq 1 ] || detail=$(codex_refusal_detail)
+    if [ -n "$detail" ]; then
+      continuation=$(printf '%s %s' "$detail" "$reason")
+    else
+      continuation=$reason
+    fi
     continuation=$(printf '%s' "$continuation" \
       | "$SCRIPT_DIR/fm-operational-input.sh" encode turn-end-guard 2>/dev/null || true)
     # Fail closed like every other edge here: only a successfully emitted typed
@@ -351,7 +441,9 @@ block_stop() {
     else
       printf '●  X-mode relay polling needs supervision, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_BEACON_DESC"
     fi
-    if [ "$CODEX_MODE" -eq 1 ] && codex_binding_snapshot && codex_supervisor_process_live; then
+    if [ "$read_only" -eq 1 ]; then
+      printf '●  Another live session holds this home lock, so its supervision is not yours to repair.\n'
+    elif [ "$CODEX_MODE" -eq 1 ] && codex_binding_snapshot && codex_supervisor_process_live; then
       # A supervisor IS running; it just did not prove recovery for this stop.
       # Saying otherwise would send the operator to look for a process that is
       # in front of them.
@@ -371,7 +463,7 @@ block_stop() {
   exit 2
 }
 
-if [ "$CODEX_MODE" -eq 1 ]; then
+if [ "$CODEX_OWNS_HOME" -eq 1 ]; then
   codex_waited=0
   while :; do
     codex_autoarm_owns_recovery && exit 0

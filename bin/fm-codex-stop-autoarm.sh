@@ -99,7 +99,8 @@
 #     another, and it is written only after the publication call succeeds, so a
 #     notice that never reached the conversation cannot suppress the next one.
 # Both are cleared together, and only by real recovery: a wake this supervisor
-# actually published, a verified healthy watcher, or a home that no longer needs
+# actually published, a verified healthy watcher whose delivery route for the
+# current conversation is also intact, or a home that no longer needs
 # supervision at all. A new supervisor merely starting never clears either.
 # Every one of those endings has an owner. A failed cycle, a failed retirement,
 # and a wake whose publication failed all OPEN the episode here; the two
@@ -337,7 +338,7 @@ queue_wake() {  # <session-id> <body> -> 0 published, 1 rejected, 2 unencodable
 # recovery evidence for the next session start, not an active delivery route.
 # An unencodable body is permanent and never retried. Success still means the
 # publication was ACCEPTED, never that the conversation consumed it.
-publish_wake() {  # <session-id> <body>
+publish_wake() {  # <session-id> <body> -> 0 published, 1 not published, 3 superseded
   local session=$1 body=$2 attempt=0 rc
   while :; do
     attempt=$((attempt + 1))
@@ -346,7 +347,10 @@ publish_wake() {  # <session-id> <body>
     [ "$rc" -eq 2 ] && return 1
     [ "$attempt" -lt "$PUBLISH_ATTEMPTS" ] || return 1
     sleep "$PUBLISH_RETRY_DELAY"
-    still_authorized || return 1
+    # Losing the home between retries is not a delivery failure: nothing about
+    # this home's supervision is broken, it simply stopped being ours. Say so
+    # with its own status so the caller cannot record it as one.
+    still_authorized || return 3
   done
 }
 
@@ -382,7 +386,7 @@ still_authorized() {
 }
 
 main_supervise() {  # <session-id>
-  local session=$1 actionable=0 healthy=0 attempt=0 reasons
+  local session=$1 actionable=0 healthy=0 attempt=0 reasons publish_rc=0
 
   fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
   CODEX_BIN=$(command -v codex 2>/dev/null || true)
@@ -502,7 +506,13 @@ main_supervise() {  # <session-id>
       write_binding "$session" superseded
       exit 0
     fi
-    if publish_wake "$session" "$(printf 'FIRSTMATE WATCHER WAKE - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is Stop-hook-owned; do not arm another cycle yourself.\n\n%s' "$reasons")"; then
+    publish_wake "$session" "$(printf 'FIRSTMATE WATCHER WAKE - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is Stop-hook-owned; do not arm another cycle yourself.\n\n%s' "$reasons")"
+    publish_rc=$?
+    if [ "$publish_rc" -eq 3 ]; then
+      write_binding "$session" superseded
+      exit 0
+    fi
+    if [ "$publish_rc" -eq 0 ]; then
       write_binding "$session" wake
       failure_episode_clear
     else

@@ -107,6 +107,7 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/fm-primary-scope-lib.sh"
   cp "$ROOT/bin/fm-supervision-lib.sh" "$dir/bin/fm-supervision-lib.sh"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
+  cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
   chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh"
@@ -252,6 +253,32 @@ write_healthy_watcher() {  # <dir> <pid>
   bash -c '. "$1/bin/fm-wake-lib.sh"; FM_HOME=$2 fm_watcher_healthy "$2/state" "$3" 300 "$2"' \
     _ "$ROOT" "$home" "$watch" \
     || fail "the healthy-watcher fixture is not accepted by fm_watcher_healthy"
+}
+
+# A live process another Codex session's fleet lock can legitimately name, so
+# the guard sees a real foreign owner rather than a stale record.
+start_foreign_primary() {  # <dir>
+  local dir=$1 bin i
+  bin="$TMP_ROOT/foreign-harness"
+  mkdir -p "$bin"
+  [ -e "$bin/codex" ] || ln -s /bin/bash "$bin/codex"
+  # shellcheck disable=SC2016 # $$ must expand in the child, not here.
+  "$bin/codex" -c 'printf "%s\n" "$$" > "$1/state/.lock"; sleep 30' _ "$dir" &
+  FOREIGN_PRIMARY_PID=$!
+  i=0
+  while [ "$i" -lt 60 ] && [ ! -s "$dir/state/.lock" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  bash -c '. "$1/bin/fm-session-lock-lib.sh"; fm_harness_pid_alive "$(cat "$2/state/.lock")"' _ "$ROOT" "$dir" \
+    || fail "the foreign-primary fixture is not recognized as a live harness owner"
+}
+
+stop_foreign_primary() {
+  [ -n "${FOREIGN_PRIMARY_PID:-}" ] || return 0
+  kill "$FOREIGN_PRIMARY_PID" 2>/dev/null || true
+  wait "$FOREIGN_PRIMARY_PID" 2>/dev/null || true
+  FOREIGN_PRIMARY_PID=
 }
 
 nonexistent_pid() {
@@ -1225,6 +1252,104 @@ test_hook_codex_retires_the_failure_episode_on_a_healthy_watcher() {
   pass "fm-turnend-guard: Codex retires the failure episode once the watcher is verifiably healthy"
 }
 
+# Supervision belongs to the session holding the fleet lock. A read-only Codex
+# session sits beside a watcher it neither started nor may repair, and the
+# Stop-owned wake is already inert for it, so the guard must be too.
+test_hook_codex_stays_quiet_for_a_read_only_session_beside_a_healthy_watcher() {
+  local dir out status sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-readonly-quiet")
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  write_healthy_watcher "$dir" "$sleeper"
+  start_foreign_primary "$dir"
+  out=$(run_hook_codex_session "$dir" false sess-readonly); status=$?
+  stop_foreign_primary
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  expect_code 0 "$status" "a read-only Codex session must not be forced to continue"
+  [ -z "$out" ] || fail "a read-only Codex session was told to repair another session's supervision: $out"
+  pass "fm-turnend-guard: Codex stays quiet for a read-only session beside a healthy watcher"
+}
+
+# When such a session does have to block, the instruction must be the read-only
+# one, never the owner's repair line.
+test_hook_codex_read_only_session_gets_the_lock_holder_instruction() {
+  local dir out status reason
+  dir=$(make_primary_dir "$TMP_ROOT/codex-readonly-block")
+  : > "$dir/state/task1.meta"
+  start_foreign_primary "$dir"
+  out=$(run_hook_codex_session "$dir" false sess-readonly); status=$?
+  stop_foreign_primary
+  expect_code 0 "$status" "Codex guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "Watcher repair belongs to the session holding the fleet lock" \
+    "a read-only session must be told repair belongs to the lock holder"
+  assert_not_contains "$reason" "inspect the hook registration" \
+    "a read-only session must not be handed the owning session's repair line"
+  pass "fm-turnend-guard: a read-only Codex session is told repair belongs to the lock holder"
+}
+
+# The repair line names the hook registration and the watcher. When neither is
+# what failed, the continuation has to say what actually did.
+test_hook_codex_continuation_names_a_missing_delivery_binding() {
+  local dir out reason sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-detail-missing")
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  write_healthy_watcher "$dir" "$sleeper"
+  out=$(run_hook_codex_session "$dir" false sess-nobinding)
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "No Stop-owned supervisor is bound to this conversation" \
+    "the continuation must name the missing delivery route, not just the generic repair line"
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "the continuation must still carry the instruction its owner renders"
+  pass "fm-turnend-guard: the Codex continuation names a missing delivery binding"
+}
+
+test_hook_codex_continuation_names_a_mismatched_delivery_binding() {
+  local dir out reason sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-detail-mismatch")
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  write_codex_binding "$dir" "$sleeper" sess-old
+  write_healthy_watcher "$dir" "$sleeper"
+  out=$(run_hook_codex_session "$dir" false sess-new)
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" 'bound to conversation "sess-old"' \
+    "the continuation must name the conversation the wake would actually reach"
+  pass "fm-turnend-guard: the Codex continuation names a mismatched delivery binding"
+}
+
+# A routing failure is about the route to THIS conversation. The stuck
+# supervisor's own watcher is usually still beating, so a healthy watcher alone
+# must not close that episode.
+test_hook_codex_keeps_a_routing_episode_open_beside_a_healthy_watcher() {
+  local dir out reason sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-routing-episode")
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  write_codex_binding "$dir" "$sleeper" sess-old
+  write_healthy_watcher "$dir" "$sleeper"
+  : > "$dir/state/.codex-autoarm-failure-episode"
+  out=$(run_hook_codex_session "$dir" false sess-new)
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "a routing failure beside a healthy watcher must still block"
+  [ -e "$dir/state/.codex-autoarm-failure-episode" ] \
+    || fail "a healthy watcher closed a routing-failure episode it did not resolve"
+  pass "fm-turnend-guard: a healthy watcher alone does not close a routing-failure episode"
+}
+
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root() {
   local settings command dir expected_root outside payload out status
   settings="$ROOT/.codex/hooks.json"
@@ -2083,6 +2208,11 @@ test_hook_codex_allows_a_healthy_watcher_in_away_mode
 test_hook_codex_never_accepts_a_mixed_binding_record
 test_hook_codex_retires_the_failure_episode_when_no_work_remains
 test_hook_codex_retires_the_failure_episode_on_a_healthy_watcher
+test_hook_codex_stays_quiet_for_a_read_only_session_beside_a_healthy_watcher
+test_hook_codex_read_only_session_gets_the_lock_holder_instruction
+test_hook_codex_continuation_names_a_missing_delivery_binding
+test_hook_codex_continuation_names_a_mismatched_delivery_binding
+test_hook_codex_keeps_a_routing_episode_open_beside_a_healthy_watcher
 test_hook_codex_blocks_when_the_bound_supervisor_is_dead
 test_hook_codex_allows_when_this_conversation_has_a_fresh_published_wake
 test_hook_codex_blocks_on_a_stale_published_wake
