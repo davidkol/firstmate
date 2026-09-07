@@ -31,13 +31,11 @@ The default cross-harness mode exits silently with no supervision need.
 Every mode treats `state/x-watch.check.sh` as supervision need, so X-mode relay polling remains guarded without an in-flight task.
 Otherwise it calls `fm_watcher_healthy <state-dir> <watch-path> [grace-seconds] [home]` from `bin/fm-wake-lib.sh`, the same PID-strict identity-matched lock and fresh-beacon check used by `bin/fm-watch-arm.sh`: a stale beacon blocks even when a watcher pid is live, and a fresh leftover beacon blocks when the lock is missing, dead, or identity-mismatched.
 The turn-end guard needs that strict check because it fires at the turn boundary, where the auto-arm is bringing a fresh watcher up for the upcoming idle period, and it cooperates with that arm rather than trusting a beacon left by the cycle that just ended.
-`bin/fm-guard.sh`, the pull warning, instead uses the model-aware `fm_watcher_supervision_verdict` from the same library, because it fires mid-turn when the Claude auto-arm or Codex foreground-checkpoint model has no live watcher at that instant.
+`bin/fm-guard.sh`, the pull warning, instead uses the model-aware `fm_watcher_supervision_verdict` from the same library, because it fires mid-turn when the Claude and Codex Stop auto-arm model has no live watcher at that instant.
 Under either model a beacon fresh within grace is healthy even with no live watcher process, and only a beacon stale beyond grace (or absent) alarms.
-The strict turn-end predicate remains unchanged for both models, so a Codex checkpoint must be restarted before its primary can finish a turn.
+The strict turn-end predicate remains unchanged for both models, so a Codex primary must own a live armed cycle before it can finish a turn.
 Under every persistent-watcher harness a live identity-matched watcher with a fresh beacon is still required, so the pull guard keeps the same strict semantics there.
 Its banner names the true failing condition, either a missing live watcher process or a genuinely stale beacon with its real age, and keys the once-per-episode dedup on that condition rather than the beacon mtime.
-Session start marks only its locked wake-drain invocation with the ephemeral `FM_SUPERVISION_PREFLIGHT=1` context.
-For the Codex checkpoint model, that context suppresses the impossible pre-first-checkpoint watcher-down banner without weakening queued-wake or worktree-tangle warnings, writing durable state, or changing any later pull-guard or turn-end verdict.
 
 `FM_STATE_OVERRIDE` wins over `FM_HOME/state`, and `FM_HOME` wins over repository-root `state/`.
 `FM_GUARD_GRACE` controls beacon freshness and defaults to 300 seconds.
@@ -46,7 +44,7 @@ If `jq` is missing or hook stdin is empty, the guard exits 0 because it cannot s
 ## Harness integrations
 
 - Claude registers two `Stop` hooks in `.claude/settings.json`, both anchored through `CLAUDE_PROJECT_DIR`: `bin/fm-turnend-guard.sh --claude`, and `bin/fm-claude-stop-autoarm.sh` with `asyncRewake: true` and `timeout: 28800`.
-- Codex registers a `Stop` hook in `.codex/hooks.json`, anchors the executable to the hook process working directory, verifies a Firstmate-shaped hook-bearing root, and passes the original payload to the shared guard with `--codex`.
+- Codex registers two `Stop` hooks in `.codex/hooks.json`, each anchored to the hook process working directory and each verifying a Firstmate-shaped hook-bearing root before it runs: `bin/fm-codex-stop-autoarm.sh` first, then the shared guard with `--codex`. Both receive the original payload.
 - OpenCode listens for `session.idle` in `.opencode/plugins/fm-primary-turnend-guard.js`, lets the watcher coordinator act first, and calls `client.session.promptAsync` once when the guard returns 2.
 - Pi listens for `agent_settled` in `.pi/extensions/fm-primary-turnend-guard.ts`, runs once per logical agent run, and calls `pi.sendUserMessage(..., { deliverAs: "followUp" })` once when the guard returns 2.
 - Grok registers a `Stop` hook in `.grok/hooks/fm-primary-turnend-guard.json` and delegates capability selection to `bin/fm-turnend-guard-grok.sh`.
@@ -54,7 +52,7 @@ If `jq` is missing or hook stdin is empty, the guard exits 0 because it cannot s
 
 Claude blocks a Stop directly with exit status 2 and stderr.
 Codex uses its native JSON `decision:"block"` continuation output, so it receives one typed instruction without rendering the full operator banner as chat, carrying it with the same canonical `turn-end-guard` operational-input marking as the passive follow-ups below.
-That instruction is the harness repair line itself, led by an explicit "start the next foreground supervision checkpoint" only while away mode and X mode leave that line unredirected, and a continuation that cannot be emitted falls through to the exit-2 banner rather than allowing a blind stop.
+That instruction is the harness repair line itself, sent verbatim because every branch of that line is already a complete imperative, and a continuation that cannot be emitted falls through to the exit-2 banner rather than allowing a blind stop.
 Either mode flag comes from that harness's own registered Stop hook, so it pins the repair line's harness instead of letting `bin/fm-harness.sh` detect one: detection checks environment markers before process ancestry, and a foreign marker left in a stored multiplexer environment would otherwise hand a markerless harness another harness's instruction.
 Both payloads carry `stop_hook_active`, and `--codex` keeps the shared non-`--claude` loop guard, so a true value lets the second stop finish after one forced continuation.
 
@@ -110,7 +108,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 ## Regression coverage
 
 `tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the live-lock and fresh-beacon guard predicate, the `--codex` typed continuation with its deference to a redirected repair line and its own-harness repair pin, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
-`tests/fm-guard-stale-banner.test.sh` covers the pull-guard predicate, including the persistent-model fresh-leftover-beacon negative control, the Claude auto-arm and Codex foreground-checkpoint models' healthy fresh-beacon-without-a-watcher cases and stale-beacon alarms, the true-reason banner wording, and the reason-keyed episode dedup surviving a beacon mtime change.
+`tests/fm-guard-stale-banner.test.sh` covers the pull-guard predicate, including the persistent-model fresh-leftover-beacon negative control, the Claude and Codex Stop auto-arm model's healthy fresh-beacon-without-a-watcher case and stale-beacon alarm, the true-reason banner wording, and the reason-keyed episode dedup surviving a beacon mtime change.
 `tests/fm-kimi-harness.test.sh` covers the separate Kimi crew hook's format preservation, idempotence, refusal cases, token guard, spawn registration, and teardown cleanup.
 `tests/fm-supervision-instructions.test.sh` covers recovery-line ownership and pi-signed's identity-preserving reuse of Pi's protocol.
 `FM_PI_LIVE_E2E=1 tests/fm-pi-primary-live-e2e.test.sh` is the opt-in isolated Pi path.

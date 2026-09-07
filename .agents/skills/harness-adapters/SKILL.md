@@ -92,7 +92,7 @@ Before inspecting or changing session-open behavior, read `docs/sessionstart-nud
 At session start, `bin/fm-session-start.sh` prints exactly one watcher supervision block for the detected primary harness.
 Do not substitute another harness's wait shape when resuming supervision.
 Claude's Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`) owns tokenless re-arm around `bin/fm-watch-arm.sh`, and Grok uses tracked background-notify cycles around `bin/fm-watch-arm.sh`.
-Codex uses bounded foreground checkpoints through `bin/fm-watch-checkpoint.sh` because Codex cannot reason while a foreground tool call is running.
+Codex's Stop hook (`bin/fm-codex-stop-autoarm.sh`) owns the same tokenless re-arm around `bin/fm-watch-arm.sh`, detaching its supervisor through `bin/fm-codex-detach.sh` because Codex has no asynchronous hook mode, and waking the bound conversation with `codex queue`.
 OpenCode uses `.opencode/plugins/fm-primary-watch-arm.js`, which coordinates with the turn-end guard plugin and wakes the TUI with `client.session.promptAsync`.
 Pi and pi-signed use the tracked `.pi/extensions/fm-primary-turnend-guard.ts` plus the tracked `.pi/extensions/fm-primary-pi-watch.ts`, both project-local extensions the Pi engine auto-discovers once trusted.
 When changing any primary watcher adapter, update `docs/supervision-protocols/`, `docs/turnend-guard.md` if a shared idle or turn-end hook changed, and the relevant concise fact below.
@@ -226,8 +226,10 @@ They expose `stop_hook_active`, which the guard's non-`--claude` loop safety use
 Codex's Stop payload includes `cwd`, but the tracked primary hook does not use it to choose the guard executable.
 Verified on 2026-07-08: Codex runs the Stop hook command with process PWD set to the hook-loaded project root, and no `CODEX_PROJECT_DIR`, `CODEX_WORKSPACE_ROOT`, or `CODEX_CWD` root variable is set.
 The tracked hook anchors to `pwd -P`, verifies that root is firstmate-shaped and hook-bearing, and then invokes `bin/fm-turnend-guard.sh --codex` with the original payload.
-Codex's primary watcher protocol is `bin/fm-watch-checkpoint.sh --seconds "${FM_CODEX_WATCH_CHECKPOINT:-180}"`, not `bin/fm-watch-arm.sh`.
-The checkpoint is deliberately foreground and bounded so Codex regains control regularly to process user messages and queued wakes.
+Codex's primary watcher protocol is the Stop-owned background wake in `bin/fm-codex-stop-autoarm.sh`; the model never arms a cycle itself.
+`codex queue --thread <session_id> --message <text>` is the supported wake primitive, and the Stop payload's `session_id` is the only supported source of that thread id.
+Verified on 2026-09-07 against codex-cli 0.153.4 on macOS: a queued message resumes an idle interactive conversation, is held rather than dropped while one is mid-turn, and reports success even for a conversation that has already exited - so a successful publication is never delivery proof.
+`bin/fm-watch-checkpoint.sh --seconds "${FM_CODEX_WATCH_CHECKPOINT:-180}"` remains only a bounded manual recovery probe for the inspection path.
 
 ## opencode (VERIFIED 2026-06-11, v1.15.7-1.17.6; 1.18.4 busy-queue re-verified 2026-07-20)
 

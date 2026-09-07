@@ -2014,9 +2014,15 @@ EOF
   pass "an empty fleet reports (none) for in-flight tasks and an absent AFK flag"
 }
 
-test_codex_session_preflight_is_quiet_but_later_liveness_still_alarms() {
+# Codex once suppressed this banner at session start, because its watcher could
+# only exist inside a foreground checkpoint and therefore provably could not
+# exist yet. Under the Stop-owned background wake a watcher CAN legitimately
+# still be running - the previous session's detached supervisor outlives that
+# session - so an absent one at session start is a genuine lapse and must alarm
+# exactly as it does for every other harness.
+test_codex_session_start_alarms_when_supervision_genuinely_lapsed() {
   local rec root home fakebin out guard
-  rec=$(new_world codex-supervision-preflight)
+  rec=$(new_world codex-supervision-lapse)
   IFS='|' read -r root home fakebin <<EOF
 $rec
 EOF
@@ -2025,14 +2031,15 @@ EOF
   printf 'window=fm:fm-live\nkind=ship\n' > "$home/state/live.meta"
 
   out=$(FM_FAKE_HARNESS=codex run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_not_contains "$out" "WATCHER DOWN - SUPERVISION IS OFF" \
-    "Codex session preflight rendered a watcher-down banner before its first legal checkpoint"
+  assert_contains "$out" "WATCHER DOWN - SUPERVISION IS OFF" \
+    "Codex session start hid a real supervision lapse behind the retired checkpoint preflight"
 
-  guard=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_SUPERVISION_MODEL=checkpoint \
-    "$ROOT/bin/fm-guard.sh" 2>&1)
-  assert_contains "$guard" "WATCHER DOWN - SUPERVISION IS OFF" \
-    "the ephemeral preflight context weakened ordinary Codex liveness alarms"
-  pass "Codex session preflight is quiet while ordinary post-start liveness stays enforced"
+  # Session start already claimed this down-episode, so an immediate second call
+  # gets the one-line reminder rather than a duplicate banner.
+  guard=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ROOT/bin/fm-guard.sh" 2>&1)
+  assert_contains "$guard" "watcher still down" \
+    "ordinary Codex liveness warnings stopped firing after session start"
+  pass "Codex session start alarms on a genuine supervision lapse, like every other harness"
 }
 
 test_next_step_sources_x_mode_cadence() {
@@ -2254,7 +2261,7 @@ test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
-test_codex_session_preflight_is_quiet_but_later_liveness_still_alarms
+test_codex_session_start_alarms_when_supervision_genuinely_lapsed
 test_next_step_sources_x_mode_cadence
 test_next_step_afk_delegates_to_daemon
 test_supervision_block_exactly_one_and_pi_diagnostic

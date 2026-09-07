@@ -11,8 +11,13 @@
 # This script is push-based: verified harness turn-end hooks invoke it every time
 # the primary is about to end a turn.
 # Claude blocks directly with exit status 2 and stderr.
-# Codex uses its native structured Stop continuation so routine recovery stays
-# typed and compact instead of rendering the full operator diagnostic banner.
+# Codex first yields to its own Stop-owned background wake
+# (bin/fm-codex-stop-autoarm.sh), which is registered ahead of this guard on the
+# same Stop event: a live supervisor bound to THIS conversation already owns
+# recovery, so the stop is allowed. Only when no such supervisor materializes
+# within FM_CODEX_AUTOARM_SYNC_WAIT_MS does Codex fall back to its native
+# structured Stop continuation, which keeps routine recovery typed and compact
+# instead of rendering the full operator diagnostic banner.
 # OpenCode and pi adapters use the same predicate and force one bounded
 # follow-up because their turn-end events are passive. Grok delegates native
 # blocking when its running Stop payload advertises that capability, with one
@@ -192,17 +197,12 @@ block_stop() {
   reason=$("$SCRIPT_DIR/fm-supervision-instructions.sh" "${instr_args[@]}" 2>/dev/null \
     || printf '%s\n' 'tasks in flight, no live watcher - repair missing watcher supervision according to the session-start operating block before ending the turn')
   if [ "$CODEX_MODE" -eq 1 ]; then
-    # bin/fm-supervision-instructions.sh owns what this session must actually do.
-    # Its line is the ordinary Codex checkpoint instruction only while neither
-    # away mode nor X mode redirects it; away mode hands supervision to the
-    # daemon and X mode requires sourcing its cadence first, so a hardcoded
-    # "start the checkpoint now" lead-in would contradict or reorder the very
-    # instruction it introduces. Add the lead-in only for the ordinary line.
-    if [ "$afk" -eq 0 ] && [ "$x_mode" -eq 0 ]; then
-      continuation="Start the next foreground supervision checkpoint now. $reason"
-    else
-      continuation=$reason
-    fi
+    # bin/fm-supervision-instructions.sh owns what this session must actually do,
+    # and every branch of its line is already a complete imperative. Send it
+    # verbatim: a hardcoded lead-in would contradict or reorder the instruction
+    # it introduces, which is exactly what an "start the next checkpoint" prefix
+    # did once the routine Codex cycle stopped being a foreground checkpoint.
+    continuation=$reason
     continuation=$(printf '%s' "$continuation" \
       | "$SCRIPT_DIR/fm-operational-input.sh" encode turn-end-guard 2>/dev/null || true)
     # Fail closed like every other edge here: only a successfully emitted typed
@@ -220,7 +220,7 @@ block_stop() {
     else
       printf '●  X-mode relay polling needs supervision, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_BEACON_DESC"
     fi
-    if [ "$CLAUDE_MODE" -eq 1 ]; then
+    if [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; then
       printf '●  The Stop-owned auto-arm did not claim this home either, so recovery is NOT already under way.\n'
     fi
     printf '●  %s\n' "$reason"
@@ -228,6 +228,43 @@ block_stop() {
   } >&2
   exit 2
 }
+
+# --- --codex cooperative path ------------------------------------------------
+# The Stop-owned background wake (bin/fm-codex-stop-autoarm.sh) is registered
+# ahead of this guard on the same Stop event and detaches its supervisor rather
+# than blocking. Give it a brief bounded window to record a live supervisor
+# bound to THIS conversation before falling back to the repair block: without
+# this, the very first turn end of every cycle would still force a foreground
+# checkpoint, which is exactly what that mode removes.
+codex_autoarm_owns_recovery() {
+  local binding="$STATE/.codex-autoarm-session" pid identity current session
+  [ -f "$binding" ] || return 1
+  session=$(sed -n 's/^session=//p' "$binding" 2>/dev/null | head -1)
+  # The wake target must be this conversation; a supervisor bound to a closed
+  # one would publish where nobody is reading.
+  [ -n "$session" ] && [ "$session" = "$SESSION_ID" ] || return 1
+  pid=$(sed -n 's/^pid=//p' "$binding" 2>/dev/null | head -1)
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  fm_pid_alive "$pid" || return 1
+  identity=$(sed -n 's/^identity=//p' "$binding" 2>/dev/null | head -1)
+  [ -n "$identity" ] || return 1
+  current=$(fm_pid_identity "$pid" 2>/dev/null || true)
+  [ -n "$current" ] && [ "$current" = "$identity" ]
+}
+
+if [ "$CODEX_MODE" -eq 1 ]; then
+  CODEX_SYNC_WAIT_MS=${FM_CODEX_AUTOARM_SYNC_WAIT_MS:-1500}
+  case "$CODEX_SYNC_WAIT_MS" in ''|*[!0-9]*) CODEX_SYNC_WAIT_MS=1500 ;; esac
+  codex_waited=0
+  while :; do
+    codex_autoarm_owns_recovery && exit 0
+    [ "$codex_waited" -ge "$CODEX_SYNC_WAIT_MS" ] && break
+    sleep 0.1
+    codex_waited=$((codex_waited + 100))
+  done
+fi
 
 if [ "$CLAUDE_MODE" -eq 0 ]; then
   block_stop

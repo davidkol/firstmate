@@ -193,6 +193,30 @@ run_hook_codex() {
     | FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" --codex 2>&1
 }
 
+# Codex Stop payloads carry the conversation id, which the guard uses to check
+# that any live supervisor is bound to THIS conversation and not a closed one.
+run_hook_codex_session() {  # <dir> <stop-active> <session-id>
+  local dir=$1 stop_active=$2 session=$3 home
+  home=$(cd "$dir" && pwd)
+  printf '{"cwd":"%s","session_id":"%s","stop_hook_active":%s}' "$home" "$session" "$stop_active" \
+    | FM_HOME="$home" FM_CODEX_AUTOARM_SYNC_WAIT_MS=300 \
+      bash "$dir/bin/fm-turnend-guard.sh" --codex 2>&1
+}
+
+# Write a Codex auto-arm binding for <pid>, taking its real process identity so
+# the guard's identity check sees a genuine match.
+write_codex_binding() {  # <dir> <pid> <session-id>
+  local dir=$1 pid=$2 session=$3 identity
+  identity=$(bash -c '. "$1/bin/fm-wake-lib.sh"; fm_pid_identity "$2"' _ "$ROOT" "$pid" 2>/dev/null || true)
+  {
+    printf 'pid=%s\n' "$pid"
+    printf 'identity=%s\n' "$identity"
+    printf 'session=%s\n' "$session"
+    printf 'outcome=arming\n'
+    printf 'updated_at=%s\n' "$(date +%s)"
+  } > "$dir/state/.codex-autoarm-session"
+}
+
 nonexistent_pid() {
   local pid=999999
   while kill -0 "$pid" 2>/dev/null; do
@@ -359,8 +383,10 @@ test_hook_codex_uses_typed_quiet_continuation_when_unhealthy() {
   printf '%s' "$out" | jq -e '.decision == "block" and (.reason | startswith("\u2063FIRSTMATE_OP: v1 turn-end-guard: "))' >/dev/null \
     || fail "Codex hook did not emit a typed continuation JSON object: $out"
   reason=$(printf '%s' "$out" | jq -r '.reason')
-  assert_contains "$reason" "Start the next foreground supervision checkpoint" \
-    "Codex continuation must name the one required foreground action"
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "Codex continuation must name the Stop-owned recovery its repair line owns"
+  assert_not_contains "$reason" "bin/fm-watch-checkpoint.sh" \
+    "Codex continuation must not direct the routine foreground checkpoint the Stop-owned mode removed"
   assert_not_contains "$out" "TURN WOULD END BLIND" \
     "Codex continuation must keep the full diagnostic banner out of routine chat"
   assert_not_contains "$out" "WATCHER DOWN" \
@@ -370,7 +396,7 @@ test_hook_codex_uses_typed_quiet_continuation_when_unhealthy() {
 
 # The repair line, not this guard, owns what the session must do next. Away mode
 # hands watcher supervision to the daemon, so the continuation must carry that
-# instruction alone instead of also ordering the checkpoint it forbids.
+# instruction alone instead of also ordering the arm it forbids.
 test_hook_codex_continuation_defers_to_redirected_repair_line() {
   local dir out status reason
   dir=$(make_primary_dir "$TMP_ROOT/hook-codex-afk-continuation")
@@ -381,8 +407,8 @@ test_hook_codex_continuation_defers_to_redirected_repair_line() {
   reason=$(printf '%s' "$out" | jq -r '.reason')
   assert_contains "$reason" "Away mode owns watcher supervision" \
     "away mode must keep owning the Codex continuation instruction"
-  assert_not_contains "$reason" "Start the next foreground supervision checkpoint" \
-    "Codex continuation must not order a checkpoint that its own repair line forbids"
+  assert_not_contains "$reason" "Stop-owned automatic recovery" \
+    "Codex continuation must not order an arm that its own repair line forbids"
   pass "fm-turnend-guard: Codex continuation defers to a redirected repair line"
 }
 
@@ -399,7 +425,7 @@ test_hook_codex_pins_its_own_harness_repair_line() {
     | CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" --codex 2>&1); status=$?
   expect_code 0 "$status" "Codex hook must emit its structured continuation"
   reason=$(printf '%s' "$out" | jq -r '.reason')
-  assert_contains "$reason" "bin/fm-watch-checkpoint.sh --seconds" \
+  assert_contains "$reason" ".codex/hooks.json" \
     "Codex continuation must carry its own harness's repair instruction"
   assert_not_contains "$reason" "$REQUIRED_REASON" \
     "a foreign environment marker must not swap in another harness's repair line"
@@ -845,12 +871,20 @@ test_settings_hook_uses_claude_project_dir() {
   pass ".claude/settings.json: Stop hook uses CLAUDE_PROJECT_DIR-anchored --claude guard command"
 }
 
+# Select a tracked Codex Stop hook command by the script it runs. The Stop array
+# carries both the auto-arm and the guard, so array position is not identity.
+codex_stop_hook_command() {  # <hooks.json> <script-basename>
+  jq -r --arg needle "$2" '
+    [.hooks.Stop[]?.hooks[]? | select((.command? // "") | contains($needle))][0].command // empty
+  ' "$1"
+}
+
 test_codex_hook_invokes_shared_guard() {
   local settings command
   settings="$ROOT/.codex/hooks.json"
   [ -f "$settings" ] || fail "tracked .codex/hooks.json is missing"
-  command=$(jq -r '.hooks.Stop[0].hooks[0].command // empty' "$settings")
-  [ -n "$command" ] || fail "Stop hook command is missing from .codex/hooks.json"
+  command=$(codex_stop_hook_command "$settings" fm-turnend-guard.sh)
+  [ -n "$command" ] || fail "Stop guard hook command is missing from .codex/hooks.json"
   assert_contains "$command" 'pwd -P' "codex hook must anchor from the hook process working directory"
   assert_contains "$command" '.codex/hooks.json' "codex hook must verify the hook-loaded firstmate root"
   assert_contains "$command" 'fm-turnend-guard.sh' "codex hook must invoke the shared guard"
@@ -859,12 +893,87 @@ test_codex_hook_invokes_shared_guard() {
   pass ".codex/hooks.json: Stop hook invokes the shared primary guard"
 }
 
+# The Codex Stop-owned background wake is the routine arm owner, so it must be
+# registered on the same Stop event and ahead of the guard: the guard's
+# cooperative allow reads the binding that hook writes.
+test_codex_hook_registers_stop_autoarm_before_the_guard() {
+  local settings command order
+  settings="$ROOT/.codex/hooks.json"
+  [ -f "$settings" ] || fail "tracked .codex/hooks.json is missing"
+  command=$(codex_stop_hook_command "$settings" fm-codex-stop-autoarm.sh)
+  [ -n "$command" ] || fail "Codex Stop-owned background wake is not registered in .codex/hooks.json"
+  assert_contains "$command" 'pwd -P' "codex auto-arm hook must anchor from the hook process working directory"
+  assert_contains "$command" '.codex/hooks.json' "codex auto-arm hook must verify the hook-loaded firstmate root"
+  assert_not_contains "$command" '--codex' "codex auto-arm hook must not be handed the guard's mode flag"
+  order=$(jq -r '
+    [.hooks.Stop[]?.hooks[]?.command? // ""
+     | if contains("fm-codex-stop-autoarm.sh") then "autoarm"
+       elif contains("fm-turnend-guard.sh") then "guard"
+       else empty end]
+    | join(",")
+  ' "$settings")
+  [ "$order" = "autoarm,guard" ] \
+    || fail "codex Stop hooks must run the auto-arm before the guard, got: $order"
+  pass ".codex/hooks.json: Stop-owned background wake is registered ahead of the guard"
+}
+
+# The Stop-owned background wake detaches its supervisor instead of blocking, so
+# the guard must yield to it. Without this the very first turn end of every cycle
+# would still force the foreground checkpoint the Stop-owned mode removed.
+test_hook_codex_allows_when_a_supervisor_is_bound_to_this_conversation() {
+  local dir out status sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-allow")
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  write_codex_binding "$dir" "$sleeper" sess-live
+  out=$(run_hook_codex_session "$dir" false sess-live); status=$?
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  expect_code 0 "$status" "Codex guard must allow the stop the auto-arm already owns"
+  [ -z "$out" ] || fail "Codex guard emitted a continuation while the auto-arm owned recovery: $out"
+  pass "fm-turnend-guard: Codex allows a stop whose recovery a bound live supervisor owns"
+}
+
+# A supervisor left over from a closed conversation would publish its wake where
+# nobody is reading, so it must not buy this conversation a blind stop.
+test_hook_codex_blocks_when_the_supervisor_is_bound_to_another_conversation() {
+  local dir out status reason sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-stale-session")
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  write_codex_binding "$dir" "$sleeper" sess-old
+  out=$(run_hook_codex_session "$dir" false sess-new); status=$?
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  expect_code 0 "$status" "Codex guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "a supervisor bound to another conversation must not allow this one to end blind"
+  pass "fm-turnend-guard: Codex blocks when the live supervisor is bound to another conversation"
+}
+
+test_hook_codex_blocks_when_the_bound_supervisor_is_dead() {
+  local dir out status reason dead
+  dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-dead")
+  : > "$dir/state/task1.meta"
+  dead=$(nonexistent_pid)
+  write_codex_binding "$dir" "$dead" sess-dead
+  out=$(run_hook_codex_session "$dir" false sess-dead); status=$?
+  expect_code 0 "$status" "Codex guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "a dead supervisor record must not allow a blind stop"
+  pass "fm-turnend-guard: Codex blocks when the recorded supervisor is dead"
+}
+
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root() {
   local settings command dir expected_root outside payload out status
   settings="$ROOT/.codex/hooks.json"
   [ -f "$settings" ] || fail "tracked .codex/hooks.json is missing"
-  command=$(jq -r '.hooks.Stop[0].hooks[0].command // empty' "$settings")
-  [ -n "$command" ] || fail "Stop hook command is missing from .codex/hooks.json"
+  command=$(codex_stop_hook_command "$settings" fm-turnend-guard.sh)
+  [ -n "$command" ] || fail "Stop guard hook command is missing from .codex/hooks.json"
   dir=$(make_primary_dir "$TMP_ROOT/codex-hook-root")
   mark_codex_hook_root "$dir"
   expected_root=$(cd "$dir" && pwd -P)
@@ -888,8 +997,8 @@ test_codex_hook_ignores_nested_git_root_guard() {
   local settings command dir nested subdir expected_root payload out status
   settings="$ROOT/.codex/hooks.json"
   [ -f "$settings" ] || fail "tracked .codex/hooks.json is missing"
-  command=$(jq -r '.hooks.Stop[0].hooks[0].command // empty' "$settings")
-  [ -n "$command" ] || fail "Stop hook command is missing from .codex/hooks.json"
+  command=$(codex_stop_hook_command "$settings" fm-turnend-guard.sh)
+  [ -n "$command" ] || fail "Stop guard hook command is missing from .codex/hooks.json"
   dir=$(make_primary_dir "$TMP_ROOT/codex-hook-outer")
   mark_codex_hook_root "$dir"
   expected_root=$(cd "$dir" && pwd -P)
@@ -1708,6 +1817,10 @@ test_grok_adapter_invalid_inputs_start_neither_path
 test_grok_adapter_missing_jq_and_no_supervision_allow
 test_settings_hook_uses_claude_project_dir
 test_codex_hook_invokes_shared_guard
+test_codex_hook_registers_stop_autoarm_before_the_guard
+test_hook_codex_allows_when_a_supervisor_is_bound_to_this_conversation
+test_hook_codex_blocks_when_the_supervisor_is_bound_to_another_conversation
+test_hook_codex_blocks_when_the_bound_supervisor_is_dead
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root
 test_codex_hook_ignores_nested_git_root_guard
 test_opencode_plugin_forces_followup

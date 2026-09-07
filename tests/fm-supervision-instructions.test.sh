@@ -12,8 +12,8 @@ test_selected_harness_block_only() {
   local out
   out=$("$RENDER" --harness codex)
   assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: codex" "codex heading missing"
-  assert_contains "$out" "Mode: Codex foreground checkpoint." "codex snippet missing"
-  assert_contains "$out" "bin/fm-watch-checkpoint.sh" "codex checkpoint helper missing"
+  assert_contains "$out" "Mode: Codex Stop-hook-owned background wake." "codex snippet missing"
+  assert_contains "$out" "bin/fm-codex-stop-autoarm.sh" "codex snippet lost its Stop-owned arm owner"
   assert_not_contains "$out" "Mode: Claude Stop-hook-owned supervision." "renderer printed the claude snippet too"
   assert_not_contains "$out" "Mode: Pi extension background wake." "renderer printed the pi snippet too"
   pass "renderer prints exactly the selected harness block"
@@ -37,7 +37,7 @@ test_conditional_stanzas() {
   assert_contains "$out" "- Away mode: active" "afk stanza missing"
   assert_contains "$out" "- X mode: active" "x-mode stanza missing"
   assert_contains "$out" "$config/x-mode.env" "x-mode stanza did not render the effective config path"
-  assert_contains "$out" 'Mode: Codex foreground checkpoint.' "codex snippet missing"
+  assert_contains "$out" 'Mode: Codex Stop-hook-owned background wake.' "codex snippet missing"
   assert_not_contains "$out" "Source \`config/x-mode.env\`" "snippet kept the repo-relative x-mode config path"
   pass "renderer includes read-only, afk, and effective x-mode current-state stanzas"
 }
@@ -46,8 +46,10 @@ test_repair_lines() {
   local home out
   home="$TMP_ROOT/repair-home"
   mkdir -p "$home/state" "$home/config"
-  out=$(FM_HOME="$home" FM_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --repair-line)
-  assert_contains "$out" "bin/fm-watch-checkpoint.sh --seconds 7" "codex repair line did not use checkpoint helper and env override"
+  out=$(FM_HOME="$home" "$RENDER" --harness codex --repair-line)
+  assert_contains "$out" "watcher supervision needs Stop-owned automatic recovery" "codex repair line is not the Stop-owned recovery instruction"
+  assert_contains "$out" ".codex/hooks.json" "codex repair line did not name the hook registration to inspect"
+  assert_not_contains "$out" "bin/fm-watch-checkpoint.sh" "codex repair line still directs the routine foreground checkpoint"
 
   out=$(FM_HOME="$home" "$RENDER" --harness claude --queue-pending 1 --repair-line)
   assert_contains "$out" "After draining queued wakes" "queue-pending prefix missing"
@@ -58,9 +60,9 @@ test_repair_lines() {
   assert_not_contains "$out" "bin/fm-watch-arm.sh" "claude pre-verification repair line directed an arm command"
 
   : > "$home/config/x-mode.env"
-  out=$(FM_HOME="$home" FM_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --x-mode 1 --repair-line)
+  out=$(FM_HOME="$home" "$RENDER" --harness codex --x-mode 1 --repair-line)
   assert_contains "$out" "source '$home/config/x-mode.env' first" "x-mode repair line did not source the effective cadence config"
-  assert_contains "$out" "bin/fm-watch-checkpoint.sh --seconds 7" "x-mode codex repair line lost the checkpoint helper"
+  assert_contains "$out" "watcher supervision needs Stop-owned automatic recovery" "x-mode codex repair line lost the Stop-owned recovery instruction"
 
   out=$(FM_HOME="$home" "$RENDER" --harness opencode --read-only 1 --repair-line)
   assert_contains "$out" "session holding the fleet lock" "read-only repair line missing"
@@ -110,12 +112,15 @@ test_cross_harness_ordinary_continuation_and_repair_matrix() {
 
   out=$("$RENDER" --harness codex)
   ordinary=$(printf '%s\n' "$out" | grep -F -- '- Ordinary wake:')
-  assert_contains "$ordinary" "next foreground" "codex ordinary-wake line lost its foreground checkpoint"
-  assert_contains "$ordinary" "bin/fm-watch-checkpoint.sh" "codex ordinary-wake line lost the checkpoint command"
-  assert_not_contains "$ordinary" "bin/fm-watch-arm.sh" "codex ordinary-wake line incorrectly uses a background arm"
+  assert_contains "$ordinary" "Stop-owned background wake" "codex ordinary-wake line lost its Stop-owned owner"
+  assert_contains "$ordinary" "bin/fm-codex-stop-autoarm.sh" "codex ordinary-wake line lost the Stop-owned arm owner"
+  assert_contains "$ordinary" "do not arm another cycle yourself" "codex ordinary-wake line still asks the model to re-arm"
+  assert_not_contains "$ordinary" "bin/fm-watch-arm.sh" "codex ordinary-wake line incorrectly directs a manual background arm"
+  assert_not_contains "$ordinary" "bin/fm-watch-checkpoint.sh" "codex ordinary-wake line still directs a routine foreground checkpoint"
   out=$("$RENDER" --harness codex --repair-line)
-  assert_contains "$out" "foreground checkpoint" "codex recovery line lost its checkpoint repair"
-  assert_contains "$out" "bin/fm-watch-checkpoint.sh" "codex recovery line lost the checkpoint command"
+  assert_contains "$out" "Stop-owned automatic recovery" "codex recovery line lost its Stop-owned repair"
+  assert_contains "$out" ".codex/hooks.json" "codex recovery line lost the hook registration to inspect"
+  assert_not_contains "$out" "bin/fm-watch-checkpoint.sh" "codex recovery line still directs a routine foreground checkpoint"
 
   pass "renderer preserves every harness ordinary-continuation and missing-cycle repair path"
 }
