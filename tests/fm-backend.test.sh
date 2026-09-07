@@ -1158,8 +1158,8 @@ test_captain_directed_dispatch_refresh_preserves_the_worker_prompt() {
       "captain-directed $tier worker-facing prompt lost its process field"
     assert_grep '# Captain-directed builder' "$brief" \
       "captain-directed $tier worker-facing prompt lost its warm builder role"
-    assert_grep 'Never choose the fix action' "$brief" \
-      "captain-directed $tier worker-facing prompt lost its advisory handback"
+    assert_grep 'in this same warm context' "$brief" \
+      "captain-directed $tier worker-facing prompt lost its warm-context fix loop"
     assert_no_grep 'the pipeline applies every fix' "$brief" \
       "captain-directed $tier worker-facing prompt was rewritten with the ordinary cold fixer"
     rm -rf "/tmp/fm-$id"

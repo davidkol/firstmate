@@ -285,7 +285,7 @@ test_send_refuses_and_admits() {
 make_teardown_case() {
   local name=$1 case_dir fakebin t
   case_dir="$TMP/$name"; fakebin="$case_dir/fakebin"
-  mkdir -p "$case_dir/state" "$case_dir/config" "$fakebin"
+  mkdir -p "$case_dir/state" "$case_dir/config" "$case_dir/data" "$fakebin"
   for t in treehouse tmux; do
     printf '#!/usr/bin/env bash\nexit 0\n' > "$fakebin/$t"
     chmod +x "$fakebin/$t"
@@ -327,11 +327,19 @@ SH
 }
 
 # run_teardown <cwd> <case_dir> [ASSIGN...] -> combined output
+#
+# FM_DATA_OVERRIDE matters as much as the state and config overrides here:
+# fm-teardown.sh resolves the project registry from the data dir, and without
+# this the case would read whatever data/projects.md the developer's own
+# checkout happens to carry. A checkout with one makes the fixture's registryless
+# task fail the legacy project-identity gate; a checkout without one passes. That
+# is a property of the machine, not of the code under test.
 run_teardown() {
   local cwd=$1 case_dir=$2; shift 2
   ( cd "$cwd" && env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS \
       "FM_ROOT_OVERRIDE=$ROOT" "FM_STATE_OVERRIDE=$case_dir/state" \
-      "FM_CONFIG_OVERRIDE=$case_dir/config" "PATH=$case_dir/fakebin:$PATH" "$@" \
+      "FM_CONFIG_OVERRIDE=$case_dir/config" "FM_DATA_OVERRIDE=$case_dir/data" \
+      "PATH=$case_dir/fakebin:$PATH" "$@" \
       "$TEARDOWN" task-x1 ) 2>&1
 }
 
