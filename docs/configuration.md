@@ -340,9 +340,9 @@ An absent `quota-axi` reports `MISSING: quota-axi (install: npm install -g quota
 Bootstrap also reports a `TANGLE:` line when `FM_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
 In a read-only session that did not get the fleet lock, the same line is advisory and omits the checkout command.
 The locked session-start bootstrap step also runs a best-effort canonical project refresh through `fm-fleet-sync.sh`.
-A clean completed run relays only three classified outcomes as `FLEET_SYNC:` lines - skipped refreshes that may matter, recovered self-heals, and `STUCK:` alarms - so local-only skips, no-origin skips, and routine progress stay silent.
-A refresh that exits non-zero, or that bootstrap kills on the aggregate timeout, instead relays the whole `fm-fleet-sync.sh` transcript unfiltered, so no completed result or failure detail is lost and unclassified lines reach the digest; [`bootstrap-diagnostics`](../.agents/skills/bootstrap-diagnostics/SKILL.md) owns how to read them.
-A timed-out refresh replays that transcript before its aggregate timeout skip line.
+It emits `FLEET_SYNC:` for skipped refreshes that may matter, recovered self-heals, and `STUCK:` alarms.
+Normal completed runs keep local-only and no-origin skips silent.
+If bootstrap kills a timed-out refresh, it replays any completed `fm-fleet-sync.sh` output before the aggregate timeout skip so no finished result is lost.
 A killed refresh (or a teardown process kill) can leave an orphaned `.git/packed-refs.lock` in a clone, which makes the next refresh's fetch fail with Git's `Unable to create '...packed-refs.lock': File exists`.
 On that signature only, `fm-fleet-sync.sh` retries the fetch with a bounded wait for the lock to self-clear, then removes the lock and retries once more only when it can prove the lock stale, exactly like the `fm-teardown.sh` `index.lock` recovery.
 It never removes a live lock, leaves any other failure shape untouched, and prints every wait, retry, and removal to stderr plus a one-line `recovered:` summary to stdout on success so that this session-start relay still surfaces the recovery.

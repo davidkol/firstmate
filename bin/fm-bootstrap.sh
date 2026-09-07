@@ -18,10 +18,6 @@
 #                 "BOOTSTRAP_INFO: nudged fm-<id> with '<message>'",
 #                 "SECONDMATE_LIVENESS: secondmate <id>: skipped: <reason>|respawn failed after <cause>: <reason>",
 #                 "FMX: X mode on ..." or "FMX: X mode off ...".
-#          Only a clean fleet refresh is filtered to the three classified
-#          FLEET_SYNC outcomes; a refresh that exits non-zero or hits the
-#          aggregate timeout relays the whole fm-fleet-sync.sh transcript
-#          unfiltered, so any other line shape can arrive under that prefix.
 #          When a RUNNING secondmate worktree is fast-forwarded to firstmate's
 #          own current default-branch commit (a purely LOCAL fast-forward, never
 #          an origin fetch) AND its loaded instruction surface (AGENTS.md, bin/,
