@@ -67,11 +67,15 @@ install_autoarm_scripts() {
   mkdir -p "$dir/bin"
   for f in fm-codex-stop-autoarm.sh fm-codex-detach.sh fm-primary-scope-lib.sh \
            fm-supervision-lib.sh fm-wake-lib.sh fm-session-lock-lib.sh \
-           fm-lock.sh fm-operational-input.sh fm-harness.sh; do
+           fm-lock.sh fm-operational-input.sh fm-harness.sh \
+           fm-turnend-guard.sh fm-supervision-instructions.sh; do
     cp "$ROOT/bin/$f" "$dir/bin/$f"
   done
+  mkdir -p "$dir/docs"
+  cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
   chmod +x "$dir/bin/fm-codex-stop-autoarm.sh" "$dir/bin/fm-codex-detach.sh" \
-           "$dir/bin/fm-lock.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-harness.sh"
+           "$dir/bin/fm-lock.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-harness.sh" \
+           "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-supervision-instructions.sh"
 }
 
 make_primary_dir() {
@@ -167,6 +171,39 @@ wait_for_file() {  # <path> [deciseconds]
 
 binding_field() {  # <dir> <field>
   sed -n "s/^$2=//p" "$1/state/.codex-autoarm-session" 2>/dev/null | head -1
+}
+
+wait_for_binding_outcome() {  # <dir> <outcome> [deciseconds]
+  local dir=$1 want=$2 limit=${3:-120} i=0
+  while [ "$i" -lt "$limit" ]; do
+    [ "$(binding_field "$dir" outcome)" = "$want" ] && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(binding_field "$dir" outcome)" = "$want" ]
+}
+
+# Run the record's real consumer: the same Stop-event turn-end guard this home
+# would run, on the binding the supervisor actually left behind.
+run_guard_codex() {  # <dir> <session-id>
+  local dir=$1 session=$2 home
+  home=$(cd "$dir" && pwd)
+  printf '{"cwd":"%s","session_id":"%s","stop_hook_active":false}' "$home" "$session" \
+    | FM_HOME="$home" FM_CODEX_AUTOARM_SYNC_WAIT_MS=300 \
+      bash "$dir/bin/fm-turnend-guard.sh" --codex 2>&1
+}
+
+# Break ONLY the supervisor's own wake encoding, so the guard's separate
+# turn-end-guard encoding still works and its refusal keeps its typed shape.
+write_failing_wake_encoder() {  # <dir>
+  cat > "$1/bin/fm-operational-input.sh" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = encode ] && [ "\${2:-}" = watcher ]; then
+  exit 1
+fi
+exec '$ROOT/bin/fm-operational-input.sh' "\$@"
+SH
+  chmod +x "$1/bin/fm-operational-input.sh"
 }
 
 # Arm output files a supervisor mktemp'd in this home's state directory.
@@ -327,6 +364,72 @@ test_hook_returns_at_once_and_the_detached_supervisor_delivers_the_wake() {
     "wake body must carry the real watcher reason line"
   [ "$(queue_calls "$q")" -eq 1 ] || fail "supervisor delivered more than one wake for one cycle"
   pass "fm-codex-stop-autoarm: hook returns at once and the detached supervisor delivers one marked wake"
+}
+
+# The binding is what lets a turn-end guard allow a stop, so a publication that
+# succeeded and one that failed must never leave the same record.
+test_a_published_wake_is_recorded_and_the_guard_accepts_it() {
+  local dir q out status
+  dir=$(make_primary_dir "$TMP_ROOT/wake-published")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" actionable
+  write_codex_shim "$q"
+  : > "$dir/state/task1.meta"
+
+  run_autoarm "$dir" sess-published
+  wait_for_binding_outcome "$dir" wake \
+    || fail "a successful publication recorded outcome '$(binding_field "$dir" outcome)'"
+  [ "$(queue_calls "$q")" -eq 1 ] || fail "the supervisor did not publish exactly one wake"
+  out=$(run_guard_codex "$dir" sess-published); status=$?
+  expect_code 0 "$status" "the guard must allow the stop whose wake was published"
+  [ -z "$out" ] || fail "the guard refused a published wake: $out"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: a published wake is recorded as such and the guard accepts it"
+}
+
+test_an_unencodable_wake_is_recorded_unpublished_and_the_guard_refuses_it() {
+  local dir q out status reason
+  dir=$(make_primary_dir "$TMP_ROOT/wake-unencodable")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" actionable
+  write_codex_shim "$q"
+  write_failing_wake_encoder "$dir"
+  : > "$dir/state/task1.meta"
+
+  run_autoarm "$dir" sess-unencodable
+  wait_for_binding_outcome "$dir" wake-unpublished \
+    || fail "an unencodable wake recorded outcome '$(binding_field "$dir" outcome)'"
+  [ "$(queue_calls "$q")" -eq 0 ] \
+    || fail "an unencodable wake was still handed to codex queue"
+  out=$(run_guard_codex "$dir" sess-unencodable); status=$?
+  expect_code 0 "$status" "the guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "a wake that was never encoded must not allow a blind stop"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: an unencodable wake records unpublished and the guard refuses it"
+}
+
+test_a_failed_queue_publication_is_recorded_unpublished_and_the_guard_refuses_it() {
+  local dir q out status reason
+  dir=$(make_primary_dir "$TMP_ROOT/wake-queue-failed")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" actionable
+  write_codex_shim "$q" 1
+  : > "$dir/state/task1.meta"
+
+  run_autoarm "$dir" sess-queue-failed
+  wait_for_binding_outcome "$dir" wake-unpublished \
+    || fail "a failed publication recorded outcome '$(binding_field "$dir" outcome)'"
+  [ "$(queue_calls "$q")" -eq 1 ] \
+    || fail "the failing publication was never attempted"
+  out=$(run_guard_codex "$dir" sess-queue-failed); status=$?
+  expect_code 0 "$status" "the guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "a wake codex queue rejected must not allow a blind stop"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: a rejected publication records unpublished and the guard refuses it"
 }
 
 test_quiet_idle_produces_no_wake_and_no_repeat_delivery() {
@@ -506,6 +609,9 @@ test_hook_is_inert_while_away_mode_is_active
 test_hook_is_inert_when_another_live_session_holds_the_lock
 test_hook_is_inert_without_a_codex_delivery_command
 test_hook_returns_at_once_and_the_detached_supervisor_delivers_the_wake
+test_a_published_wake_is_recorded_and_the_guard_accepts_it
+test_an_unencodable_wake_is_recorded_unpublished_and_the_guard_refuses_it
+test_a_failed_queue_publication_is_recorded_unpublished_and_the_guard_refuses_it
 test_quiet_idle_produces_no_wake_and_no_repeat_delivery
 test_repeat_stop_from_the_same_conversation_does_not_start_a_second_supervisor
 test_stop_from_a_new_conversation_retires_the_stale_supervisor

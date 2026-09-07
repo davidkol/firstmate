@@ -1031,7 +1031,7 @@ test_hook_codex_blocks_on_a_fresh_unsuccessful_outcome() {
   local dir out status reason outcome
   dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-fresh-nonwake")
   : > "$dir/state/task1.meta"
-  for outcome in failed afk clean; do
+  for outcome in wake-unpublished failed afk clean; do
     write_codex_binding_from_exited_supervisor "$dir" sess-quiet "$outcome"
     out=$(run_hook_codex_session "$dir" false sess-quiet); status=$?
     expect_code 0 "$status" "Codex guard must still emit its structured continuation for outcome=$outcome"

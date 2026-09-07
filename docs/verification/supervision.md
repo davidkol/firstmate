@@ -295,6 +295,7 @@ FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=117611
 The captain-visible Codex supervision-noise correction was deterministically verified in this repository on 2026-08-10.
 The quiet checkpoint returned status 124 with no output, a preexisting durable queue returned an immediate `queue:` reason, and a real signal still passed through with its queue record intact for the drain.
 Routine drains suppressed an unchanged buried decision while boundedly reading only new status bytes, surfaced an identically worded decision after resolution made it newly actionable again, and `--open-decisions all` restored the complete durable set for session recovery.
+A session-start Codex preflight suppressed only the impossible pre-first-checkpoint watcher-down banner, while the next ordinary guard call still emitted the full liveness alarm.
 A surfaced signal absorbed its one following bare stale duplicate into the stuck timer, changed pipeline step-log evidence reset that timer, and unchanged pipeline evidence still wedge-escalated.
 Declared pauses and captain-held dead endpoints recorded their bounded internal rechecks without queueing another captain wake, while a live external-decision gate still surfaced once.
 An explicit `branch_sync.state: pipeline_owned` fixture kept a divergent live fix round attributable, while the historical same-branch rewritten-head negative control still fell back from run-step state.
@@ -308,9 +309,10 @@ tests/fm-watch-triage.test.sh
 ```
 
 All five commands exited zero.
+The opt-in `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` passed with codex-cli 0.147.0, starting no checkpoint for the idle home and delivering plus draining the live home's real actionable wake.
 
 The Codex foreground-checkpoint correction and concise fleet-status projection were deterministically verified in this repository on 2026-08-09.
-The pull guard accepted a fresh between-turns beacon without a live watcher only mid-turn, while the Codex Stop hook still emitted a typed block carrying the harness repair line, and that block deferred to the away-mode instruction instead of contradicting it.
+The pull guard accepted a fresh checkpoint beacon without a live watcher only mid-turn, while the Codex Stop hook still emitted a typed block that required the next foreground checkpoint, and that block deferred to the away-mode instruction instead of contradicting it.
 A secondmate launch pinned the supervision model of its OWN harness from the single mapping owner, so a spawned Codex secondmate stayed quiet mid-turn while a persistent-watcher secondmate still alarmed.
 The default fleet view counted only run-step or semantic-busy work as active, marked every other working report unverified, listed terminal work with its PR or report pointer, and left only records with no live, terminal, or blocked state for reconciliation.
 Every registered primary guard integration remained covered by the shared guard suite, and the runtime backends remained outside this change because the view renders only the backend-agnostic fleet snapshot contract.
@@ -364,10 +366,13 @@ grok 0.2.103 (89c3d36fb6f1) [stable]
 | Harness | Exact opt-in command | Observed guarantee |
 | --- | --- | --- |
 | Claude | `FM_CLAUDE_LIVE_E2E=1 tests/fm-claude-stop-autoarm-live-e2e.test.sh` | Session start reclaimed a stale owner before two Stop-owned cycles, and a competing live owner prevented arm, rewake, epoch write, or lock replacement. |
-| Codex | `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` | An idle home armed nothing; one turn end armed a detached supervisor that resumed the same conversation on a worker event. |
+| Codex | `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` | The one-second foreground checkpoint returned without switching to the arm wrapper. |
 | OpenCode | `FM_OPENCODE_LIVE_E2E=1 tests/fm-opencode-primary-live-e2e.test.sh` | A verified successor existed before prompt handling, with no model re-arm or turn-end fallback. |
 | Pi | `FM_PI_LIVE_E2E=1 tests/fm-pi-primary-live-e2e.test.sh` | One initial tool call led to extension-owned successors and clean child retirement on exit. |
 | Grok | `FM_GROK_LIVE_E2E=1 tests/fm-grok-continuity-live-e2e.test.sh` | Native task completion surfaced the actionable close and the cycle ledger recorded `reason=actionable-signal`. |
+
+The Codex row records the foreground-checkpoint model that same command exercised on codex-cli 0.144.4.
+The Stop-owned background wake replaced that model on 2026-09-07 against codex-cli 0.153.4, and its own guarantee is recorded under "Codex Stop-owned background wake" below rather than credited to this block.
 
 Pi 0.81.1 repeated the continuity and clean-exit lifecycle on 2026-07-23 after the Calm presentation changes.
 

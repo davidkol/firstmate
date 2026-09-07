@@ -13,8 +13,8 @@
 # Claude blocks directly with exit status 2 and stderr.
 # Codex first yields to its own Stop-owned background wake
 # (bin/fm-codex-stop-autoarm.sh), which is registered ahead of this guard on the
-# same Stop event: a live supervisor bound to THIS conversation, or a fresh
-# successful wake that supervisor already published for it before exiting,
+# same Stop event: a live supervisor bound to THIS conversation, or the fresh
+# record of a wake that supervisor successfully published for it before exiting,
 # already owns recovery, so the stop is allowed. Only when neither proof
 # materializes within FM_CODEX_AUTOARM_SYNC_WAIT_MS does Codex fall back to its
 # native structured Stop continuation, which keeps routine recovery typed and
@@ -262,11 +262,14 @@ codex_autoarm_supervisor_live() {
 
 # A supervisor whose whole cycle fits inside the wait window above publishes its
 # wake and exits, so process liveness alone would report a wake that was just
-# delivered as absent supervision and send this session to repair a hook
-# registration that is working. Accept only the recorded SUCCESSFUL wake, and
-# only while it is fresh enough to belong to this turn's cycle: arming, failed,
-# afk, clean, and every aged record still block. This mirrors the fresh rewake
-# outcome the --claude path accepts from its own auto-arm epoch.
+# published as absent supervision and send this session to repair a hook
+# registration that is working. Accept only the outcome the supervisor writes
+# after its publication call returned success, and only while it is fresh enough
+# to belong to this turn's cycle: arming, wake-unpublished, failed, afk, clean,
+# and every aged record still block. That success is a publication and not a
+# delivery receipt; the durable state/.wake-queue record is what keeps a wake no
+# live conversation consumed recoverable. This mirrors the fresh rewake outcome
+# the --claude path accepts from its own auto-arm epoch.
 codex_autoarm_delivered_wake() {
   local outcome updated age
   outcome=$(codex_binding_field outcome)

@@ -53,15 +53,19 @@
 #   pid=<supervisor pid>
 #   identity=<fm_pid_identity of that pid>
 #   session=<codex conversation id this supervisor will wake>
-#   outcome=<arming|wake|failed|clean|afk>
+#   outcome=<arming|wake|wake-unpublished|failed|clean|afk>
 #   updated_at=<epoch seconds>
 # The turn-end guard (bin/fm-turnend-guard.sh --codex) reads it to allow a stop
 # whose recovery a live supervisor bound to THIS session already owns, instead
 # of forcing the foreground checkpoint this mode exists to remove. A cycle that
 # closes inside the guard's wait window leaves no live process, so the guard
 # also accepts a still-fresh outcome=wake record for this session; that is why
-# outcome and updated_at are part of this record's contract and why no other
-# outcome may ever be written after a wake is published.
+# outcome and updated_at are part of this record's contract.
+# outcome=wake is written only after the publication call returned success, and
+# it claims exactly that much: the wake was PUBLISHED, never that the
+# conversation consumed it. A publication that fails records wake-unpublished
+# instead, which the guard refuses like every other non-wake outcome, so an
+# attempted wake can never stand in for a published one.
 #
 # `codex queue` returns success for a conversation that has already exited, so a
 # successful publication is NOT proof of delivery. That is safe because the
@@ -259,8 +263,7 @@ main_supervise() {  # <session-id>
     # A retired supervisor is SIGTERMed mid-cycle every time a new conversation
     # binds to this home, so without this its arm output would be orphaned in
     # the state directory for the life of the home.
-    [ -z "$ARM_OUTPUT" ] || rm -f "$ARM_OUTPUT" 2>/dev/null || true
-    ARM_OUTPUT=
+    arm_output_discard
     # The binding is a RECORD, not the liveness claim: the owner lock is. Leave
     # the last outcome on disk so an operator can see why a cycle closed, and so
     # a retired supervisor's cleanup can never race away its successor's entry.
@@ -341,9 +344,12 @@ main_supervise() {  # <session-id>
   arm_output_discard
 
   if [ "$actionable" -eq 1 ]; then
-    write_binding "$session" wake
     rm -f "$FAILURE_NOTICE" 2>/dev/null || true
-    queue_wake "$session" "$(printf 'FIRSTMATE WATCHER WAKE - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is Stop-hook-owned; do not arm another cycle yourself.\n\n%s' "$reasons")" || true
+    if queue_wake "$session" "$(printf 'FIRSTMATE WATCHER WAKE - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is Stop-hook-owned; do not arm another cycle yourself.\n\n%s' "$reasons")"; then
+      write_binding "$session" wake
+    else
+      write_binding "$session" wake-unpublished
+    fi
     exit 0
   fi
 
