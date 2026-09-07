@@ -13,12 +13,13 @@
 # Claude blocks directly with exit status 2 and stderr.
 # Codex first yields to its own Stop-owned background wake
 # (bin/fm-codex-stop-autoarm.sh), which is registered ahead of this guard on the
-# same Stop event: a live supervisor bound to THIS conversation, or the fresh
-# record of a wake that supervisor successfully published for it before exiting,
-# already owns recovery, so the stop is allowed. Only when neither proof
-# materializes within FM_CODEX_AUTOARM_SYNC_WAIT_MS does Codex fall back to its
-# native structured Stop continuation, which keeps routine recovery typed and
-# compact instead of rendering the full operator diagnostic banner.
+# same Stop event: a live supervisor bound to THIS conversation whose home has no
+# unresolved arm-failure episode, or the fresh record of a wake that supervisor
+# successfully published for it before exiting, already owns recovery, so the
+# stop is allowed. Only when neither proof materializes within
+# FM_CODEX_AUTOARM_SYNC_WAIT_MS does Codex fall back to its native structured
+# Stop continuation, which keeps routine recovery typed and compact instead of
+# rendering the full operator diagnostic banner.
 # OpenCode and pi adapters use the same predicate and force one bounded
 # follow-up because their turn-end events are passive. Grok delegates native
 # blocking when its running Stop payload advertises that capability, with one
@@ -247,8 +248,21 @@ codex_binding_field() {  # <field>
 
 # A supervisor process that is still exactly the process the binding recorded.
 # Identity, not just the pid, so a recycled pid never buys a blind stop.
+#
+# Liveness alone is optimistic: a supervisor records outcome=arming within
+# milliseconds of detaching, seconds before its arm wrapper can report anything.
+# That optimism is only safe while the home's last completed cycle actually
+# produced a watcher. state/.codex-autoarm-failure-episode says it did not, and
+# the auto-arm clears it only on an actionable wake or a verified healthy
+# watcher - never merely because a new supervisor started. So while that episode
+# stands, a freshly started supervisor proves nothing, and accepting it would
+# let every turn end after the episode's one notice pass silently and blind.
+# Refuse here instead and fall through to the typed continuation, which the
+# stop_hook_active loop guard above already bounds to one forced continuation
+# per turn.
 codex_autoarm_supervisor_live() {
   local pid identity current
+  [ -e "$STATE/.codex-autoarm-failure-episode" ] && return 1
   pid=$(codex_binding_field pid)
   case "$pid" in
     ''|*[!0-9]*) return 1 ;;

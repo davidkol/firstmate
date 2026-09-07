@@ -17,6 +17,23 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-codex-stop-autoarm)
 fm_git_identity fmtest fmtest@example.invalid
 
+# This suite detaches REAL supervisors, which survive their parent by design, so
+# a failed assertion that skips a test's own reap would otherwise leave one
+# parked for ten minutes holding a home lock and an arm child. Reap only
+# processes anchored under THIS run's tmproot, then delegate to the shared dir
+# cleanup as tests/lib.sh requires of a suite with its own EXIT trap.
+codex_autoarm_suite_cleanup() {
+  local sig pid
+  for sig in TERM KILL; do
+    for pid in $(pgrep -f "$TMP_ROOT/.*fm-codex-stop-autoarm.sh --supervise" 2>/dev/null || true); do
+      kill -"$sig" "$pid" 2>/dev/null || true
+    done
+    [ "$sig" = TERM ] && sleep 0.3
+  done
+  fm_test_cleanup
+}
+trap codex_autoarm_suite_cleanup EXIT
+
 # The ancestry harness must NOT be the `codex` that PATH resolves, because the
 # hook shells the real subcommand for delivery. Keep the two apart.
 HARNESSBIN="$TMP_ROOT/harnessbin"
@@ -173,6 +190,20 @@ binding_field() {  # <dir> <field>
   sed -n "s/^$2=//p" "$1/state/.codex-autoarm-session" 2>/dev/null | head -1
 }
 
+wait_for_supervisor_exit() {  # <dir> [deciseconds]
+  local dir=$1 limit=${2:-120} i=0 pid
+  pid=$(binding_field "$dir" pid)
+  case "$pid" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  while [ "$i" -lt "$limit" ]; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  ! kill -0 "$pid" 2>/dev/null
+}
+
 wait_for_binding_outcome() {  # <dir> <outcome> [deciseconds]
   local dir=$1 want=$2 limit=${3:-120} i=0
   while [ "$i" -lt "$limit" ]; do
@@ -185,12 +216,21 @@ wait_for_binding_outcome() {  # <dir> <outcome> [deciseconds]
 
 # Run the record's real consumer: the same Stop-event turn-end guard this home
 # would run, on the binding the supervisor actually left behind.
-run_guard_codex() {  # <dir> <session-id>
-  local dir=$1 session=$2 home
+run_guard_codex() {  # <dir> <session-id> [stop-hook-active]
+  local dir=$1 session=$2 stop_active=${3:-false} home
   home=$(cd "$dir" && pwd)
-  printf '{"cwd":"%s","session_id":"%s","stop_hook_active":false}' "$home" "$session" \
+  printf '{"cwd":"%s","session_id":"%s","stop_hook_active":%s}' "$home" "$session" "$stop_active" \
     | FM_HOME="$home" FM_CODEX_AUTOARM_SYNC_WAIT_MS=300 \
       bash "$dir/bin/fm-turnend-guard.sh" --codex 2>&1
+}
+
+guard_refused() {  # <guard-output> <message>
+  local out=$1 message=$2 reason
+  reason=$(printf '%s' "$out" | jq -r '.reason' 2>/dev/null || true)
+  case "$reason" in
+    *"watcher supervision needs Stop-owned automatic recovery"*) return 0 ;;
+  esac
+  fail "$message (guard output: ${out:-<empty>})"
 }
 
 # Break ONLY the supervisor's own wake encoding, so the guard's separate
@@ -568,6 +608,119 @@ test_arm_failure_notifies_once_per_episode() {
   pass "fm-codex-stop-autoarm: a failure episode notifies exactly once"
 }
 
+# The one notice is the whole of the episode's messaging, so every later turn end
+# has to stay loud at the guard instead. A supervisor that has merely started
+# records outcome=arming within milliseconds, long before its arm can report, so
+# treating that as recovery would end the turn blind and silent.
+test_a_continuing_failure_episode_stays_loud_at_the_guard() {
+  local dir q out
+  dir=$(make_primary_dir "$TMP_ROOT/failure-loud")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" failed
+  write_codex_shim "$q"
+  : > "$dir/state/task1.meta"
+
+  FM_CODEX_AUTOARM_ATTEMPTS=1 run_autoarm "$dir" sess-loud
+  wait_for_file "$q/1.message" 120 || fail "a verified arm failure produced no operator notice"
+
+  # The next Stop detaches a fresh supervisor that parks in its arm, which is
+  # exactly the live-but-unproven state the guard used to accept.
+  write_arm_fixture "$dir" hang
+  run_autoarm "$dir" sess-loud
+  wait_for_binding_outcome "$dir" arming \
+    || fail "the second cycle never started a supervisor to judge"
+  out=$(run_guard_codex "$dir" sess-loud)
+  guard_refused "$out" "a live supervisor ended the turn blind while the failure episode was unresolved"
+  [ "$(queue_calls "$q")" -eq 1 ] \
+    || fail "the still-unresolved episode published a repeated notice"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: a continuing failure episode keeps the guard loud on later cycles"
+}
+
+# One forced continuation per turn: the shared loop guard, not an unbounded nag.
+test_the_failure_episode_continuation_is_bounded_to_one_per_turn() {
+  local dir q out status home
+  dir=$(make_primary_dir "$TMP_ROOT/failure-bounded")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" failed
+  write_codex_shim "$q"
+  : > "$dir/state/task1.meta"
+
+  FM_CODEX_AUTOARM_ATTEMPTS=1 run_autoarm "$dir" sess-bounded
+  wait_for_file "$q/1.message" 120 || fail "a verified arm failure produced no operator notice"
+  write_arm_fixture "$dir" hang
+  run_autoarm "$dir" sess-bounded
+  wait_for_binding_outcome "$dir" arming || fail "the second cycle never started a supervisor"
+
+  out=$(run_guard_codex "$dir" sess-bounded false)
+  guard_refused "$out" "the unresolved episode did not force its one continuation"
+  out=$(run_guard_codex "$dir" sess-bounded true); status=$?
+  expect_code 0 "$status" "the stop after a forced continuation must be allowed"
+  [ -z "$out" ] || fail "the unresolved episode forced a second continuation in one turn: $out"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: an unresolved episode forces at most one continuation per turn"
+}
+
+# The episode marker must not depend on any message getting through, and a notice
+# that never published must not consume the episode's one notice.
+test_an_unpublishable_failure_notice_does_not_silence_the_episode() {
+  local dir q out
+  dir=$(make_primary_dir "$TMP_ROOT/failure-unpublished")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" failed
+  write_codex_shim "$q" 1
+  : > "$dir/state/task1.meta"
+
+  FM_CODEX_AUTOARM_ATTEMPTS=1 run_autoarm "$dir" sess-nonotice
+  wait_for_file "$q/1.thread" 120 || fail "the first notice was never attempted"
+  wait_for_supervisor_exit "$dir" || fail "the first supervisor never finished its cycle"
+  assert_absent "$dir/state/.codex-autoarm-failure-notified" \
+    "a notice that never published was recorded as delivered"
+
+  write_codex_shim "$q"
+  FM_CODEX_AUTOARM_ATTEMPTS=1 run_autoarm "$dir" sess-nonotice
+  wait_for_file "$q/2.message" 120 \
+    || fail "an unpublishable first notice silenced the episode's later notices"
+  assert_contains "$(cat "$q/2.message")" "FIRSTMATE WATCHER FAILURE" \
+    "the retried notice must still name the automatic mechanism failure"
+
+  write_arm_fixture "$dir" hang
+  run_autoarm "$dir" sess-nonotice
+  wait_for_binding_outcome "$dir" arming || fail "the third cycle never started a supervisor"
+  out=$(run_guard_codex "$dir" sess-nonotice)
+  guard_refused "$out" "an episode whose first notice failed to publish lost its loud guard"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: an unpublishable failure notice neither silences nor suppresses the episode"
+}
+
+# Recovery is the only thing that closes an episode, and it returns the home to
+# quiet operation: no continuation, no repeated notice.
+test_recovery_closes_the_failure_episode_and_the_home_goes_quiet() {
+  local dir q out status
+  dir=$(make_primary_dir "$TMP_ROOT/failure-recovered")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" failed
+  write_codex_shim "$q"
+  : > "$dir/state/task1.meta"
+
+  FM_CODEX_AUTOARM_ATTEMPTS=1 run_autoarm "$dir" sess-recover
+  wait_for_file "$q/1.message" 120 || fail "a verified arm failure produced no operator notice"
+
+  write_arm_fixture "$dir" actionable
+  run_autoarm "$dir" sess-recover
+  wait_for_binding_outcome "$dir" wake 120 || fail "the recovering cycle never published its wake"
+  assert_absent "$dir/state/.codex-autoarm-failure-episode" \
+    "an actionable wake left the failure episode open"
+  assert_absent "$dir/state/.codex-autoarm-failure-notified" \
+    "an actionable wake left the consumed notice marker behind"
+
+  out=$(run_guard_codex "$dir" sess-recover); status=$?
+  expect_code 0 "$status" "a recovered home must end its turn without a continuation"
+  [ -z "$out" ] || fail "a recovered home still forced a continuation: $out"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: recovery closes the episode and the home goes quiet"
+}
+
 # --- home isolation ----------------------------------------------------------
 
 test_a_second_home_is_never_woken_and_never_consumes_the_first_homes_events() {
@@ -618,4 +771,8 @@ test_stop_from_a_new_conversation_retires_the_stale_supervisor
 test_a_retired_supervisor_removes_its_own_arm_output
 test_away_mode_appearing_mid_cycle_suppresses_the_wake
 test_arm_failure_notifies_once_per_episode
+test_a_continuing_failure_episode_stays_loud_at_the_guard
+test_the_failure_episode_continuation_is_bounded_to_one_per_turn
+test_an_unpublishable_failure_notice_does_not_silence_the_episode
+test_recovery_closes_the_failure_episode_and_the_home_goes_quiet
 test_a_second_home_is_never_woken_and_never_consumes_the_first_homes_events

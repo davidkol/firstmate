@@ -948,6 +948,27 @@ test_hook_codex_allows_when_a_supervisor_is_bound_to_this_conversation() {
   pass "fm-turnend-guard: Codex allows a stop whose recovery a bound live supervisor owns"
 }
 
+# A live supervisor is only optimistic proof: it records outcome=arming long
+# before its arm can report. An unresolved arm-failure episode withdraws that
+# proof, so a continuing failure cannot end turn after turn blind and silent.
+test_hook_codex_blocks_a_live_supervisor_while_a_failure_episode_is_open() {
+  local dir out status reason sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-open-episode")
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  write_codex_binding "$dir" "$sleeper" sess-episode
+  : > "$dir/state/.codex-autoarm-failure-episode"
+  out=$(run_hook_codex_session "$dir" false sess-episode); status=$?
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  expect_code 0 "$status" "Codex guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "a freshly started supervisor must not close an unresolved failure episode"
+  pass "fm-turnend-guard: Codex blocks a live supervisor while a failure episode is unresolved"
+}
+
 # A supervisor left over from a closed conversation would publish its wake where
 # nobody is reading, so it must not buy this conversation a blind stop.
 test_hook_codex_blocks_when_the_supervisor_is_bound_to_another_conversation() {
@@ -1907,6 +1928,7 @@ test_codex_hook_invokes_shared_guard
 test_codex_hook_registers_stop_autoarm_before_the_guard
 test_hook_codex_allows_when_a_supervisor_is_bound_to_this_conversation
 test_hook_codex_blocks_when_the_supervisor_is_bound_to_another_conversation
+test_hook_codex_blocks_a_live_supervisor_while_a_failure_episode_is_open
 test_hook_codex_blocks_when_the_bound_supervisor_is_dead
 test_hook_codex_allows_when_this_conversation_has_a_fresh_published_wake
 test_hook_codex_blocks_on_a_stale_published_wake

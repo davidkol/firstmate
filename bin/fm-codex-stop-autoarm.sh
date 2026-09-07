@@ -67,6 +67,20 @@
 # instead, which the guard refuses like every other non-wake outcome, so an
 # attempted wake can never stand in for a published one.
 #
+# A failure episode keeps two separate records so neither can silently do the
+# other's job:
+#   state/.codex-autoarm-failure-episode    an unresolved failure episode exists
+#     because the last completed cycle could not bring a watcher up. This one
+#     and only this one decides whether the turn-end guard may still accept a
+#     merely live supervisor as recovery. It is written on every failed cycle.
+#   state/.codex-autoarm-failure-notified   one operator notice was already
+#     PUBLISHED for this episode. It decides nothing but whether to publish
+#     another, and it is written only after the publication call succeeds, so a
+#     notice that never reached the conversation cannot suppress the next one.
+# Both are cleared together, and only by real recovery: an actionable wake or a
+# verified healthy watcher (or a home that no longer needs supervision at all).
+# A new supervisor merely starting never clears either.
+#
 # `codex queue` returns success for a conversation that has already exited, so a
 # successful publication is NOT proof of delivery. That is safe because the
 # actionable event is already durable in state/.wake-queue: a wake published
@@ -84,6 +98,7 @@ ARM_OUTPUT=
 OWNER_LOCK="$STATE/.codex-autoarm.lock"
 BINDING="$STATE/.codex-autoarm-session"
 FAILURE_NOTICE="$STATE/.codex-autoarm-failure-notified"
+FAILURE_EPISODE="$STATE/.codex-autoarm-failure-episode"
 RETIRE_WAIT=${FM_CODEX_AUTOARM_RETIRE_WAIT:-50}
 AUTOARM_ATTEMPTS=${FM_CODEX_AUTOARM_ATTEMPTS:-2}
 case "$AUTOARM_ATTEMPTS" in
@@ -199,6 +214,13 @@ main_hook() {
     "$SCRIPT_DIR/fm-codex-stop-autoarm.sh" --supervise "$session_id" \
     >/dev/null 2>&1 || true
   exit 0
+}
+
+# Close the failure episode. Only real recovery calls this, so a guard that
+# refuses to trust a merely live supervisor stays loud until a watcher is
+# genuinely back.
+failure_episode_clear() {
+  rm -f "$FAILURE_EPISODE" "$FAILURE_NOTICE" 2>/dev/null || true
 }
 
 # Remove this supervisor's own arm output, if it has one, and forget the path so
@@ -325,7 +347,7 @@ main_supervise() {  # <session-id>
   # conversation.
   if ! fm_supervision_needed "$STATE" "$GRACE"; then
     write_binding "$session" clean
-    rm -f "$FAILURE_NOTICE" 2>/dev/null || true
+    failure_episode_clear
     arm_output_discard
     exit 0
   fi
@@ -334,7 +356,7 @@ main_supervise() {  # <session-id>
     # Another verified watcher already owns this home and is still beating, so
     # this cycle closing early is benign and needs no wake.
     write_binding "$session" clean
-    rm -f "$FAILURE_NOTICE" 2>/dev/null || true
+    failure_episode_clear
     arm_output_discard
     exit 0
   fi
@@ -344,7 +366,7 @@ main_supervise() {  # <session-id>
   arm_output_discard
 
   if [ "$actionable" -eq 1 ]; then
-    rm -f "$FAILURE_NOTICE" 2>/dev/null || true
+    failure_episode_clear
     if queue_wake "$session" "$(printf 'FIRSTMATE WATCHER WAKE - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is Stop-hook-owned; do not arm another cycle yourself.\n\n%s' "$reasons")"; then
       write_binding "$session" wake
     else
@@ -353,13 +375,15 @@ main_supervise() {  # <session-id>
     exit 0
   fi
 
-  # Notify once per continuous failure episode. Every later failure records the
-  # outcome and stays silent, so a broken arm cannot turn into a wake loop; the
-  # turn-end guard remains the loud path while the episode is unresolved.
+  # Open or extend the episode first: it is what keeps the turn-end guard loud on
+  # every later turn end, so it must not depend on any message getting through.
+  # Then notify at most once per episode, so a broken arm cannot turn into a wake
+  # loop, and record that notice only if it was really published.
   write_binding "$session" failed
-  if [ ! -e "$FAILURE_NOTICE" ]; then
+  : > "$FAILURE_EPISODE" 2>/dev/null || true
+  if [ ! -e "$FAILURE_NOTICE" ] \
+    && queue_wake "$session" "$(printf 'FIRSTMATE WATCHER FAILURE - the Stop-owned background wake could not verify a live watcher after %s bounded attempts. Drain queued wakes, then inspect the automatic arm and watcher startup before ending the turn blind. Do not start a manual background arm from this notice.\n\n%s' "$attempt" "$reasons")"; then
     : > "$FAILURE_NOTICE" 2>/dev/null || true
-    queue_wake "$session" "$(printf 'FIRSTMATE WATCHER FAILURE - the Stop-owned background wake could not verify a live watcher after %s bounded attempts. Drain queued wakes, then inspect the automatic arm and watcher startup before ending the turn blind. Do not start a manual background arm from this notice.\n\n%s' "$attempt" "$reasons")" || true
   fi
   exit 0
 }
