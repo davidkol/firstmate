@@ -122,6 +122,17 @@ matrix_case D55 deny 'while true; do pkill -f fm-watch; done'
 matrix_case D56 deny 'for x in 1; do pkill -f fm-watch; done'
 matrix_case D57 deny 'case x in x) pkill -f fm-watch ;; esac'
 matrix_case D58 deny 'until false; do kill $(pgrep -f fm-watch); done'
+matrix_case D59 deny 'bin/fm-codex-detach.sh bin/fm-watch-arm.sh'
+matrix_case D60 deny 'bin/fm-codex-detach.sh bin/fm-watch.sh'
+matrix_case D61 deny "bin/fm-codex-detach.sh $ROOT/bin/fm-watch-arm.sh"
+matrix_case D62 deny 'bin/fm-codex-stop-autoarm.sh'
+matrix_case D63 deny 'bin/fm-codex-stop-autoarm.sh --supervise sess-1 4242 identity'
+matrix_case D64 deny 'nohup bin/fm-codex-stop-autoarm.sh --supervise sess-1 4242 identity'
+matrix_case D65 deny 'bin/fm-codex-stop-autoarm.sh --supervise sess-1 4242 identity &'
+matrix_case D66 deny 'bin/fm-codex-detach.sh bin/fm-codex-stop-autoarm.sh --supervise sess-1 4242 identity'
+
+matrix_case R20 allow 'bin/fm-codex-detach.sh echo detached'
+matrix_case R21 allow "rg -n 'bin/fm-codex-stop-autoarm.sh --supervise' docs tests"
 
 matrix_case E01 allow "bin/fm-watch-checkpoint.sh --seconds '180;still-one-arg'"
 matrix_case E02 allow "bin/fm-watch-checkpoint.sh --label 'fm-watch-arm.sh; literal argument'"
@@ -183,7 +194,7 @@ run_matrix_entry() {
   fi
 
   [ "$rc" -eq 2 ] || fail "$id via $entry must deny, got exit $rc"
-  jq -e '.hookSpecificOutput.permissionDecision == "deny" and (.systemMessage | test("\\[(watcher-(background|pipeline|redirection|bundled|nested|direct)|broad-watcher-kill|unclassifiable-protected-command)\\]"))' "$err_file" >/dev/null 2>&1 \
+  jq -e '.hookSpecificOutput.permissionDecision == "deny" and (.systemMessage | test("\\[(watcher-(background|pipeline|redirection|bundled|nested|direct|supervisor)|broad-watcher-kill|unclassifiable-protected-command)\\]"))' "$err_file" >/dev/null 2>&1 \
     || fail "$id via $entry deny must carry a stable reason code on stderr: $(cat "$err_file")"
   if [ "$entry" = claude ]; then
     [ ! -s "$out_file" ] || fail "$id via claude deny must leave stdout empty: $(cat "$out_file")"
@@ -233,6 +244,12 @@ test_direct_policy_contract() {
   assert_policy direct-watch-not-blessed $'deny\twatcher-direct' 'bin/fm-watch.sh'
   assert_policy direct-watch-expanded $'deny\twatcher-direct' '$FM_HOME/bin/fm-watch.sh'
   assert_policy direct-watch-safe-shape $'deny\twatcher-direct' 'cd /tmp; bin/fm-watch.sh'
+  assert_policy detach-wrapper-arm $'deny\twatcher-nested' 'bin/fm-codex-detach.sh bin/fm-watch-arm.sh'
+  assert_policy detach-wrapper-watch $'deny\twatcher-direct' 'bin/fm-codex-detach.sh bin/fm-watch.sh'
+  assert_policy detach-wrapper-ordinary allow 'bin/fm-codex-detach.sh echo detached'
+  assert_policy supervisor-entry $'deny\twatcher-supervisor' 'bin/fm-codex-stop-autoarm.sh --supervise sess-1 4242 identity'
+  assert_policy supervisor-entry-hook-mode $'deny\twatcher-supervisor' 'bin/fm-codex-stop-autoarm.sh'
+  assert_policy supervisor-entry-expanded $'deny\twatcher-supervisor' '$FM_HOME/bin/fm-codex-stop-autoarm.sh --supervise s 1 i'
   heredoc_data=$'cat <<\'EOF\'\nbin/fm-watch-arm.sh &\nEOF'
   heredoc_watcher=$'bin/fm-watch-arm.sh <<\'EOF\'\ndata only\nEOF'
   assert_policy direct-heredoc-data allow "$heredoc_data"

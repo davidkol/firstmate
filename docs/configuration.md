@@ -493,7 +493,9 @@ FM_CLAUDE_TURNEND_BLOCK_BUDGET=3   # consecutive --claude guard re-blocks before
 FM_CODEX_AUTOARM_ATTEMPTS=2   # bounded Stop-owned arm attempts per Codex background-wake cycle; accepted values are 1, 2, or 3
 FM_CODEX_AUTOARM_SYNC_WAIT_MS=1500   # milliseconds the --codex turn-end guard waits for a live supervisor bound to this conversation, or for the fresh successful wake one already published, before falling back to its typed repair continuation
 FM_CODEX_AUTOARM_OUTCOME_FRESH=15   # seconds a recorded Codex wake outcome stays eligible as proof that this turn's recovery already happened; only outcome=wake ever qualifies
-FM_CODEX_AUTOARM_RETIRE_WAIT=50   # deciseconds the Codex Stop hook waits for a supervisor bound to a different conversation to exit before declining to arm
+FM_CODEX_AUTOARM_RETIRE_WAIT=50   # deciseconds the Codex Stop hook waits for a supervisor bound to a different conversation to exit before declining to arm and opening a failure episode
+FM_CODEX_PUBLISH_ATTEMPTS=3   # bounded `codex queue` publication attempts for one wake or failure notice; accepted values are 1 through 5. An unencodable body is permanent and never retried
+FM_CODEX_PUBLISH_RETRY_DELAY=1   # seconds between those publication attempts
 FM_ARM_CONFIRM_TIMEOUT=10   # seconds fm-watch-arm waits to confirm a fresh watcher before reporting FAILED
 FM_ARM_ATTACH_POLL=0.5  # seconds between checks while fm-watch-arm is attached to an existing healthy watcher cycle
 FM_OPENCODE_ARM_READY_TIMEOUT_MS=12000   # milliseconds the OpenCode primary watcher plugin waits for an arm attempt to report started, healthy, wake, or failure

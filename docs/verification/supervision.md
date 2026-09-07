@@ -440,6 +440,29 @@ tests/fm-session-start.test.sh
 ```
 
 All five commands exited zero.
+
+### Codex background-wake lifecycle repair
+
+The ownership, destination, binding-read and delivery-failure paths around that wake were repaired in this repository on 2026-09-07, after a fault-probe audit reproduced four runtime cases the earlier passes had not covered.
+This entry records deterministic in-repository verification only.
+The live Codex axis was NOT re-run for it: the opt-in `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` still names codex-cli 0.153.4 from the 2026-09-07 pass above, and its own oracles were tightened in this change without being re-executed against a real client.
+Treat that axis as untested for this repair until the opt-in command is run again.
+
+Deterministically verified here:
+
+- A healthy watcher whose only supervisor is bound to a replaced conversation no longer allows a Codex stop, while away mode still allows it; the fixture's watcher record is independently checked against `fm_watcher_healthy` so the refusal cannot come from a broken fixture.
+- Two binding records that are each refused on their own are never combined into an acceptance while the record is atomically replaced under the reader.
+- A detached supervisor whose authorizing primary was replaced arms nothing and publishes nothing.
+- A retirement that times out opens the failure episode instead of reading as a successful rebind.
+- A rejected publication is retried within its bound and recovers; an exhausted one records `wake-unpublished` and opens the episode.
+- The failure episode is retired at the idle and healthy-watcher boundaries no supervisor survives to reach.
+- The launch policy denies `bin/fm-codex-detach.sh` around a protected watcher command and denies every `bin/fm-codex-stop-autoarm.sh` spelling, including `--supervise` backgrounded and under `nohup`.
+
+```sh
+tests/fm-codex-stop-autoarm.test.sh
+tests/fm-turnend-guard.test.sh
+tests/fm-arm-pretool-check.test.sh
+```
 Four mutations were run against the new oracles and each failed as intended: restoring the retired `codex` -> `checkpoint` supervision-model mapping, dropping the guard's conversation-identity check on the supervisor record, dropping stale-supervisor retirement, and publishing the wake body unmarked.
 
 Codex now shares Claude's `autoarm` supervision model, which retires the Codex-only `checkpoint` model and the session-start banner suppression that depended on it.

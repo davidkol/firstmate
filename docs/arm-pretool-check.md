@@ -75,6 +75,13 @@ This covers statically-visible literal words in command position; opaque dynamic
 `bin/fm-watch.sh` is protected but is not a blessed entry point.
 A direct `bin/fm-watch.sh` execution - relative, `<code-root>`-anchored, `$VAR`-prefixed, or `~`-prefixed - always denies with `watcher-direct`, whose reason points the caller at `bin/fm-watch-arm.sh` and `bin/fm-watch-checkpoint.sh`.
 
+`bin/fm-codex-stop-autoarm.sh` is protected on the same grounds and is never a blessed entry point either, in hook mode or in `--supervise` mode, denying with `watcher-supervisor`.
+Its `--supervise` mode runs the arm wrapper and publishes wakes, so reaching it from a tool call is the same unsupervised arm one level removed; the registered `.codex/hooks.json` Stop hook is its only caller.
+Its spelling contains no `fm-watch`, so `bin/fm-arm-pretool-check.sh`'s transport prefilter carries a second marker for it; that marker set is coupled to this protected list and must grow with it.
+
+`bin/fm-codex-detach.sh` is an execution wrapper, not a protected script.
+It execs its argument in a new process session, so the classifier resolves through it to the real command exactly as it does through `nohup` or `env`: `bin/fm-codex-detach.sh bin/fm-watch-arm.sh` denies as `watcher-nested` and `bin/fm-codex-detach.sh bin/fm-watch.sh` denies as `watcher-direct`, while the helper around an ordinary command stays allowed.
+
 The same bytes in an argument, comment, assertion, documentation query, Python string, `printf`, or `tmux send-keys` payload are data and do not make the outer command relevant.
 
 Literal `sh`, `bash`, or `zsh` `-c` payloads and literal `eval` payloads are recursively classified.
@@ -139,6 +146,7 @@ Every semantic deny includes one stable code in square brackets before its prose
 | `broad-watcher-kill` | An actual broad process kill targets the watcher. |
 | `unclassifiable-protected-command` | Malformed or unsupported syntax contains a protected command and cannot be safely classified. |
 | `watcher-direct` | A direct `bin/fm-watch.sh` execution; the watcher must be reached through `bin/fm-watch-arm.sh` or `bin/fm-watch-checkpoint.sh`. |
+| `watcher-supervisor` | Any `bin/fm-codex-stop-autoarm.sh` execution, including `--supervise`; the registered Codex Stop hook is its only caller. |
 
 Reason codes are the stable contract for tests and adapters.
 Prose may improve without changing adapter behavior.

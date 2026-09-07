@@ -25,6 +25,11 @@ fail() {
 command -v codex >/dev/null 2>&1 || fail "codex not found"
 command -v tmux >/dev/null 2>&1 || fail "tmux not found"
 
+# The candidate's own liveness and watcher-health predicates, so the successor
+# check below asks the same question the guard and the arm layer ask.
+# shellcheck source=bin/fm-wake-lib.sh
+. "$ROOT/bin/fm-wake-lib.sh"
+
 LAB="$ROOT/.codex-live-e2e.$$"
 PROJECT="$LAB/project"
 HOME_DIR="$LAB/fmhome"
@@ -74,6 +79,24 @@ wait_for_pane() {  # <needle> <seconds> <what>
     i=$((i + 1))
   done
   fail "$what (pane never showed '$needle'):
+$(pane)"
+}
+
+# A pane that merely SHOWS the sentinel proves nothing: the request that asked
+# for it is echoed into the same pane, so one occurrence is the prompt, not an
+# answer. Wait for a second one, which only a completed assistant turn can add.
+pane_occurrences() {  # <needle>
+  pane | grep -c -F -- "$1" 2>/dev/null || true
+}
+
+wait_for_pane_answer() {  # <needle> <seconds> <what>
+  local needle=$1 limit=$2 what=$3 i=0
+  while [ "$i" -lt $((limit * 2)) ]; do
+    [ "$(pane_occurrences "$needle")" -ge 2 ] && return 0
+    sleep 0.5
+    i=$((i + 1))
+  done
+  fail "$what (the pane never showed '$needle' as an answer, only as the echoed request):
 $(pane)"
 }
 
@@ -141,7 +164,7 @@ while [ "$i" -lt 40 ]; do
   sleep 0.5
   i=$((i + 1))
 done
-wait_for_pane READY 120 "the isolated Codex conversation never completed its first turn"
+wait_for_pane_answer READY 120 "the isolated Codex conversation never completed its first turn"
 
 # --- idle home: the Stop hook must arm nothing ------------------------------
 [ ! -f "$HOME_DIR/state/.codex-autoarm-session" ] \
@@ -153,7 +176,7 @@ wait_for_pane READY 120 "the isolated Codex conversation never completed its fir
 printf 'window=fm:fm-live\nworktree=%s\nkind=ship\nharness=codex\n' "$PROJECT" \
   > "$HOME_DIR/state/live.meta"
 say 'Reply with exactly ARMED and nothing else.'
-wait_for_pane ARMED 120 "the Codex conversation never finished the arming turn"
+wait_for_pane_answer ARMED 120 "the Codex conversation never finished the arming turn"
 wait_for_file "$HOME_DIR/state/.codex-autoarm-session" 30 \
   "the Stop hook never armed a supervisor for a home with work in flight"
 
@@ -229,6 +252,27 @@ done
   || fail "the cycle did not re-arm after delivering its wake"
 [ "$(binding_field session)" = "$CONVERSATION" ] \
   || fail "the re-armed supervisor bound to a different conversation"
+
+# A different pid value is not a successor. Verify the record names a process
+# that is genuinely alive and still the process it recorded, and that the
+# watcher underneath it is the one the shared predicate accepts as healthy.
+SUCCESSOR=$(binding_field pid)
+SUCCESSOR_IDENTITY=$(binding_field identity)
+kill -0 "$SUCCESSOR" 2>/dev/null \
+  || fail "the re-armed record names a supervisor that is not running"
+[ -n "$SUCCESSOR_IDENTITY" ] \
+  && [ "$(fm_pid_identity "$SUCCESSOR")" = "$SUCCESSOR_IDENTITY" ] \
+  || fail "the re-armed record names a pid that is no longer the process it recorded"
+i=0
+while [ "$i" -lt 120 ]; do
+  fm_watcher_healthy "$HOME_DIR/state" "$PROJECT/bin/fm-watch.sh" 300 "$HOME_DIR" && break
+  sleep 0.5
+  i=$((i + 1))
+done
+fm_watcher_healthy "$HOME_DIR/state" "$PROJECT/bin/fm-watch.sh" 300 "$HOME_DIR" \
+  || fail "the re-armed cycle never produced a watcher the shared health predicate accepts"
+[ ! -e "$HOME_DIR/state/.codex-autoarm-failure-episode" ] \
+  || fail "the re-armed cycle left an unresolved failure episode"
 
 printf 'ok - %s live E2E: idle armed nothing, a detached supervisor waited without model cost, the captain kept the conversation, and one worker event resumed it\n' \
   "$CODEX_VERSION"

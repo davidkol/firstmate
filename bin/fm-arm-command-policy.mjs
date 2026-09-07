@@ -26,6 +26,7 @@ const REASONS = {
   "broad-watcher-kill": "a broad process kill targeting the firstmate watcher is forbidden",
   "unclassifiable-protected-command": "unsupported or malformed shell syntax contains a protected watcher command",
   "watcher-direct": "bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead",
+  "watcher-supervisor": "bin/fm-codex-stop-autoarm.sh is launched by the registered Codex Stop hook; running it or its --supervise mode by hand arms a watcher outside that ownership",
 };
 
 function parseArguments(argv) {
@@ -44,7 +45,7 @@ function parseArguments(argv) {
 }
 
 function rawMentionsProtected(command) {
-  return /(?:^|[/\s'"`(])fm-watch(?:-(?:arm|checkpoint))?\.sh\b/.test(normalizeLineContinuations(command));
+  return /(?:^|[/\s'"`(])(?:fm-watch(?:-(?:arm|checkpoint))?|fm-codex-stop-autoarm)\.sh\b/.test(normalizeLineContinuations(command));
 }
 
 function rawMentionsBroadKill(command) {
@@ -553,6 +554,12 @@ export function commandPosition(tokens) {
   let command = words[index];
   while (command) {
     const name = basename(command.value);
+    if (name === "fm-codex-detach.sh") {
+      wrappers.push(name);
+      index += 1;
+      command = words[index];
+      continue;
+    }
     if (name === "exec" || name === "command" || name === "sudo" || name === "nohup") {
       wrappers.push(name);
       const options = consumeWrapperOptions(name, words, index + 1);
@@ -599,6 +606,10 @@ const PROTECTED_SCRIPTS = [
   { relative: "bin/fm-watch-arm.sh", kind: "arm" },
   { relative: "bin/fm-watch-checkpoint.sh", kind: "checkpoint" },
   { relative: "bin/fm-watch.sh", kind: "watch" },
+  // The Codex Stop hook's own supervisor entry. Its --supervise mode runs the
+  // arm wrapper and publishes wakes, so reaching it from a tool call is the
+  // same unsupervised arm bin/fm-watch.sh is denied for, one level removed.
+  { relative: "bin/fm-codex-stop-autoarm.sh", kind: "supervisor" },
 ];
 
 function protectedIdentity(value, root) {
@@ -876,7 +887,7 @@ function setupKind(info, context) {
 }
 
 function finalProtectedAllowed(info) {
-  if (!info.protectedKind || info.protectedKind === "watch" || info.redirection || info.substitution) return false;
+  if (!info.protectedKind || info.protectedKind === "watch" || info.protectedKind === "supervisor" || info.redirection || info.substitution) return false;
   if (!ordinaryWordsOnly(info.tokens) || info.position.prefixAssignments > 0) return false;
   const wrappers = info.position.wrappers;
   return wrappers.length === 0 || (wrappers.length === 1 && wrappers[0] === "exec");
@@ -906,6 +917,7 @@ function decision(command, root, home) {
   if (analysis.error && analysis.protectedFound) return deny("unclassifiable-protected-command");
   if (!analysis.protectedFound) return { decision: "allow" };
   if (analysis.nodeInfos?.some((info) => info.protectedKind === "watch")) return deny("watcher-direct");
+  if (analysis.nodeInfos?.some((info) => info.protectedKind === "supervisor")) return deny("watcher-supervisor");
   if (analysis.nestedProtected) return deny("watcher-nested");
 
   const separators = analysis.program.separators;

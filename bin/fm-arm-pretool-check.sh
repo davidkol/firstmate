@@ -104,10 +104,16 @@ fi
 [ -n "$CMD" ] || exit 0
 
 # Strict-superset prefilter (transport only; owns zero classification semantics).
-# Every protected watcher execution and every broad watcher kill resolves to the
-# fm-watch byte sequence AFTER the classifier's byte normalization, so a command
-# that cannot contain fm-watch even after that normalization can never be a
-# deniable watcher command and is fast-allowed without the Node policy owner.
+# Every protected execution and every broad watcher kill resolves to one of the
+# marker byte sequences below AFTER the classifier's byte normalization, so a
+# command that cannot contain any of them even after that normalization can
+# never be a deniable watcher command and is fast-allowed without the Node
+# policy owner. The marker set is COUPLED to the classifier's PROTECTED_SCRIPTS
+# list: fm-watch covers the three watcher scripts, and fm-codex-stop-autoarm
+# covers the Codex supervisor entry, whose own spelling contains no fm-watch
+# even though its --supervise mode runs the arm wrapper. Adding a protected
+# script whose name matches neither marker REQUIRES extending this set in the
+# same change, or the prefilter stops being a strict superset.
 # We mirror the classifier's cheapest byte transforms here (drop line-
 # continuation and escape backslashes, quotes, and newlines) so obfuscated
 # protected paths such as fm-watc\<newline>h-arm.sh or fm-"watch"-arm.sh still
@@ -136,7 +142,7 @@ case "$CMD" in
   *"\$'"*|*'$"'*) ;;
   *)
     case "$PREFILTER" in
-      *fm-watch*) ;;
+      *fm-watch*|*fm-codex-stop-autoarm*) ;;
       *) exit 0 ;;
     esac
     ;;

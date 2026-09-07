@@ -173,22 +173,147 @@ budget_reset() {
   fm_lock_release "$BUDGET_LOCK"
 }
 
+# --- --codex cooperative path ------------------------------------------------
+# The Stop-owned background wake (bin/fm-codex-stop-autoarm.sh) is registered
+# ahead of this guard on the same Stop event and detaches its supervisor rather
+# than blocking. Give it a brief bounded window to prove it owns recovery for
+# THIS conversation before falling back to the repair block: without this, the
+# very first turn end of every cycle would still force a foreground checkpoint,
+# which is exactly what that mode removes.
+#
+# Read the record ONCE per decision. Each publication of the binding is atomic,
+# but a sequence of separate reads is not: a replacement landing between two of
+# them would let the session of one record and the pid of another combine into a
+# proof that neither record supports. One open, one pass, one snapshot - the
+# open fd keeps reading the version it started on even if the name is replaced.
+codex_binding_snapshot() {
+  local line
+  CODEX_BIND_PID=
+  CODEX_BIND_IDENTITY=
+  CODEX_BIND_SESSION=
+  CODEX_BIND_OUTCOME=
+  CODEX_BIND_UPDATED=
+  [ -f "$STATE/.codex-autoarm-session" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      pid=*) [ -n "$CODEX_BIND_PID" ] || CODEX_BIND_PID=${line#pid=} ;;
+      identity=*) [ -n "$CODEX_BIND_IDENTITY" ] || CODEX_BIND_IDENTITY=${line#identity=} ;;
+      session=*) [ -n "$CODEX_BIND_SESSION" ] || CODEX_BIND_SESSION=${line#session=} ;;
+      outcome=*) [ -n "$CODEX_BIND_OUTCOME" ] || CODEX_BIND_OUTCOME=${line#outcome=} ;;
+      updated_at=*) [ -n "$CODEX_BIND_UPDATED" ] || CODEX_BIND_UPDATED=${line#updated_at=} ;;
+    esac
+  done < "$STATE/.codex-autoarm-session" 2>/dev/null
+  [ -n "$CODEX_BIND_SESSION" ]
+}
+
+# An unresolved arm-failure episode. The auto-arm opens it on a failed cycle, a
+# failed wake publication, and a failed retirement, and closes it only on an
+# actionable published wake or a verified healthy watcher. This guard closes it
+# too, at the two boundaries no supervisor survives to reach: a home with no
+# supervision need left, and a home whose watcher is verifiably healthy again.
+codex_failure_episode_open() {
+  [ -e "$STATE/.codex-autoarm-failure-episode" ]
+}
+
+codex_failure_episode_clear() {
+  rm -f "$STATE/.codex-autoarm-failure-episode" \
+        "$STATE/.codex-autoarm-failure-notified" 2>/dev/null || true
+}
+
+# A supervisor process that is still exactly the process the binding recorded.
+# Identity, not just the pid, so a recycled pid never buys a blind stop.
+#
+# Liveness alone is optimistic: a supervisor records outcome=arming within
+# milliseconds of detaching, seconds before its arm wrapper can report anything.
+# That optimism is only safe while the home's last completed cycle actually
+# produced a watcher. state/.codex-autoarm-failure-episode says it did not, and
+# the auto-arm clears it only on an actionable wake or a verified healthy
+# watcher - never merely because a new supervisor started. So while that episode
+# stands, a freshly started supervisor proves nothing, and accepting it would
+# let every turn end after the episode's one notice pass silently and blind.
+# Refuse here instead and fall through to the typed continuation, which the
+# stop_hook_active loop guard above already bounds to one forced continuation
+# per turn.
+codex_supervisor_process_live() {
+  local current
+  case "$CODEX_BIND_PID" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  fm_pid_alive "$CODEX_BIND_PID" || return 1
+  [ -n "$CODEX_BIND_IDENTITY" ] || return 1
+  current=$(fm_pid_identity "$CODEX_BIND_PID" 2>/dev/null || true)
+  [ -n "$current" ] && [ "$current" = "$CODEX_BIND_IDENTITY" ]
+}
+
+codex_autoarm_supervisor_live() {
+  codex_failure_episode_open && return 1
+  codex_supervisor_process_live
+}
+
+# A supervisor whose whole cycle fits inside the wait window above publishes its
+# wake and exits, so process liveness alone would report a wake that was just
+# published as absent supervision and send this session to repair a hook
+# registration that is working. Accept only the outcome the supervisor writes
+# after its publication call returned success, and only while it is fresh enough
+# to have been published recently: arming, wake-unpublished, superseded, failed,
+# afk, clean, and every aged record still block. Freshness is a time window, not
+# a cycle identity - it establishes that a wake was published recently, not that
+# it belongs to this Stop's own cycle. That success is a publication and not a
+# delivery receipt; the durable state/.wake-queue record is what keeps a wake no
+# live conversation consumed recoverable. This mirrors the fresh rewake outcome
+# the --claude path accepts from its own auto-arm epoch.
+codex_autoarm_delivered_wake() {
+  local age
+  [ "$CODEX_BIND_OUTCOME" = wake ] || return 1
+  case "$CODEX_BIND_UPDATED" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  age=$(( $(date +%s) - CODEX_BIND_UPDATED ))
+  [ "$age" -ge 0 ] && [ "$age" -lt "$CODEX_OUTCOME_FRESH" ]
+}
+
+codex_autoarm_owns_recovery() {
+  codex_binding_snapshot || return 1
+  # The wake target must be this conversation; a supervisor bound to a closed
+  # one would publish where nobody is reading.
+  [ "$CODEX_BIND_SESSION" = "$SESSION_ID" ] || return 1
+  codex_autoarm_supervisor_live && return 0
+  codex_autoarm_delivered_wake
+}
+
 fm_supervision_status "$STATE" "$GRACE"
 if [ "$FM_SUP_NEEDED" = false ]; then
+  # Nothing left to supervise, so any Codex failure episode has outlived its
+  # cause. No supervisor survives a failed cycle to reach this boundary, and the
+  # auto-arm hook returns even earlier, so this is the one place that can retire
+  # it before a later batch of work inherits a stale, misleading block.
+  [ "$CODEX_MODE" -eq 1 ] && codex_failure_episode_clear
   [ -e "$FAILURE_NOTICE" ] || budget_reset
   exit 0
 fi
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-  [ "$CLAUDE_MODE" -eq 1 ] || exit 0
-  fm_failure_episode_reset "$STATE" && exit 0
-  # Supervision is healthy, but the recorded failure episode could not be
-  # cleared. Blocking is the safe branch: it keeps every episode marker intact
-  # for the retry instead of allowing the stop with stale failure state that
-  # would mis-account the next episode. Say so, because a silent exit 2 re-invokes
-  # the model with no message and no instruction.
-  printf '●  Supervision is healthy, but the Claude failure episode could not be reset: %s is held by another Stop-event writer or its state directory is unwritable.\n●  This stop is blocked so the episode markers survive for the retry. Simply end the turn again.\n●  If every retry reports this, check that directory by hand: a live holder clears on its own, an unwritable or full state directory does not.\n' \
-    "$BUDGET_LOCK" >&2
-  exit 2
+  if [ "$CODEX_MODE" -eq 1 ]; then
+    # A verified healthy watcher is the episode's other real ending.
+    codex_failure_episode_clear
+    # It is NOT, on its own, a stop proof for Codex. The watcher observes the
+    # home; the supervisor is what turns an observed event into a message in a
+    # conversation. A watcher that is healthy while the only supervisor is bound
+    # to a conversation that has been replaced leaves this one with no route at
+    # all, which is exactly how a handoff goes missing. Away mode is the one
+    # exception: there the daemon owns triage and delivery.
+    [ -e "$STATE/.afk" ] && exit 0
+  else
+    [ "$CLAUDE_MODE" -eq 1 ] || exit 0
+    fm_failure_episode_reset "$STATE" && exit 0
+    # Supervision is healthy, but the recorded failure episode could not be
+    # cleared. Blocking is the safe branch: it keeps every episode marker intact
+    # for the retry instead of allowing the stop with stale failure state that
+    # would mis-account the next episode. Say so, because a silent exit 2
+    # re-invokes the model with no message and no instruction.
+    printf '●  Supervision is healthy, but the Claude failure episode could not be reset: %s is held by another Stop-event writer or its state directory is unwritable.\n●  This stop is blocked so the episode markers survive for the retry. Simply end the turn again.\n●  If every retry reports this, check that directory by hand: a live holder clears on its own, an unwritable or full state directory does not.\n' \
+      "$BUDGET_LOCK" >&2
+    exit 2
+  fi
 fi
 
 block_stop() {
@@ -226,85 +351,24 @@ block_stop() {
     else
       printf '●  X-mode relay polling needs supervision, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_BEACON_DESC"
     fi
-    if [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; then
+    if [ "$CODEX_MODE" -eq 1 ] && codex_binding_snapshot && codex_supervisor_process_live; then
+      # A supervisor IS running; it just did not prove recovery for this stop.
+      # Saying otherwise would send the operator to look for a process that is
+      # in front of them.
+      printf '●  A Stop-owned supervisor (pid %s) is running for conversation "%s" with recorded outcome "%s", but it is not usable recovery for THIS stop.\n' \
+        "$CODEX_BIND_PID" "$CODEX_BIND_SESSION" "${CODEX_BIND_OUTCOME:-unrecorded}"
+      if [ "$CODEX_BIND_SESSION" != "$SESSION_ID" ]; then
+        printf '●  Its wake would be published to that conversation, not to this one (%s).\n' "$SESSION_ID"
+      elif codex_failure_episode_open; then
+        printf '●  An unresolved arm-failure episode is open, so a supervisor that has only just started is not evidence a watcher came up.\n'
+      fi
+    elif [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; then
       printf '●  The Stop-owned auto-arm did not claim this home either, so recovery is NOT already under way.\n'
     fi
     printf '●  %s\n' "$reason"
     printf '●%s\n' "$rule"
   } >&2
   exit 2
-}
-
-# --- --codex cooperative path ------------------------------------------------
-# The Stop-owned background wake (bin/fm-codex-stop-autoarm.sh) is registered
-# ahead of this guard on the same Stop event and detaches its supervisor rather
-# than blocking. Give it a brief bounded window to prove it owns recovery for
-# THIS conversation before falling back to the repair block: without this, the
-# very first turn end of every cycle would still force a foreground checkpoint,
-# which is exactly what that mode removes.
-codex_binding_field() {  # <field>
-  sed -n "s/^$1=//p" "$STATE/.codex-autoarm-session" 2>/dev/null | head -1
-}
-
-# A supervisor process that is still exactly the process the binding recorded.
-# Identity, not just the pid, so a recycled pid never buys a blind stop.
-#
-# Liveness alone is optimistic: a supervisor records outcome=arming within
-# milliseconds of detaching, seconds before its arm wrapper can report anything.
-# That optimism is only safe while the home's last completed cycle actually
-# produced a watcher. state/.codex-autoarm-failure-episode says it did not, and
-# the auto-arm clears it only on an actionable wake or a verified healthy
-# watcher - never merely because a new supervisor started. So while that episode
-# stands, a freshly started supervisor proves nothing, and accepting it would
-# let every turn end after the episode's one notice pass silently and blind.
-# Refuse here instead and fall through to the typed continuation, which the
-# stop_hook_active loop guard above already bounds to one forced continuation
-# per turn.
-codex_autoarm_supervisor_live() {
-  local pid identity current
-  [ -e "$STATE/.codex-autoarm-failure-episode" ] && return 1
-  pid=$(codex_binding_field pid)
-  case "$pid" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
-  fm_pid_alive "$pid" || return 1
-  identity=$(codex_binding_field identity)
-  [ -n "$identity" ] || return 1
-  current=$(fm_pid_identity "$pid" 2>/dev/null || true)
-  [ -n "$current" ] && [ "$current" = "$identity" ]
-}
-
-# A supervisor whose whole cycle fits inside the wait window above publishes its
-# wake and exits, so process liveness alone would report a wake that was just
-# published as absent supervision and send this session to repair a hook
-# registration that is working. Accept only the outcome the supervisor writes
-# after its publication call returned success, and only while it is fresh enough
-# to belong to this turn's cycle: arming, wake-unpublished, failed, afk, clean,
-# and every aged record still block. That success is a publication and not a
-# delivery receipt; the durable state/.wake-queue record is what keeps a wake no
-# live conversation consumed recoverable. This mirrors the fresh rewake outcome
-# the --claude path accepts from its own auto-arm epoch.
-codex_autoarm_delivered_wake() {
-  local outcome updated age
-  outcome=$(codex_binding_field outcome)
-  [ "$outcome" = wake ] || return 1
-  updated=$(codex_binding_field updated_at)
-  case "$updated" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
-  age=$(( $(date +%s) - updated ))
-  [ "$age" -ge 0 ] && [ "$age" -lt "$CODEX_OUTCOME_FRESH" ]
-}
-
-codex_autoarm_owns_recovery() {
-  local session
-  [ -f "$STATE/.codex-autoarm-session" ] || return 1
-  session=$(codex_binding_field session)
-  # The wake target must be this conversation; a supervisor bound to a closed
-  # one would publish where nobody is reading.
-  [ -n "$session" ] && [ "$session" = "$SESSION_ID" ] || return 1
-  codex_autoarm_supervisor_live && return 0
-  codex_autoarm_delivered_wake
 }
 
 if [ "$CODEX_MODE" -eq 1 ]; then

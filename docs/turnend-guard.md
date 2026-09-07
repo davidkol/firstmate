@@ -56,6 +56,10 @@ That instruction is the harness repair line itself, sent verbatim because every 
 Either mode flag comes from that harness's own registered Stop hook, so it pins the repair line's harness instead of letting `bin/fm-harness.sh` detect one: detection checks environment markers before process ancestry, and a foreign marker left in a stored multiplexer environment would otherwise hand a markerless harness another harness's instruction.
 Both payloads carry `stop_hook_active`, and `--codex` keeps the shared non-`--claude` loop guard, so a true value lets the second stop finish after one forced continuation.
 
+A healthy watcher is not, on its own, a Codex stop proof.
+The watcher observes the home; the supervisor is what turns an observed event into a message in a conversation, so a home whose watcher is healthy while its only supervisor is bound to a replaced conversation leaves the current one with no delivery route at all.
+`--codex` therefore does not take the shared healthy-watcher fast path and falls through to its own conversation-bound proofs instead, with one exception: under away mode the daemon owns triage and delivery, so a healthy watcher allows the stop as it does for every other harness.
+
 The Codex mode waits up to `FM_CODEX_AUTOARM_SYNC_WAIT_MS` (default 1500 milliseconds) for the Stop-owned background wake to prove it owns recovery for this conversation, and allows the stop on either proof.
 The first is a live supervisor recorded in `state/.codex-autoarm-session` whose pid is alive and still matches its recorded process identity, and only while the home carries no unresolved arm-failure episode.
 That proof is optimistic: a supervisor records `arming` within milliseconds of detaching, seconds before its arm wrapper reports, so `state/.codex-autoarm-failure-episode` withdraws it whenever the last completed cycle failed to bring a watcher up.
@@ -64,8 +68,20 @@ The auto-arm opens that episode on every failed cycle and closes it only on an a
 The second is that record carrying `outcome=wake` no older than `FM_CODEX_AUTOARM_OUTCOME_FRESH` (default 15 seconds), because a supervisor whose whole cycle fits inside the wait window publishes its wake and exits, and process liveness alone would then send the session to repair a hook registration that just worked.
 The supervisor writes that outcome only after its publication call returns success, so the record proves a published wake and never a delivery receipt; a publication that fails records `wake-unpublished` instead, and the durable `state/.wake-queue` record remains the recovery path for a wake no live conversation consumed.
 Both proofs require the record's `session` to equal this Stop payload's `session_id`, so a supervisor bound to a closed conversation never buys this one a blind stop.
-No other outcome is recovery evidence: `arming` from a dead process, `wake-unpublished`, `failed`, `afk`, `clean`, an unparsable or future-dated timestamp, and any aged record all still block.
+No other outcome is recovery evidence: `arming` from a dead process, `wake-unpublished`, `superseded`, `failed`, `afk`, `clean`, an unparsable or future-dated timestamp, and any aged record all still block.
 The separate `state/.codex-autoarm-failure-notified` marker decides only whether the auto-arm publishes another failure message, and it is written after the publication succeeds, so a notice that never reached the conversation neither silences the episode nor suppresses the next attempt.
+
+That bound is a freshness window, not a cycle identity: it establishes that a wake was published recently, not that it belongs to this Stop's own cycle.
+A wake published mid-turn can still be fresh at the next turn end; the auto-arm hook runs first on that same event and arms the following cycle, and the shared loop guard bounds the exposure either way.
+
+Both proofs read the binding as one snapshot: a single open and a single pass, so an atomic replacement of that record cannot mix the session of one version with the pid of another.
+The episode has one owner and every transition has a home.
+The auto-arm opens it on a failed arm cycle, on a retirement that timed out and therefore left this conversation with no route, and on a wake whose publication failed after its bounded retries.
+It closes the episode on a wake it actually published.
+This guard closes it at the two boundaries no supervisor survives to reach: a home with no supervision need left, and a home whose watcher is verifiably healthy again.
+
+When the typed continuation cannot be emitted and the guard falls back to the operator banner, that banner reports what was actually refused.
+A running supervisor is named with its pid, its bound conversation and its recorded outcome, rather than being described as an auto-arm that never claimed the home.
 
 Claude runs the guard with `--claude`, which ignores `stop_hook_active` and cooperates with the Stop-owned auto-arm.
 Claude Code sets `stop_hook_active=true` on every stop after any stop-hook continuation, including `asyncRewake` rewakes, which re-opened the 2026-07-21 blind window under the default one-shot behavior.
@@ -120,7 +136,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 
 `tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the live-lock and fresh-beacon guard predicate, the `--codex` typed continuation with its deference to a redirected repair line and its own-harness repair pin, the `--codex` registration order, its cooperative allow for a live supervisor and for a fresh published wake with the stale, non-wake, dead-supervisor, and other-conversation refusals, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
 `tests/fm-guard-stale-banner.test.sh` covers the pull-guard predicate, including the persistent-model fresh-leftover-beacon negative control, the Claude and Codex Stop auto-arm model's healthy fresh-beacon-without-a-watcher case and stale-beacon alarm, the true-reason banner wording, and the reason-keyed episode dedup surviving a beacon mtime change.
-`tests/fm-codex-stop-autoarm.test.sh` covers the Codex Stop-owned background wake's inert gates, immediate hook return with detached delivery, quiet idle, same-conversation reuse, stale-supervisor retirement and rebinding, mid-cycle away mode, one-notice failure episodes that stay loud at the guard on later cycles, an unpublishable notice that does not silence the episode, recovery closing the episode, arm-output cleanup on retirement, the published and both unpublished wake records read back by the real guard, and second-home isolation.
+`tests/fm-codex-stop-autoarm.test.sh` covers the Codex Stop-owned background wake's inert gates, immediate hook return with detached delivery, quiet idle, same-conversation reuse, stale-supervisor retirement and rebinding, a retirement that times out, a detached supervisor whose authorizing primary was replaced, a transient publication failure that the bounded retry recovers, mid-cycle away mode, one-notice failure episodes that stay loud at the guard on later cycles, an unpublishable notice that does not silence the episode, recovery closing the episode, arm-output cleanup on retirement, the published and both unpublished wake records read back by the real guard, and second-home isolation.
 `tests/fm-kimi-harness.test.sh` covers the separate Kimi crew hook's format preservation, idempotence, refusal cases, token guard, spawn registration, and teardown cleanup.
 `tests/fm-supervision-instructions.test.sh` covers recovery-line ownership and pi-signed's identity-preserving reuse of Pi's protocol.
 `FM_PI_LIVE_E2E=1 tests/fm-pi-primary-live-e2e.test.sh` is the opt-in isolated Pi path.

@@ -12,7 +12,7 @@ When this session owns supervision and away mode is not active:
 5. If the Stop hook does not claim this conversation, the turn-end guard blocks the stop with a repair instruction.
    Inspect its registration in `.codex/hooks.json` and the watcher startup path before ending blind, and keep the Stop-owned automatic mechanism as the only Codex arm owner.
    `bin/fm-watch-checkpoint.sh` remains available as a short manual recovery probe during that inspection only, never as the routine cycle.
-6. Treat `watcher: started ...` and `watcher: attached ...` inside the wake text as proof that one live cycle exists.
+6. Read `watcher: started ...` and `watcher: attached ...` inside the wake text as the reason that cycle closed, not as proof a cycle is running now: the cycle that printed the line ended when it published the wake. The next turn end arms the following one.
 7. The durable wake queue preserves actionable events between a wake and the next Stop-launched arm, while the bounded turn-end guard prevents a blind Stop when recovery did not start.
    `codex queue` reports success even for a conversation that has already exited, so a published wake is never delivery proof; a wake published into a closed conversation is drained by the next session start instead.
 8. Never use shell `&` or Codex background tasks for firstmate watcher supervision.

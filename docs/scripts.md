@@ -72,8 +72,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-gate-refuse-lib.sh`  | Shared no-mistakes gate-context refusal for fleet lifecycle entrypoints               |
 | `fm-watch-arm.sh`        | Verified home-scoped watcher arm wrapper with loud cycle endings and bounded lifecycle ledger |
 | `fm-watch-checkpoint.sh` | Run one bounded foreground watcher checkpoint, the Codex manual recovery probe, returning quietly on expiry or immediately for a queued wake |
-| `fm-codex-stop-autoarm.sh` | Codex Stop-owned background wake: arm one home-scoped watcher cycle for the emitting conversation, then wake it with `codex queue` |
-| `fm-codex-detach.sh` | Launch a command in its own process session so it survives the caller, the primitive the Codex Stop hook arms through |
+| `fm-codex-stop-autoarm.sh` | Codex Stop-owned background wake: arm one home-scoped watcher cycle for the emitting conversation, then wake it with `codex queue`. Hook-only; a tool call denies with `watcher-supervisor` |
+| `fm-codex-detach.sh` | Launch a command in its own process session so it survives the caller, the primitive the Codex Stop hook arms through. Classified as an execution wrapper, so a protected watcher command behind it still denies |
 | `fm-watch.sh`            | Singleton-safe always-on watcher: absorb benign wakes, queue and exit on actionable ones |
 | `fm-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
 | `fm-afk-launch.sh`       | Own away-mode entry, exit, rollback, and any backend terminal lifecycle                 |

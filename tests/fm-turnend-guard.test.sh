@@ -230,6 +230,30 @@ write_codex_binding_from_exited_supervisor() {  # <dir> <session-id> <outcome> [
   wait "$sleeper" 2>/dev/null || true
 }
 
+# A watcher record the shared fm_watcher_healthy predicate accepts: the home
+# lock held by <pid> with its real process identity, plus a fresh beacon.
+write_healthy_watcher() {  # <dir> <pid>
+  local dir=$1 pid=$2 identity home watch
+  # Spell both paths exactly the way the guard derives them: the home as the
+  # FM_HOME its caller passes, and the watcher path from the script directory.
+  # A temporary root can carry a doubled slash, and the two spellings must agree
+  # or the record is silently unhealthy and a test that expects a block proves
+  # nothing.
+  home=$(cd "$dir" && pwd)
+  watch=$(cd "$dir/bin" && pwd)/fm-watch.sh
+  identity=$(bash -c '. "$1/bin/fm-wake-lib.sh"; fm_pid_identity "$2"' _ "$ROOT" "$pid" 2>/dev/null || true)
+  mkdir -p "$dir/state/.watch.lock"
+  printf '%s\n' "$pid" > "$dir/state/.watch.lock/pid"
+  printf '%s\n' "$identity" > "$dir/state/.watch.lock/pid-identity"
+  printf '%s\n' "$watch" > "$dir/state/.watch.lock/watcher-path"
+  printf '%s\n' "$home" > "$dir/state/.watch.lock/fm-home"
+  : > "$dir/state/.last-watcher-beat"
+  # Independently verify the record satisfies the shared predicate.
+  bash -c '. "$1/bin/fm-wake-lib.sh"; FM_HOME=$2 fm_watcher_healthy "$2/state" "$3" 300 "$2"' \
+    _ "$ROOT" "$home" "$watch" \
+    || fail "the healthy-watcher fixture is not accepted by fm_watcher_healthy"
+}
+
 nonexistent_pid() {
   local pid=999999
   while kill -0 "$pid" 2>/dev/null; do
@@ -1074,6 +1098,131 @@ test_hook_codex_blocks_on_a_fresh_wake_for_another_conversation() {
   assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
     "a wake published into another conversation must not allow this one to end blind"
   pass "fm-turnend-guard: Codex blocks when the fresh wake belongs to another conversation"
+}
+
+# A healthy watcher observes the home; it does not prove anything can reach THIS
+# conversation. When the only supervisor is bound to a replaced conversation,
+# the shared healthy-watcher fast path used to allow the stop before the Codex
+# binding was ever consulted, so the handoff went to a thread nobody was reading.
+test_hook_codex_blocks_a_healthy_watcher_bound_to_another_conversation() {
+  local dir out status reason sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-healthy-wrong-thread")
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  write_codex_binding "$dir" "$sleeper" sess-old
+  write_healthy_watcher "$dir" "$sleeper"
+  out=$(run_hook_codex_session "$dir" false sess-new); status=$?
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  expect_code 0 "$status" "Codex guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "a healthy watcher whose only supervisor targets another conversation must not allow a blind stop"
+  pass "fm-turnend-guard: Codex blocks a healthy watcher whose delivery targets another conversation"
+}
+
+# Away mode is the one case where a healthy watcher is enough: the daemon owns
+# triage and delivery, so no conversation binding is required.
+test_hook_codex_allows_a_healthy_watcher_in_away_mode() {
+  local dir out status sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-healthy-afk")
+  : > "$dir/state/task1.meta"
+  : > "$dir/state/.afk"
+  sleep 30 &
+  sleeper=$!
+  write_healthy_watcher "$dir" "$sleeper"
+  out=$(run_hook_codex_session "$dir" false sess-afk); status=$?
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  expect_code 0 "$status" "away mode with a healthy watcher must still allow the stop"
+  [ -z "$out" ] || fail "away mode with a healthy watcher forced a continuation: $out"
+  pass "fm-turnend-guard: Codex allows a healthy watcher while away mode owns delivery"
+}
+
+# Each publication of the binding is atomic; a sequence of separate reads is not.
+# Two records that are each independently refused must never combine into an
+# accepted proof, however the replacement interleaves with the guard's reads.
+test_hook_codex_never_accepts_a_mixed_binding_record() {
+  local dir sleeper i out status dead replacer
+  dir=$(make_primary_dir "$TMP_ROOT/codex-binding-race")
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  dead=$(nonexistent_pid)
+
+  # Record A names this conversation with a dead process; record B names another
+  # conversation with a live one. Both are refused on their own.
+  write_codex_binding "$dir" "$dead" sess-current
+  out=$(run_hook_codex_session "$dir" false sess-current); status=$?
+  assert_contains "$(printf '%s' "$out" | jq -r '.reason')" "watcher supervision needs Stop-owned automatic recovery" \
+    "the dead current-conversation record must be refused on its own"
+  write_codex_binding "$dir" "$sleeper" sess-other
+  out=$(run_hook_codex_session "$dir" false sess-current); status=$?
+  assert_contains "$(printf '%s' "$out" | jq -r '.reason')" "watcher supervision needs Stop-owned automatic recovery" \
+    "the live other-conversation record must be refused on its own"
+
+  # Now replace the file atomically, over and over, while the guard reads it.
+  : > "$dir/state/race-run"
+  (
+    while [ -e "$dir/state/race-run" ]; do
+      write_codex_binding "$dir" "$dead" sess-current
+      write_codex_binding "$dir" "$sleeper" sess-other
+    done
+  ) &
+  replacer=$!
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    out=$(run_hook_codex_session "$dir" false sess-current); status=$?
+    if [ "$status" -eq 0 ] && [ -z "$out" ]; then
+      rm -f "$dir/state/race-run"
+      kill "$replacer" "$sleeper" 2>/dev/null || true
+      fail "run $i allowed a blind stop from fields taken across two refused records"
+    fi
+  done
+  rm -f "$dir/state/race-run"
+  kill "$replacer" 2>/dev/null || true
+  wait "$replacer" 2>/dev/null || true
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  pass "fm-turnend-guard: Codex never assembles a stop proof from two different binding records"
+}
+
+# The episode has to end where its cause ends. No supervisor survives a failed
+# cycle to see the work finish, so the guard owns the idle boundary.
+test_hook_codex_retires_the_failure_episode_when_no_work_remains() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/codex-episode-idle")
+  : > "$dir/state/.codex-autoarm-failure-episode"
+  : > "$dir/state/.codex-autoarm-failure-notified"
+  out=$(run_hook_codex_session "$dir" false sess-idle); status=$?
+  expect_code 0 "$status" "an idle home must end its turn quietly"
+  [ -z "$out" ] || fail "an idle home forced a continuation: $out"
+  assert_absent "$dir/state/.codex-autoarm-failure-episode" \
+    "a home with no work left kept its failure episode open"
+  assert_absent "$dir/state/.codex-autoarm-failure-notified" \
+    "a home with no work left kept its consumed notice marker"
+  pass "fm-turnend-guard: Codex retires the failure episode when no supervision need remains"
+}
+
+# A verifiably healthy watcher is the episode's other real ending.
+test_hook_codex_retires_the_failure_episode_on_a_healthy_watcher() {
+  local dir sleeper out
+  dir=$(make_primary_dir "$TMP_ROOT/codex-episode-healthy")
+  : > "$dir/state/task1.meta"
+  : > "$dir/state/.codex-autoarm-failure-episode"
+  : > "$dir/state/.codex-autoarm-failure-notified"
+  sleep 30 &
+  sleeper=$!
+  write_healthy_watcher "$dir" "$sleeper"
+  write_codex_binding "$dir" "$sleeper" sess-healthy
+  out=$(run_hook_codex_session "$dir" false sess-healthy)
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  assert_absent "$dir/state/.codex-autoarm-failure-episode" \
+    "a verified healthy watcher left the failure episode open"
+  [ -z "$out" ] \
+    || fail "a healthy watcher with a supervisor bound to this conversation still blocked: $out"
+  pass "fm-turnend-guard: Codex retires the failure episode once the watcher is verifiably healthy"
 }
 
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root() {
@@ -1929,6 +2078,11 @@ test_codex_hook_registers_stop_autoarm_before_the_guard
 test_hook_codex_allows_when_a_supervisor_is_bound_to_this_conversation
 test_hook_codex_blocks_when_the_supervisor_is_bound_to_another_conversation
 test_hook_codex_blocks_a_live_supervisor_while_a_failure_episode_is_open
+test_hook_codex_blocks_a_healthy_watcher_bound_to_another_conversation
+test_hook_codex_allows_a_healthy_watcher_in_away_mode
+test_hook_codex_never_accepts_a_mixed_binding_record
+test_hook_codex_retires_the_failure_episode_when_no_work_remains
+test_hook_codex_retires_the_failure_episode_on_a_healthy_watcher
 test_hook_codex_blocks_when_the_bound_supervisor_is_dead
 test_hook_codex_allows_when_this_conversation_has_a_fresh_published_wake
 test_hook_codex_blocks_on_a_stale_published_wake

@@ -28,6 +28,9 @@ codex_autoarm_suite_cleanup() {
     for pid in $(pgrep -f "$TMP_ROOT/.*fm-codex-stop-autoarm.sh --supervise" 2>/dev/null || true); do
       kill -"$sig" "$pid" 2>/dev/null || true
     done
+    for pid in $(pgrep -f "$TMP_ROOT/.*fm-watch-arm.sh" 2>/dev/null || true); do
+      kill -"$sig" "$pid" 2>/dev/null || true
+    done
     [ "$sig" = TERM ] && sleep 0.3
   done
   fm_test_cleanup
@@ -67,6 +70,35 @@ if [ "\${1:-}" = queue ]; then
   printf '%s' "\$thread" > '$dir'/"\$n".thread
   printf '%s' "\$message" > '$dir'/"\$n".message
   exit $rc
+fi
+exit 0
+SH
+  chmod +x "$FAKEBIN/codex"
+}
+
+# Rejects its first <reject-count> publications, then accepts. The recorded call
+# count is what proves whether a retry happened.
+write_flaky_codex_shim() {  # <record-dir> <reject-count>
+  local dir=$1 reject=$2
+  cat > "$FAKEBIN/codex" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = queue ]; then
+  thread=
+  message=
+  while [ "\$#" -gt 0 ]; do
+    case "\$1" in
+      --thread) thread=\$2; shift 2 ;;
+      --message) message=\$2; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  mkdir -p '$dir'
+  n=1
+  while [ -e '$dir'/"\$n".thread ]; do n=\$((n + 1)); done
+  printf '%s' "\$thread" > '$dir'/"\$n".thread
+  printf '%s' "\$message" > '$dir'/"\$n".message
+  [ "\$n" -le $reject ] && exit 1
+  exit 0
 fi
 exit 0
 SH
@@ -160,6 +192,17 @@ printf '%s\n' "$$" >> "$FM_HOME/state/arm-ran"
 sleep 600
 SH
       ;;
+    hang-stubborn)
+      # An arm child that does not die on SIGTERM. Its supervisor's cleanup
+      # waits for it, so the supervisor outlives the hook's retire window - the
+      # real shape of a retirement that times out.
+      cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+trap '' TERM INT HUP
+printf '%s\n' "$$" >> "$FM_HOME/state/arm-ran"
+sleep 600
+SH
+      ;;
   esac
   chmod +x "$dir/bin/fm-watch-arm.sh"
 }
@@ -244,6 +287,27 @@ fi
 exec '$ROOT/bin/fm-operational-input.sh' "\$@"
 SH
   chmod +x "$1/bin/fm-operational-input.sh"
+}
+
+# Replace the home lock with a DIFFERENT live primary, the way a restarted or
+# replacement Codex session does. Returns after the new owner is recorded.
+take_home_lock_with_another_primary() {  # <dir>
+  local dir=$1
+  FM_HOME="$dir" "$FAKE_CODEX_HARNESS" -c '
+    printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+    : > "$FM_HOME/state/other-primary-ready"
+    sleep 30
+  ' >/dev/null 2>&1 &
+  OTHER_PRIMARY_PID=$!
+  wait_for_file "$dir/state/other-primary-ready" 60 \
+    || fail "the replacement primary never claimed the home lock"
+}
+
+release_other_primary() {
+  [ -n "${OTHER_PRIMARY_PID:-}" ] || return 0
+  kill "$OTHER_PRIMARY_PID" 2>/dev/null || true
+  wait "$OTHER_PRIMARY_PID" 2>/dev/null || true
+  OTHER_PRIMARY_PID=
 }
 
 # Arm output files a supervisor mktemp'd in this home's state directory.
@@ -458,11 +522,11 @@ test_a_failed_queue_publication_is_recorded_unpublished_and_the_guard_refuses_it
   write_codex_shim "$q" 1
   : > "$dir/state/task1.meta"
 
-  run_autoarm "$dir" sess-queue-failed
+  FM_CODEX_PUBLISH_ATTEMPTS=1 run_autoarm "$dir" sess-queue-failed
   wait_for_binding_outcome "$dir" wake-unpublished \
     || fail "a failed publication recorded outcome '$(binding_field "$dir" outcome)'"
   [ "$(queue_calls "$q")" -eq 1 ] \
-    || fail "the failing publication was never attempted"
+    || fail "the single configured publication attempt was not made exactly once"
   out=$(run_guard_codex "$dir" sess-queue-failed); status=$?
   expect_code 0 "$status" "the guard must still emit its structured continuation"
   reason=$(printf '%s' "$out" | jq -r '.reason')
@@ -559,7 +623,14 @@ test_stop_from_a_new_conversation_retires_the_stale_supervisor() {
   # wake would be published where nobody is reading.
   write_arm_fixture "$dir" actionable
   run_autoarm "$dir" sess-new
-  wait_for_file "$q/1.thread" 120 || fail "the replacement supervisor never delivered a wake"
+  wait_for_file "$q/1.thread" 120 || {
+    printf 'DIAG binding: %s\n' "$(cat "$dir/state/.codex-autoarm-session" 2>/dev/null | tr '\n' ' ')" >&2
+    printf 'DIAG episode=%s arm-ran=%s first-alive=%s\n' \
+      "$([ -e "$dir/state/.codex-autoarm-failure-episode" ] && echo yes || echo no)" \
+      "$(wc -l < "$dir/state/arm-ran" 2>/dev/null || echo 0)" \
+      "$(kill -0 "$first" 2>/dev/null && echo yes || echo no)" >&2
+    fail "the replacement supervisor never delivered a wake"
+  }
   second=$(binding_field "$dir" pid)
   [ "$first" != "$second" ] || fail "the stale supervisor was never retired"
   kill -0 "$first" 2>/dev/null && fail "the stale supervisor $first is still running"
@@ -721,6 +792,100 @@ test_recovery_closes_the_failure_episode_and_the_home_goes_quiet() {
   pass "fm-codex-stop-autoarm: recovery closes the episode and the home goes quiet"
 }
 
+# --- ownership, destination and delivery across the detach boundary ----------
+
+# The hook checks primary ownership before it forks; the child runs later. A
+# child delayed past a primary replacement must not arm on that expired
+# authority, or its wake lands in the conversation the new primary replaced.
+test_a_replaced_primary_stops_the_detached_supervisor() {
+  local dir q
+  dir=$(make_primary_dir "$TMP_ROOT/owner-replaced")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" actionable
+  write_codex_shim "$q"
+  : > "$dir/state/task1.meta"
+
+  # Detach is what the hook does; delaying only the child reproduces the window
+  # without changing a line of the production hook.
+  take_home_lock_with_another_primary "$dir"
+  FM_HOME="$dir" PATH="$FAKEBIN:$PATH" \
+    "$dir/bin/fm-codex-stop-autoarm.sh" --supervise retired-conversation 999999 stale-identity \
+    >/dev/null 2>&1 || true
+  sleep 0.5
+  [ ! -e "$dir/state/arm-ran" ] \
+    || fail "a supervisor armed after another primary took the home lock"
+  [ "$(queue_calls "$q")" -eq 0 ] \
+    || fail "a supervisor published to a retired conversation after ownership changed"
+  release_other_primary
+  pass "fm-codex-stop-autoarm: a detached supervisor stands down when its primary was replaced"
+}
+
+# A retirement that times out leaves this conversation with NO delivery route:
+# the only supervisor still targets the replaced one. That must not read as
+# success just because a watcher happens to be healthy somewhere in the home.
+test_a_failed_retirement_opens_the_failure_episode() {
+  local dir q
+  dir=$(make_primary_dir "$TMP_ROOT/retire-timeout")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" hang-stubborn
+  write_codex_shim "$q"
+  : > "$dir/state/task1.meta"
+
+  run_autoarm "$dir" sess-old
+  wait_for_file "$dir/state/arm-ran" 60 || fail "the first supervisor never armed"
+  wait_for_binding_outcome "$dir" arming || fail "the first supervisor never bound the home"
+
+  # The stubborn arm child holds its supervisor open past the retire window,
+  # reaching the hook's existing timeout branch with no source change.
+  FM_CODEX_AUTOARM_RETIRE_WAIT=2 run_autoarm "$dir" sess-new
+  [ "$(binding_field "$dir" session)" = sess-old ] \
+    || fail "the fixture did not reach the retirement timeout branch"
+  [ -e "$dir/state/.codex-autoarm-failure-episode" ] \
+    || fail "a failed retirement was recorded as a successful rebind"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: a retirement that times out opens the failure episode"
+}
+
+# The supervisor is the last process holding the event in memory, so a rejected
+# publication has to be retried here or not at all.
+test_a_transient_publication_failure_is_retried_and_recovers() {
+  local dir q
+  dir=$(make_primary_dir "$TMP_ROOT/publish-transient")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" actionable
+  write_flaky_codex_shim "$q" 1
+  : > "$dir/state/task1.meta"
+
+  FM_CODEX_PUBLISH_RETRY_DELAY=0.2 run_autoarm "$dir" sess-transient
+  wait_for_binding_outcome "$dir" wake 200 \
+    || fail "a transient rejection was not retried; outcome '$(binding_field "$dir" outcome)'"
+  [ "$(queue_calls "$q")" -ge 2 ] \
+    || fail "the supervisor gave up after one publication attempt"
+  assert_absent "$dir/state/.codex-autoarm-failure-episode" \
+    "a recovered publication left a failure episode open"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: a transient publication rejection is retried and recovers"
+}
+
+test_an_exhausted_publication_leaves_a_loud_failure_episode() {
+  local dir q
+  dir=$(make_primary_dir "$TMP_ROOT/publish-exhausted")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" actionable
+  write_codex_shim "$q" 1
+  : > "$dir/state/task1.meta"
+
+  FM_CODEX_PUBLISH_ATTEMPTS=2 FM_CODEX_PUBLISH_RETRY_DELAY=0.2 run_autoarm "$dir" sess-exhausted
+  wait_for_binding_outcome "$dir" wake-unpublished 200 \
+    || fail "an exhausted publication recorded '$(binding_field "$dir" outcome)'"
+  [ "$(queue_calls "$q")" -eq 2 ] \
+    || fail "the bounded retry did not stop at its limit"
+  [ -e "$dir/state/.codex-autoarm-failure-episode" ] \
+    || fail "an undelivered wake left no episode for the guard to be loud about"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: an undeliverable wake fails loud instead of looking armed"
+}
+
 # --- home isolation ----------------------------------------------------------
 
 test_a_second_home_is_never_woken_and_never_consumes_the_first_homes_events() {
@@ -775,4 +940,8 @@ test_a_continuing_failure_episode_stays_loud_at_the_guard
 test_the_failure_episode_continuation_is_bounded_to_one_per_turn
 test_an_unpublishable_failure_notice_does_not_silence_the_episode
 test_recovery_closes_the_failure_episode_and_the_home_goes_quiet
+test_a_replaced_primary_stops_the_detached_supervisor
+test_a_failed_retirement_opens_the_failure_episode
+test_a_transient_publication_failure_is_retried_and_recovers
+test_an_exhausted_publication_leaves_a_loud_failure_episode
 test_a_second_home_is_never_woken_and_never_consumes_the_first_homes_events
