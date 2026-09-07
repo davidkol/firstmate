@@ -76,7 +76,7 @@ make_case() {
   local name=$1 case_dir fakebin
   case_dir="$TMP_ROOT/$name"
   fakebin="$case_dir/fakebin"
-  mkdir -p "$case_dir/state" "$case_dir/config" "$fakebin"
+  mkdir -p "$case_dir/state" "$case_dir/config" "$case_dir/data" "$fakebin"
 
   # Mocks for the post-check teardown steps. Refuse logic exits before these
   # run; the ALLOW cases need them so the script can complete cleanly.
@@ -572,11 +572,18 @@ SH
 }
 
 # Run teardown with PATH mocking. Args: case_dir [extra args...]
+#
+# FM_DATA_OVERRIDE matters as much as the state and config overrides: teardown
+# resolves the project registry from the data dir, so without it a case reads
+# whatever data/projects.md the developer's own checkout happens to carry, and a
+# registryless fixture task then passes or fails the legacy project-identity gate
+# depending on the machine rather than on the code under test.
 run_teardown() {
   local case_dir=$1; shift
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_STATE_OVERRIDE="$case_dir/state" \
   FM_CONFIG_OVERRIDE="$case_dir/config" \
+  FM_DATA_OVERRIDE="$case_dir/data" \
   PATH="$case_dir/fakebin:${FM_TEARDOWN_TEST_PATH:-$PATH}" \
     "$TEARDOWN" task-x1 "$@"
 }
@@ -1984,7 +1991,8 @@ test_teardowns_own_invoking_shell_is_never_reaped() {
   ( cd "$case_dir/wt" && exec bash -c '
       printf "%s\n" "$$" > "$1/holder.pid"
       ( cd "$1" && FM_ROOT_OVERRIDE="$2" FM_STATE_OVERRIDE="$1/state" \
-        FM_CONFIG_OVERRIDE="$1/config" PATH="$1/fakebin:$PATH" "$3" task-x1 )
+        FM_CONFIG_OVERRIDE="$1/config" FM_DATA_OVERRIDE="$1/data" \
+        PATH="$1/fakebin:$PATH" "$3" task-x1 )
       exit $?
     ' _ "$case_dir" "$ROOT" "$TEARDOWN" ) > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 

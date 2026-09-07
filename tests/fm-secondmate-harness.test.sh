@@ -718,13 +718,12 @@ guard_tangle_noise() {
 test_spawned_secondmate_uses_its_harness_supervision_model() {
   local harness model w sm launchlog launch fakebin out tangle_noise
   tangle_noise=$(guard_tangle_noise)
-  # claude arms between turns and codex only inside its bounded foreground
-  # checkpoint, so a mid-turn fresh beacon with no watcher process is healthy for
-  # both; every persistent-watcher harness (opencode here) must still alarm.
+  # claude and codex both arm their watcher at turn end and let it exit on its
+  # wake, so a mid-turn fresh beacon with no watcher process is healthy for both;
+  # every persistent-watcher harness (opencode here) must still alarm.
   for harness in codex claude opencode; do
     case "$harness" in
-      claude) model=autoarm ;;
-      codex) model=checkpoint ;;
+      claude|codex) model=autoarm ;;
       *) model=persistent ;;
     esac
     w="$TMP_ROOT/spawn-supervision-model-$harness"
