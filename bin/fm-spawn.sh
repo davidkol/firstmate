@@ -1808,10 +1808,10 @@ LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 if [ "$KIND" = secondmate ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
   # The secondmate's own guards must judge watcher health by ITS harness's
-  # supervision model, not by the primary's: a Claude secondmate runs its
-  # watcher only between turns and a Codex secondmate only inside its bounded
-  # foreground checkpoint, so a mid-turn absent watcher process with a fresh
-  # beacon is healthy for both (bin/fm-wake-lib.sh's
+  # supervision model, not by the primary's: a Claude and a Codex secondmate
+  # both run the watcher only between turns, under their own Stop-owned
+  # auto-arm, so a mid-turn absent watcher process with a fresh beacon is
+  # healthy for both (bin/fm-wake-lib.sh's
   # fm_watcher_supervision_verdict). The mapping itself belongs to
   # fm_supervision_model_for_harness there, so this launch pin cannot drift from
   # the model the secondmate's own guards would otherwise detect.

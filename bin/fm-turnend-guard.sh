@@ -13,11 +13,12 @@
 # Claude blocks directly with exit status 2 and stderr.
 # Codex first yields to its own Stop-owned background wake
 # (bin/fm-codex-stop-autoarm.sh), which is registered ahead of this guard on the
-# same Stop event: a live supervisor bound to THIS conversation already owns
-# recovery, so the stop is allowed. Only when no such supervisor materializes
-# within FM_CODEX_AUTOARM_SYNC_WAIT_MS does Codex fall back to its native
-# structured Stop continuation, which keeps routine recovery typed and compact
-# instead of rendering the full operator diagnostic banner.
+# same Stop event: a live supervisor bound to THIS conversation, or a fresh
+# successful wake that supervisor already published for it before exiting,
+# already owns recovery, so the stop is allowed. Only when neither proof
+# materializes within FM_CODEX_AUTOARM_SYNC_WAIT_MS does Codex fall back to its
+# native structured Stop continuation, which keeps routine recovery typed and
+# compact instead of rendering the full operator diagnostic banner.
 # OpenCode and pi adapters use the same predicate and force one bounded
 # follow-up because their turn-end events are passive. Grok delegates native
 # blocking when its running Stop payload advertises that capability, with one
@@ -80,9 +81,13 @@ CODEX_MODE=0
 SYNC_WAIT_MS=${FM_CLAUDE_AUTOARM_SYNC_WAIT_MS:-800}
 EPOCH_FRESH=${FM_CLAUDE_AUTOARM_EPOCH_FRESH:-15}
 BLOCK_BUDGET=${FM_CLAUDE_TURNEND_BLOCK_BUDGET:-3}
+CODEX_SYNC_WAIT_MS=${FM_CODEX_AUTOARM_SYNC_WAIT_MS:-1500}
+CODEX_OUTCOME_FRESH=${FM_CODEX_AUTOARM_OUTCOME_FRESH:-15}
 case "$SYNC_WAIT_MS" in ''|*[!0-9]*) SYNC_WAIT_MS=800 ;; esac
 case "$EPOCH_FRESH" in ''|*[!0-9]*|0) EPOCH_FRESH=15 ;; esac
 case "$BLOCK_BUDGET" in ''|*[!0-9]*|0) BLOCK_BUDGET=3 ;; esac
+case "$CODEX_SYNC_WAIT_MS" in ''|*[!0-9]*) CODEX_SYNC_WAIT_MS=1500 ;; esac
+case "$CODEX_OUTCOME_FRESH" in ''|*[!0-9]*|0) CODEX_OUTCOME_FRESH=15 ;; esac
 
 for arg in "$@"; do
   case "$arg" in
@@ -232,31 +237,60 @@ block_stop() {
 # --- --codex cooperative path ------------------------------------------------
 # The Stop-owned background wake (bin/fm-codex-stop-autoarm.sh) is registered
 # ahead of this guard on the same Stop event and detaches its supervisor rather
-# than blocking. Give it a brief bounded window to record a live supervisor
-# bound to THIS conversation before falling back to the repair block: without
-# this, the very first turn end of every cycle would still force a foreground
-# checkpoint, which is exactly what that mode removes.
-codex_autoarm_owns_recovery() {
-  local binding="$STATE/.codex-autoarm-session" pid identity current session
-  [ -f "$binding" ] || return 1
-  session=$(sed -n 's/^session=//p' "$binding" 2>/dev/null | head -1)
-  # The wake target must be this conversation; a supervisor bound to a closed
-  # one would publish where nobody is reading.
-  [ -n "$session" ] && [ "$session" = "$SESSION_ID" ] || return 1
-  pid=$(sed -n 's/^pid=//p' "$binding" 2>/dev/null | head -1)
+# than blocking. Give it a brief bounded window to prove it owns recovery for
+# THIS conversation before falling back to the repair block: without this, the
+# very first turn end of every cycle would still force a foreground checkpoint,
+# which is exactly what that mode removes.
+codex_binding_field() {  # <field>
+  sed -n "s/^$1=//p" "$STATE/.codex-autoarm-session" 2>/dev/null | head -1
+}
+
+# A supervisor process that is still exactly the process the binding recorded.
+# Identity, not just the pid, so a recycled pid never buys a blind stop.
+codex_autoarm_supervisor_live() {
+  local pid identity current
+  pid=$(codex_binding_field pid)
   case "$pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
   fm_pid_alive "$pid" || return 1
-  identity=$(sed -n 's/^identity=//p' "$binding" 2>/dev/null | head -1)
+  identity=$(codex_binding_field identity)
   [ -n "$identity" ] || return 1
   current=$(fm_pid_identity "$pid" 2>/dev/null || true)
   [ -n "$current" ] && [ "$current" = "$identity" ]
 }
 
+# A supervisor whose whole cycle fits inside the wait window above publishes its
+# wake and exits, so process liveness alone would report a wake that was just
+# delivered as absent supervision and send this session to repair a hook
+# registration that is working. Accept only the recorded SUCCESSFUL wake, and
+# only while it is fresh enough to belong to this turn's cycle: arming, failed,
+# afk, clean, and every aged record still block. This mirrors the fresh rewake
+# outcome the --claude path accepts from its own auto-arm epoch.
+codex_autoarm_delivered_wake() {
+  local outcome updated age
+  outcome=$(codex_binding_field outcome)
+  [ "$outcome" = wake ] || return 1
+  updated=$(codex_binding_field updated_at)
+  case "$updated" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  age=$(( $(date +%s) - updated ))
+  [ "$age" -ge 0 ] && [ "$age" -lt "$CODEX_OUTCOME_FRESH" ]
+}
+
+codex_autoarm_owns_recovery() {
+  local session
+  [ -f "$STATE/.codex-autoarm-session" ] || return 1
+  session=$(codex_binding_field session)
+  # The wake target must be this conversation; a supervisor bound to a closed
+  # one would publish where nobody is reading.
+  [ -n "$session" ] && [ "$session" = "$SESSION_ID" ] || return 1
+  codex_autoarm_supervisor_live && return 0
+  codex_autoarm_delivered_wake
+}
+
 if [ "$CODEX_MODE" -eq 1 ]; then
-  CODEX_SYNC_WAIT_MS=${FM_CODEX_AUTOARM_SYNC_WAIT_MS:-1500}
-  case "$CODEX_SYNC_WAIT_MS" in ''|*[!0-9]*) CODEX_SYNC_WAIT_MS=1500 ;; esac
   codex_waited=0
   while :; do
     codex_autoarm_owns_recovery && exit 0

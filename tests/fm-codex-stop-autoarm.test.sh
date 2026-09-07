@@ -169,6 +169,25 @@ binding_field() {  # <dir> <field>
   sed -n "s/^$2=//p" "$1/state/.codex-autoarm-session" 2>/dev/null | head -1
 }
 
+# Arm output files a supervisor mktemp'd in this home's state directory.
+arm_output_count() {  # <dir>
+  local f n=0
+  for f in "$1"/state/.codex-autoarm-output.*; do
+    [ -e "$f" ] && n=$((n + 1))
+  done
+  printf '%s\n' "$n"
+}
+
+wait_for_arm_output() {  # <dir> [deciseconds]
+  local dir=$1 limit=${2:-100} i=0
+  while [ "$i" -lt "$limit" ]; do
+    [ "$(arm_output_count "$dir")" -gt 0 ] && return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(arm_output_count "$dir")" -gt 0 ]
+}
+
 # Terminate any supervisor a test left running, so a fixture cannot outlive it.
 reap_supervisor() {  # <dir>
   local pid
@@ -354,6 +373,33 @@ test_repeat_stop_from_the_same_conversation_does_not_start_a_second_supervisor()
   pass "fm-codex-stop-autoarm: a repeat Stop from the same conversation reuses the live supervisor"
 }
 
+# Retirement signals a supervisor that is still mid-arm, so its own arm output
+# must go with it. Otherwise every conversation restart while work is in flight
+# orphans one file in the home's state directory for the life of the home.
+test_a_retired_supervisor_removes_its_own_arm_output() {
+  local dir first leftover q
+  dir=$(make_primary_dir "$TMP_ROOT/retire-output")
+  q="$dir/state/queued"
+  write_arm_fixture "$dir" hang
+  write_codex_shim "$q"
+  : > "$dir/state/task1.meta"
+
+  run_autoarm "$dir" sess-old
+  wait_for_file "$dir/state/arm-ran" 60 || fail "the first supervisor never armed"
+  wait_for_arm_output "$dir" 60 || fail "the armed supervisor never created its arm output"
+  first=$(binding_field "$dir" pid)
+
+  write_arm_fixture "$dir" actionable
+  run_autoarm "$dir" sess-new
+  wait_for_file "$q/1.thread" 120 || fail "the replacement supervisor never delivered a wake"
+  kill -0 "$first" 2>/dev/null && fail "the retired supervisor $first is still running"
+  leftover=$(arm_output_count "$dir")
+  [ "$leftover" -eq 0 ] \
+    || fail "retiring a supervisor orphaned $leftover arm output file(s) in the state directory"
+  reap_supervisor "$dir"
+  pass "fm-codex-stop-autoarm: a retired supervisor takes its own arm output with it"
+}
+
 test_stop_from_a_new_conversation_retires_the_stale_supervisor() {
   local dir first second q
   dir=$(make_primary_dir "$TMP_ROOT/new-session")
@@ -463,6 +509,7 @@ test_hook_returns_at_once_and_the_detached_supervisor_delivers_the_wake
 test_quiet_idle_produces_no_wake_and_no_repeat_delivery
 test_repeat_stop_from_the_same_conversation_does_not_start_a_second_supervisor
 test_stop_from_a_new_conversation_retires_the_stale_supervisor
+test_a_retired_supervisor_removes_its_own_arm_output
 test_away_mode_appearing_mid_cycle_suppresses_the_wake
 test_arm_failure_notifies_once_per_episode
 test_a_second_home_is_never_woken_and_never_consumes_the_first_homes_events

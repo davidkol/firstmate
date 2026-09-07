@@ -204,17 +204,30 @@ run_hook_codex_session() {  # <dir> <stop-active> <session-id>
 }
 
 # Write a Codex auto-arm binding for <pid>, taking its real process identity so
-# the guard's identity check sees a genuine match.
-write_codex_binding() {  # <dir> <pid> <session-id>
-  local dir=$1 pid=$2 session=$3 identity
+# the guard's identity check sees a genuine match. The outcome defaults to the
+# in-progress record a freshly detached supervisor writes; the age lets a test
+# place that record outside the guard's freshness bound.
+write_codex_binding() {  # <dir> <pid> <session-id> [outcome] [age-seconds]
+  local dir=$1 pid=$2 session=$3 outcome=${4:-arming} age=${5:-0} identity
   identity=$(bash -c '. "$1/bin/fm-wake-lib.sh"; fm_pid_identity "$2"' _ "$ROOT" "$pid" 2>/dev/null || true)
   {
     printf 'pid=%s\n' "$pid"
     printf 'identity=%s\n' "$identity"
     printf 'session=%s\n' "$session"
-    printf 'outcome=arming\n'
-    printf 'updated_at=%s\n' "$(date +%s)"
+    printf 'outcome=%s\n' "$outcome"
+    printf 'updated_at=%s\n' "$(( $(date +%s) - age ))"
   } > "$dir/state/.codex-autoarm-session"
+}
+
+# Reproduce the supervisor whose whole cycle fits inside the guard's wait
+# window: it records its own real pid and identity with <outcome>, then exits.
+write_codex_binding_from_exited_supervisor() {  # <dir> <session-id> <outcome> [age-seconds]
+  local dir=$1 session=$2 outcome=$3 age=${4:-0} sleeper
+  sleep 30 &
+  sleeper=$!
+  write_codex_binding "$dir" "$sleeper" "$session" "$outcome" "$age"
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
 }
 
 nonexistent_pid() {
@@ -966,6 +979,80 @@ test_hook_codex_blocks_when_the_bound_supervisor_is_dead() {
   assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
     "a dead supervisor record must not allow a blind stop"
   pass "fm-turnend-guard: Codex blocks when the recorded supervisor is dead"
+}
+
+# A supervisor that arms, publishes its wake and exits inside the guard's wait
+# window leaves a dead pid behind, so liveness alone would send this session to
+# repair a hook registration that just delivered a wake. Only the fresh
+# successful record for THIS conversation may stand in for that live process.
+test_hook_codex_allows_when_this_conversation_has_a_fresh_published_wake() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-fresh-wake")
+  : > "$dir/state/task1.meta"
+  write_codex_binding_from_exited_supervisor "$dir" sess-woken wake
+  out=$(run_hook_codex_session "$dir" false sess-woken); status=$?
+  expect_code 0 "$status" "Codex guard must allow the stop whose wake was already published"
+  [ -z "$out" ] || fail "Codex guard emitted a continuation after a fresh wake was delivered: $out"
+  pass "fm-turnend-guard: Codex allows a stop whose fresh wake an exited supervisor already published"
+}
+
+test_hook_codex_blocks_on_a_stale_published_wake() {
+  local dir out status reason
+  dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-stale-wake")
+  : > "$dir/state/task1.meta"
+  write_codex_binding_from_exited_supervisor "$dir" sess-woken wake 600
+  out=$(run_hook_codex_session "$dir" false sess-woken); status=$?
+  expect_code 0 "$status" "Codex guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "a wake published outside the freshness bound must not allow a blind stop"
+  pass "fm-turnend-guard: Codex blocks when the published wake is no longer fresh"
+}
+
+# The freshness bound is overridable like the --claude epoch bound, and raising
+# it is what separates the stale case above from the fresh case: same record,
+# same age, opposite verdict.
+test_hook_codex_wake_freshness_bound_is_overridable() {
+  local dir out status home
+  dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-wake-fresh-override")
+  home=$(cd "$dir" && pwd)
+  : > "$dir/state/task1.meta"
+  write_codex_binding_from_exited_supervisor "$dir" sess-woken wake 600
+  out=$(printf '{"cwd":"%s","session_id":"sess-woken","stop_hook_active":false}' "$home" \
+    | FM_HOME="$home" FM_CODEX_AUTOARM_SYNC_WAIT_MS=300 FM_CODEX_AUTOARM_OUTCOME_FRESH=3600 \
+      bash "$dir/bin/fm-turnend-guard.sh" --codex 2>&1); status=$?
+  expect_code 0 "$status" "a widened freshness bound must accept the same published wake"
+  [ -z "$out" ] || fail "Codex guard blocked a wake inside the overridden freshness bound: $out"
+  pass "fm-turnend-guard: Codex wake freshness bound honors FM_CODEX_AUTOARM_OUTCOME_FRESH"
+}
+
+# A cycle that ended without delivering a wake is not recovery, however recent.
+test_hook_codex_blocks_on_a_fresh_unsuccessful_outcome() {
+  local dir out status reason outcome
+  dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-fresh-nonwake")
+  : > "$dir/state/task1.meta"
+  for outcome in failed afk clean; do
+    write_codex_binding_from_exited_supervisor "$dir" sess-quiet "$outcome"
+    out=$(run_hook_codex_session "$dir" false sess-quiet); status=$?
+    expect_code 0 "$status" "Codex guard must still emit its structured continuation for outcome=$outcome"
+    reason=$(printf '%s' "$out" | jq -r '.reason')
+    assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+      "a fresh outcome=$outcome record must not allow a blind stop"
+  done
+  pass "fm-turnend-guard: Codex blocks on a fresh record that delivered no wake"
+}
+
+test_hook_codex_blocks_on_a_fresh_wake_for_another_conversation() {
+  local dir out status reason
+  dir=$(make_primary_dir "$TMP_ROOT/codex-autoarm-wake-other-session")
+  : > "$dir/state/task1.meta"
+  write_codex_binding_from_exited_supervisor "$dir" sess-old wake
+  out=$(run_hook_codex_session "$dir" false sess-new); status=$?
+  expect_code 0 "$status" "Codex guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "watcher supervision needs Stop-owned automatic recovery" \
+    "a wake published into another conversation must not allow this one to end blind"
+  pass "fm-turnend-guard: Codex blocks when the fresh wake belongs to another conversation"
 }
 
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root() {
@@ -1821,6 +1908,11 @@ test_codex_hook_registers_stop_autoarm_before_the_guard
 test_hook_codex_allows_when_a_supervisor_is_bound_to_this_conversation
 test_hook_codex_blocks_when_the_supervisor_is_bound_to_another_conversation
 test_hook_codex_blocks_when_the_bound_supervisor_is_dead
+test_hook_codex_allows_when_this_conversation_has_a_fresh_published_wake
+test_hook_codex_blocks_on_a_stale_published_wake
+test_hook_codex_wake_freshness_bound_is_overridable
+test_hook_codex_blocks_on_a_fresh_unsuccessful_outcome
+test_hook_codex_blocks_on_a_fresh_wake_for_another_conversation
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root
 test_codex_hook_ignores_nested_git_root_guard
 test_opencode_plugin_forces_followup

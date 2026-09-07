@@ -57,7 +57,11 @@
 #   updated_at=<epoch seconds>
 # The turn-end guard (bin/fm-turnend-guard.sh --codex) reads it to allow a stop
 # whose recovery a live supervisor bound to THIS session already owns, instead
-# of forcing the foreground checkpoint this mode exists to remove.
+# of forcing the foreground checkpoint this mode exists to remove. A cycle that
+# closes inside the guard's wait window leaves no live process, so the guard
+# also accepts a still-fresh outcome=wake record for this session; that is why
+# outcome and updated_at are part of this record's contract and why no other
+# outcome may ever be written after a wake is published.
 #
 # `codex queue` returns success for a conversation that has already exited, so a
 # successful publication is NOT proof of delivery. That is safe because the
@@ -72,6 +76,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 GRACE=${FM_GUARD_GRACE:-300}
+ARM_OUTPUT=
 OWNER_LOCK="$STATE/.codex-autoarm.lock"
 BINDING="$STATE/.codex-autoarm-session"
 FAILURE_NOTICE="$STATE/.codex-autoarm-failure-notified"
@@ -192,6 +197,13 @@ main_hook() {
   exit 0
 }
 
+# Remove this supervisor's own arm output, if it has one, and forget the path so
+# neither the retry below nor supervisor_cleanup can act on a stale name.
+arm_output_discard() {
+  [ -z "$ARM_OUTPUT" ] || rm -f "$ARM_OUTPUT" 2>/dev/null || true
+  ARM_OUTPUT=
+}
+
 write_binding() {  # <session-id> <outcome>
   local session=$1 outcome=$2 tmp
   tmp="$BINDING.tmp.$$"
@@ -217,7 +229,7 @@ queue_wake() {  # <session-id> <body>
 }
 
 main_supervise() {  # <session-id>
-  local session=$1 out='' actionable=0 healthy=0 attempt=0 reasons
+  local session=$1 actionable=0 healthy=0 attempt=0 reasons
 
   fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
   CODEX_BIN=$(command -v codex 2>/dev/null || true)
@@ -234,12 +246,21 @@ main_supervise() {  # <session-id>
   fi
 
   ARM_CHILD=
+  # The arm output this supervisor created, held outside main_supervise's locals
+  # so the traps below can reach it. Only ever a path THIS process mktemp'd, so
+  # cleanup can never touch a sibling supervisor's or another home's file.
+  ARM_OUTPUT=
   # shellcheck disable=SC2329 # Invoked by the traps below and at normal exit.
   supervisor_cleanup() {
     if [ -n "$ARM_CHILD" ] && fm_pid_alive "$ARM_CHILD"; then
       kill -TERM "$ARM_CHILD" 2>/dev/null || true
       wait "$ARM_CHILD" 2>/dev/null || true
     fi
+    # A retired supervisor is SIGTERMed mid-cycle every time a new conversation
+    # binds to this home, so without this its arm output would be orphaned in
+    # the state directory for the life of the home.
+    [ -z "$ARM_OUTPUT" ] || rm -f "$ARM_OUTPUT" 2>/dev/null || true
+    ARM_OUTPUT=
     # The binding is a RECORD, not the liveness claim: the owner lock is. Leave
     # the last outcome on disk so an operator can see why a cycle closed, and so
     # a retired supervisor's cleanup can never race away its successor's entry.
@@ -264,9 +285,9 @@ main_supervise() {  # <session-id>
 
   while [ "$attempt" -lt "$AUTOARM_ATTEMPTS" ]; do
     attempt=$((attempt + 1))
-    out=$(mktemp "$STATE/.codex-autoarm-output.XXXXXX") || out=
-    if [ -n "$out" ]; then
-      "$SCRIPT_DIR/fm-watch-arm.sh" >"$out" 2>&1 &
+    ARM_OUTPUT=$(mktemp "$STATE/.codex-autoarm-output.XXXXXX") || ARM_OUTPUT=
+    if [ -n "$ARM_OUTPUT" ]; then
+      "$SCRIPT_DIR/fm-watch-arm.sh" >"$ARM_OUTPUT" 2>&1 &
     else
       "$SCRIPT_DIR/fm-watch-arm.sh" >/dev/null 2>&1 &
     fi
@@ -278,13 +299,13 @@ main_supervise() {  # <session-id>
     # wake the conversation behind its back.
     if [ -e "$STATE/.afk" ]; then
       write_binding "$session" afk
-      [ -z "$out" ] || rm -f "$out" 2>/dev/null || true
+      arm_output_discard
       exit 0
     fi
 
     actionable=0
-    if [ -n "$out" ]; then
-      grep -Eq '^(signal:|stale:|check:|heartbeat($|:))' "$out" 2>/dev/null && actionable=1
+    if [ -n "$ARM_OUTPUT" ]; then
+      grep -Eq '^(signal:|stale:|check:|heartbeat($|:))' "$ARM_OUTPUT" 2>/dev/null && actionable=1
     fi
     [ "$actionable" -eq 1 ] && break
 
@@ -293,8 +314,7 @@ main_supervise() {  # <session-id>
       break
     fi
     [ "$attempt" -lt "$AUTOARM_ATTEMPTS" ] || break
-    [ -z "$out" ] || rm -f "$out" 2>/dev/null || true
-    out=
+    arm_output_discard
   done
 
   # The need may have vanished mid-cycle (fleet torn down, X opted out): there is
@@ -303,7 +323,7 @@ main_supervise() {  # <session-id>
   if ! fm_supervision_needed "$STATE" "$GRACE"; then
     write_binding "$session" clean
     rm -f "$FAILURE_NOTICE" 2>/dev/null || true
-    [ -z "$out" ] || rm -f "$out" 2>/dev/null || true
+    arm_output_discard
     exit 0
   fi
 
@@ -312,13 +332,13 @@ main_supervise() {  # <session-id>
     # this cycle closing early is benign and needs no wake.
     write_binding "$session" clean
     rm -f "$FAILURE_NOTICE" 2>/dev/null || true
-    [ -z "$out" ] || rm -f "$out" 2>/dev/null || true
+    arm_output_discard
     exit 0
   fi
 
   reasons=
-  [ -n "$out" ] && reasons=$(grep -E '^(watcher:|signal:|stale:|check:|heartbeat)' "$out" 2>/dev/null | head -8)
-  [ -z "$out" ] || rm -f "$out" 2>/dev/null || true
+  [ -n "$ARM_OUTPUT" ] && reasons=$(grep -E '^(watcher:|signal:|stale:|check:|heartbeat)' "$ARM_OUTPUT" 2>/dev/null | head -8)
+  arm_output_discard
 
   if [ "$actionable" -eq 1 ]; then
     write_binding "$session" wake
