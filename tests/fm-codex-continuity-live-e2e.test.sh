@@ -175,7 +175,7 @@ mkdir -p "$HOME_DIR/state" "$HOME_DIR/config"
 # the top of this file that would be the developer's own checkout.
 FM_HOME="$HOME_DIR"
 FM_STATE_OVERRIDE="$HOME_DIR/state"
-# shellcheck source=bin/fm-wake-lib.sh
+# shellcheck source=/dev/null
 . "$PROJECT/bin/fm-wake-lib.sh"
 
 PROMPT='You are a Firstmate primary session for this isolated test home. Reply with exactly READY and nothing else. Later, if you receive a firstmate supervision notification, run bin/fm-wake-drain.sh once and report in one line what it said.'

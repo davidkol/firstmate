@@ -458,7 +458,8 @@ Deterministically verified here:
 - A rejected publication is retried within its bound and recovers; an exhausted one records `wake-unpublished` and opens the episode, while losing the home between retries records `superseded` and opens no episode.
 - The failure episode is retired at the idle boundary, and at the healthy-watcher boundary only when the delivery route for this conversation is also intact; a healthy watcher alone does not close a routing failure.
 - The Codex delivery proofs are asked only of the session holding `state/.lock`: a session with a live foreign owner stays quiet beside that owner's healthy watcher, never writes or clears the home's episode state, and receives the lock-holder instruction rather than the owner's repair line when it does block.
-- The typed continuation names the condition it refused - a missing binding, a binding for another conversation, or a Stop payload carrying no usable conversation id - and still carries the instruction its owner renders.
+- The typed continuation names the condition it refused, tested in the order the guard asks so the most specific true one is reported - a Stop payload carrying no usable conversation id, no binding at all, a binding for another conversation, a wake that could not be published, and an unresolved arm-failure episode - and still carries the instruction its owner renders.
+- An undelivered wake is named as itself rather than as the arm-failure episode its own failed publication opened, and the episode sentence says whether a supervisor is actually running.
 - The launch policy denies `bin/fm-codex-detach.sh` around a protected watcher command and denies every `bin/fm-codex-stop-autoarm.sh` spelling, including `--supervise` backgrounded and under `nohup`.
 
 ```sh

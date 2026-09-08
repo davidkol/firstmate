@@ -209,15 +209,21 @@ run_hook_codex_session() {  # <dir> <stop-active> <session-id>
 # in-progress record a freshly detached supervisor writes; the age lets a test
 # place that record outside the guard's freshness bound.
 write_codex_binding() {  # <dir> <pid> <session-id> [outcome] [age-seconds]
-  local dir=$1 pid=$2 session=$3 outcome=${4:-arming} age=${5:-0} identity
+  local dir=$1 pid=$2 session=$3 outcome=${4:-arming} age=${5:-0} identity tmp
   identity=$(bash -c '. "$1/bin/fm-wake-lib.sh"; fm_pid_identity "$2"' _ "$ROOT" "$pid" 2>/dev/null || true)
+  # Replace the record the way bin/fm-codex-stop-autoarm.sh's write_binding
+  # does: a complete temp file renamed over the binding. Truncating in place
+  # would let a reader that already holds the inode see a record neither writer
+  # ever produced, which is the very defect the race test exists to refuse.
+  tmp="$dir/state/.codex-autoarm-session.tmp.$$"
   {
     printf 'pid=%s\n' "$pid"
     printf 'identity=%s\n' "$identity"
     printf 'session=%s\n' "$session"
     printf 'outcome=%s\n' "$outcome"
     printf 'updated_at=%s\n' "$(( $(date +%s) - age ))"
-  } > "$dir/state/.codex-autoarm-session"
+  } > "$tmp" && mv -f "$tmp" "$dir/state/.codex-autoarm-session"
+  rm -f "$tmp" 2>/dev/null || true
 }
 
 # Reproduce the supervisor whose whole cycle fits inside the guard's wait

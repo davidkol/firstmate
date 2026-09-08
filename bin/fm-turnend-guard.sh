@@ -223,10 +223,13 @@ codex_binding_snapshot() {
 }
 
 # An unresolved arm-failure episode. The auto-arm opens it on a failed cycle, a
-# failed wake publication, and a failed retirement, and closes it only on an
-# actionable published wake or a verified healthy watcher. This guard closes it
-# too, at the two boundaries no supervisor survives to reach: a home with no
-# supervision need left, and a home whose watcher is verifiably healthy again.
+# failed wake publication, and a failed retirement, and closes it only on a wake
+# it actually published. This guard closes it too, at the two boundaries no
+# supervisor survives to reach: a home with no supervision need left, and a home
+# whose watcher is verifiably healthy again AND whose delivery route for this
+# conversation is intact. Both halves are required, because an episode opened by
+# a routing or publication failure is about the route to this conversation while
+# the stuck supervisor's own watcher is usually still beating.
 codex_failure_episode_open() {
   [ -e "$STATE/.codex-autoarm-failure-episode" ]
 }
