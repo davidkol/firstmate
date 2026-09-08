@@ -400,16 +400,24 @@ codex_refusal_detail() {
     fi
     return 0
   fi
-  if codex_failure_episode_open; then
-    printf '%s\n' 'An unresolved arm-failure episode is open for this home, so a supervisor that has only just started is not yet evidence that a watcher came up.'
-    return 0
-  fi
+  # Outcome before episode. A failed publication opens the episode as it writes
+  # this record, so asking about the episode first would report every one of them
+  # as an arm failure - the one thing that did NOT happen, since the arm closed
+  # actionably and the supervisor then exited.
   case "$CODEX_BIND_OUTCOME" in
     wake-unpublished)
       printf '%s\n' 'The last wake for this conversation could not be published; the event is still durable in state/.wake-queue and is drained by bin/fm-wake-drain.sh.'
       return 0
       ;;
   esac
+  if codex_failure_episode_open; then
+    if codex_supervisor_process_live; then
+      printf '%s\n' 'An unresolved arm-failure episode is open for this home, so a supervisor that has only just started is not yet evidence that a watcher came up.'
+    else
+      printf '%s\n' 'An unresolved arm-failure episode is open for this home and no supervisor is running, so nothing is currently bringing a watcher up for this conversation.'
+    fi
+    return 0
+  fi
   return 0
 }
 

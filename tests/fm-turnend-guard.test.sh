@@ -1376,6 +1376,58 @@ test_hook_codex_names_a_payload_with_no_conversation_id() {
   pass "fm-turnend-guard: Codex names a Stop payload that carries no conversation id"
 }
 
+# A failed publication opens the failure episode as it writes its own record, so
+# the two always arrive together. Reporting that pair as an arm failure sends the
+# session to inspect a hook registration and a watcher startup that both worked,
+# instead of the wake publication and the durable queue that did not.
+test_hook_codex_names_an_unpublished_wake_beside_an_open_episode() {
+  local dir out reason dead
+  dir=$(make_primary_dir "$TMP_ROOT/codex-unpublished-detail")
+  : > "$dir/state/task1.meta"
+  dead=$(nonexistent_pid)
+  write_codex_binding "$dir" "$dead" sess-undelivered wake-unpublished
+  : > "$dir/state/.codex-autoarm-failure-episode"
+  out=$(run_hook_codex_session "$dir" false sess-undelivered)
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "could not be published" \
+    "an undelivered wake must be named as the condition that refused the stop"
+  assert_contains "$reason" "state/.wake-queue" \
+    "the continuation must point at the durable record that still holds the event"
+  assert_not_contains "$reason" "arm-failure episode is open" \
+    "an undelivered wake must not be reported as an arm failure"
+  pass "fm-turnend-guard: Codex names an undelivered wake rather than the episode it opened"
+}
+
+# An open episode withholds trust from a supervisor that has only just started.
+# With no supervisor running there is nothing to withhold trust from, so the
+# sentence must not claim one.
+test_hook_codex_episode_sentence_matches_whether_a_supervisor_is_running() {
+  local dir out reason sleeper dead
+  dir=$(make_primary_dir "$TMP_ROOT/codex-episode-sentence")
+  : > "$dir/state/task1.meta"
+  : > "$dir/state/.codex-autoarm-failure-episode"
+
+  sleep 30 &
+  sleeper=$!
+  write_codex_binding "$dir" "$sleeper" sess-episode
+  out=$(run_hook_codex_session "$dir" false sess-episode)
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "has only just started" \
+    "an open episode beside a live supervisor must say what it is withholding trust from"
+
+  dead=$(nonexistent_pid)
+  write_codex_binding "$dir" "$dead" sess-episode
+  out=$(run_hook_codex_session "$dir" false sess-episode)
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "no supervisor is running" \
+    "an open episode with no live supervisor must not claim one just started"
+  assert_not_contains "$reason" "has only just started" \
+    "an open episode with no live supervisor must not claim one just started"
+  pass "fm-turnend-guard: the Codex episode sentence matches whether a supervisor is running"
+}
+
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root() {
   local settings command dir expected_root outside payload out status
   settings="$ROOT/.codex/hooks.json"
@@ -2240,6 +2292,8 @@ test_hook_codex_continuation_names_a_missing_delivery_binding
 test_hook_codex_continuation_names_a_mismatched_delivery_binding
 test_hook_codex_keeps_a_routing_episode_open_beside_a_healthy_watcher
 test_hook_codex_names_a_payload_with_no_conversation_id
+test_hook_codex_names_an_unpublished_wake_beside_an_open_episode
+test_hook_codex_episode_sentence_matches_whether_a_supervisor_is_running
 test_hook_codex_blocks_when_the_bound_supervisor_is_dead
 test_hook_codex_allows_when_this_conversation_has_a_fresh_published_wake
 test_hook_codex_blocks_on_a_stale_published_wake

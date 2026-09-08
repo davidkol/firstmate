@@ -88,7 +88,10 @@ Both halves are required, because an episode opened by a routing or publication 
 
 The typed continuation reports what was actually refused, and so does the operator banner behind it.
 The repair line names the hook registration and the watcher startup, and those are not what failed in every Codex refusal, so the continuation leads with the observed condition and then carries that instruction unaltered.
-A missing binding, a binding for another conversation, an open arm-failure episode and an unpublished wake each state themselves; away mode and the read-only case send their own instruction with no added condition.
+Five conditions state themselves, tested in this order so the most specific true one is the one reported: a Stop payload carrying no usable conversation id, no binding at all, a binding for another conversation, a wake that could not be published, and an unresolved arm-failure episode.
+The outcome is read before the episode because a failed publication opens that episode as it writes its own record, so asking about the episode first would report every undelivered wake as an arm failure that did not happen.
+The episode sentence itself says whether a supervisor is currently running, since a freshly started one is the only thing an open episode withholds trust from.
+Away mode and the read-only case send their own instruction with no added condition.
 In the banner a running supervisor is named with its pid, its bound conversation and its recorded outcome, rather than being described as an auto-arm that never claimed the home.
 
 Claude runs the guard with `--claude`, which ignores `stop_hook_active` and cooperates with the Stop-owned auto-arm.
