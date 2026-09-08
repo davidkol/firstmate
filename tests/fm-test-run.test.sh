@@ -709,24 +709,46 @@ if [ "$1" = "-f" ] && [ "$2" = "%Lp" ]; then
 fi
 exit 1
 SH
+  # The three fixtures prove one invariant by handshake rather than by clock:
+  # while the oldest worker is still running, the fast worker finishes and the
+  # replacement starts in the slot it freed. Every wait is bounded and fails
+  # the fixture on expiry, so a serialising scheduler reports a failure instead
+  # of wedging the suite.
   cat >"$repo/$a" <<'SH'
 #!/usr/bin/env bash
-sleep 0.5
+touch "$SCHED_EVIDENCE/slow-started"
+deadline=$(( $(date +%s) + 30 ))
+while [ ! -e "$SCHED_EVIDENCE/release" ]; do
+  if [ "$(date +%s)" -ge "$deadline" ]; then
+    echo "not ok - replacement fixture never started while slow fixture ran"
+    exit 1
+  fi
+  sleep 0.05
+done
 touch "$SCHED_EVIDENCE/slow-done"
 echo "ok - slow fixture"
 SH
   cat >"$repo/$b" <<'SH'
 #!/usr/bin/env bash
-sleep 0.05
 echo "ok - fast fixture"
 SH
   cat >"$repo/$c" <<'SH'
 #!/usr/bin/env bash
+deadline=$(( $(date +%s) + 30 ))
+while [ ! -e "$SCHED_EVIDENCE/slow-started" ]; do
+  if [ "$(date +%s)" -ge "$deadline" ]; then
+    echo "not ok - slow fixture never started"
+    exit 1
+  fi
+  sleep 0.05
+done
 if [ -e "$SCHED_EVIDENCE/slow-done" ]; then
   echo "not ok - scheduler waited for oldest worker"
+  touch "$SCHED_EVIDENCE/release"
   exit 1
 fi
 echo "ok - replacement fixture started before slow fixture finished"
+touch "$SCHED_EVIDENCE/release"
 SH
   chmod +x "$runner" "$repo/$a" "$repo/$b" "$repo/$c" "$fake_bin/stat"
   set +e
