@@ -168,6 +168,20 @@ OWNER_LOCK="$STATE/.claude-autoarm.lock"
 FAILURE_NOTICE="$STATE/.claude-autoarm-failure-notified"
 FAILURE_ALARM="$STATE/.claude-autoarm-failure-alarmed"
 SESSION_ID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // "unknown"' 2>/dev/null || printf 'unknown')
+# A Stop payload with no usable conversation id is its own condition, not a
+# binding mismatch: SESSION_ID falls back to a sentinel, so every Codex identity
+# comparison below fails for that one reason. The sibling hook already treats
+# this payload shape as real and stays inert on it. Record the fact separately
+# from the sentinel - a comparison against "unknown" cannot tell the difference,
+# and the diagnostic must not accuse a correctly bound supervisor of targeting
+# somewhere else.
+CODEX_SESSION_ID_PRESENT=0
+case "$(printf '%s' "$PAYLOAD" | jq -r '
+  if type == "object" and (.session_id | type) == "string" then .session_id else empty end
+' 2>/dev/null || true)" in
+  ''|*[!0-9A-Za-z._-]*) : ;;
+  *) CODEX_SESSION_ID_PRESENT=1 ;;
+esac
 budget_reset() {
   [ "$CLAUDE_MODE" -eq 1 ] || return 0
   fm_lock_try_acquire "$BUDGET_LOCK" || return 0
@@ -368,6 +382,10 @@ fi
 # alone would send the session to inspect two working things. This states the
 # condition; bin/fm-supervision-instructions.sh still owns the instruction.
 codex_refusal_detail() {
+  if [ "$CODEX_SESSION_ID_PRESENT" -eq 0 ]; then
+    printf '%s\n' 'This Stop payload carried no usable conversation id, so there is no conversation for a wake to be addressed to and no supervisor binding can match it.'
+    return 0
+  fi
   codex_binding_snapshot || {
     printf '%s\n' 'No Stop-owned supervisor is bound to this conversation, so nothing is holding a delivery route for it.'
     return 0
@@ -449,7 +467,9 @@ block_stop() {
       # in front of them.
       printf '●  A Stop-owned supervisor (pid %s) is running for conversation "%s" with recorded outcome "%s", but it is not usable recovery for THIS stop.\n' \
         "$CODEX_BIND_PID" "$CODEX_BIND_SESSION" "${CODEX_BIND_OUTCOME:-unrecorded}"
-      if [ "$CODEX_BIND_SESSION" != "$SESSION_ID" ]; then
+      if [ "$CODEX_SESSION_ID_PRESENT" -eq 0 ]; then
+        printf '●  This Stop payload carried no usable conversation id, so no binding can match it.\n'
+      elif [ "$CODEX_BIND_SESSION" != "$SESSION_ID" ]; then
         printf '●  Its wake would be published to that conversation, not to this one (%s).\n' "$SESSION_ID"
       elif codex_failure_episode_open; then
         printf '●  An unresolved arm-failure episode is open, so a supervisor that has only just started is not evidence a watcher came up.\n'

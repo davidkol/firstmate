@@ -447,15 +447,18 @@ The ownership, destination, binding-read and delivery-failure paths around that 
 This entry records deterministic in-repository verification only.
 The live Codex axis was NOT re-run for it: the opt-in `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` still names codex-cli 0.153.4 from the 2026-09-07 pass above, and its own oracles were tightened in this change without being re-executed against a real client.
 Treat that axis as untested for this repair until the opt-in command is run again.
+Two defects in that suite's own harness were corrected here and are likewise unexecuted against a real client: it now settles the pane before taking the quiet control's baseline, because a baseline captured while the Stop hook's status line is still up differs from itself as the TUI reflows and reports that rendering as conversation activity; and an empty candidate diff is now a no-op, because a clone that already carries the exact candidate is the shape of a pipeline commit rather than a projection failure.
 
 Deterministically verified here:
 
 - A healthy watcher whose only supervisor is bound to a replaced conversation no longer allows a Codex stop, while away mode still allows it; the fixture's watcher record is independently checked against `fm_watcher_healthy` so the refusal cannot come from a broken fixture.
 - Two binding records that are each refused on their own are never combined into an acceptance while the record is atomically replaced under the reader.
 - A detached supervisor whose authorizing primary was replaced arms nothing and publishes nothing.
-- A retirement that times out opens the failure episode instead of reading as a successful rebind.
-- A rejected publication is retried within its bound and recovers; an exhausted one records `wake-unpublished` and opens the episode.
-- The failure episode is retired at the idle and healthy-watcher boundaries no supervisor survives to reach.
+- A retirement that times out opens the failure episode instead of reading as a successful rebind, and the guard running second on that same Stop keeps the episode open beside the stuck supervisor's still-healthy watcher.
+- A rejected publication is retried within its bound and recovers; an exhausted one records `wake-unpublished` and opens the episode, while losing the home between retries records `superseded` and opens no episode.
+- The failure episode is retired at the idle boundary, and at the healthy-watcher boundary only when the delivery route for this conversation is also intact; a healthy watcher alone does not close a routing failure.
+- The Codex delivery proofs are asked only of the session holding `state/.lock`: a session with a live foreign owner stays quiet beside that owner's healthy watcher, never writes or clears the home's episode state, and receives the lock-holder instruction rather than the owner's repair line when it does block.
+- The typed continuation names the condition it refused - a missing binding, a binding for another conversation, or a Stop payload carrying no usable conversation id - and still carries the instruction its owner renders.
 - The launch policy denies `bin/fm-codex-detach.sh` around a protected watcher command and denies every `bin/fm-codex-stop-autoarm.sh` spelling, including `--supervise` backgrounded and under `nohup`.
 
 ```sh

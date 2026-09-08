@@ -1350,6 +1350,32 @@ test_hook_codex_keeps_a_routing_episode_open_beside_a_healthy_watcher() {
   pass "fm-turnend-guard: a healthy watcher alone does not close a routing-failure episode"
 }
 
+# A Stop payload with no conversation id is a real shape the sibling hook already
+# stays inert on. Blocking is right, but the reason must be that condition: the
+# supervisor is bound correctly and its route is intact, so accusing it of
+# targeting another conversation sends the session after something that is fine.
+test_hook_codex_names_a_payload_with_no_conversation_id() {
+  local dir out status reason home sleeper
+  dir=$(make_primary_dir "$TMP_ROOT/codex-no-session-id")
+  home=$(cd "$dir" && pwd)
+  : > "$dir/state/task1.meta"
+  sleep 30 &
+  sleeper=$!
+  write_codex_binding "$dir" "$sleeper" sess-bound
+  out=$(printf '{"cwd":"%s","stop_hook_active":false}' "$home" \
+    | FM_HOME="$home" FM_CODEX_AUTOARM_SYNC_WAIT_MS=300 \
+      bash "$dir/bin/fm-turnend-guard.sh" --codex 2>&1); status=$?
+  kill "$sleeper" 2>/dev/null || true
+  wait "$sleeper" 2>/dev/null || true
+  expect_code 0 "$status" "Codex guard must still emit its structured continuation"
+  reason=$(printf '%s' "$out" | jq -r '.reason')
+  assert_contains "$reason" "carried no usable conversation id" \
+    "a payload with no conversation id must be named as the condition"
+  assert_not_contains "$reason" 'bound to conversation "sess-bound"' \
+    "a correctly bound supervisor must not be accused of targeting another conversation"
+  pass "fm-turnend-guard: Codex names a Stop payload that carries no conversation id"
+}
+
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root() {
   local settings command dir expected_root outside payload out status
   settings="$ROOT/.codex/hooks.json"
@@ -2213,6 +2239,7 @@ test_hook_codex_read_only_session_gets_the_lock_holder_instruction
 test_hook_codex_continuation_names_a_missing_delivery_binding
 test_hook_codex_continuation_names_a_mismatched_delivery_binding
 test_hook_codex_keeps_a_routing_episode_open_beside_a_healthy_watcher
+test_hook_codex_names_a_payload_with_no_conversation_id
 test_hook_codex_blocks_when_the_bound_supervisor_is_dead
 test_hook_codex_allows_when_this_conversation_has_a_fresh_published_wake
 test_hook_codex_blocks_on_a_stale_published_wake

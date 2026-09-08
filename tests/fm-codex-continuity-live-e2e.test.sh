@@ -77,6 +77,28 @@ wait_for_pane() {  # <needle> <seconds> <what>
 $(pane)"
 }
 
+# The quiet control measures whether a PARKED supervisor costs a model or tool
+# call, so its baseline has to be taken from a pane that has stopped moving. A
+# pane captured while the Stop hook's own status line is still up will differ
+# from itself a moment later - the hook finishes, the status clears, the TUI
+# reflows - and the control then reports the rendering as conversation activity.
+# Settled means no in-progress status and byte-identical across three
+# consecutive samples.
+pane_settled() {  # <seconds>
+  local limit=$1 i=0 a b c
+  while [ "$i" -lt "$limit" ]; do
+    a=$(pane); sleep 0.5; b=$(pane); sleep 0.5; c=$(pane)
+    if [ "$a" = "$b" ] && [ "$b" = "$c" ]; then
+      case "$a" in
+        *"esc to interrupt"*|*"Running hooks"*) : ;;
+        *) return 0 ;;
+      esac
+    fi
+    i=$((i + 1))
+  done
+  return 1
+}
+
 # A pane that merely SHOWS the sentinel proves nothing: the request that asked
 # for it is echoed into the same pane, so one occurrence is the prompt, not an
 # answer. Wait for a second one, which only a completed assistant turn can add.
@@ -132,8 +154,18 @@ mkdir -p "$LAB"
 git clone -q "$ROOT" "$PROJECT"
 # A local clone contains only committed objects, so project this candidate diff
 # into the isolated clone before asking Codex to exercise the behavior.
-git -C "$ROOT" diff --binary HEAD | git -C "$PROJECT" apply - \
-  || fail "could not project the candidate diff into the isolated Codex clone"
+# A local clone carries only committed objects, so any uncommitted candidate has
+# to be projected into it. An EMPTY diff means the clone already has the exact
+# candidate, which is the shape of a pipeline commit or any clean checkout: that
+# is success, not a failure to apply. Keep the failure for a diff that genuinely
+# will not apply, and write it to a file so binary hunks survive byte for byte.
+CANDIDATE_DIFF="$LAB/candidate.diff"
+git -C "$ROOT" diff --binary HEAD > "$CANDIDATE_DIFF" \
+  || fail "could not read the candidate diff from $ROOT"
+if [ -s "$CANDIDATE_DIFF" ]; then
+  git -C "$PROJECT" apply "$CANDIDATE_DIFF" \
+    || fail "could not project the candidate diff into the isolated Codex clone"
+fi
 mkdir -p "$HOME_DIR/state" "$HOME_DIR/config"
 
 # The candidate's own liveness and watcher-health predicates, so the successor
@@ -198,6 +230,8 @@ kill -0 "$SUPERVISOR" 2>/dev/null || fail "the detached supervisor did not survi
 wait_for_file "$HOME_DIR/state/.last-watcher-beat" 30 "the armed watcher never beat"
 
 # --- quiet parked window: no model or tool call ------------------------------
+pane_settled 120 || fail "the pane never settled after arming, so a quiet baseline would measure the TUI rather than the supervisor:
+$(pane)"
 PARKED=$(pane)
 sleep "$QUIET_SECONDS"
 [ "$(pane)" = "$PARKED" ] \
