@@ -32,14 +32,14 @@ The wrapper discovers the code root from its own location.
 The active firstmate home is `${FM_HOME:-<code-root>}`.
 It passes both roots and the exact command string to the Node policy owner.
 
-The wrapper fast-allows a command without invoking the Node policy owner only when the command cannot contain the `fm-watch` byte sequence even after the classifier's decoders run.
+The wrapper fast-allows a command without invoking the Node policy owner only when the command cannot contain a protected-script marker byte sequence even after the classifier's decoders run.
 The fast path may allow only when both of these hold:
 
-1. The stripped text lacks the `fm-watch` watcher substring, after mirroring the classifier's cheapest byte normalizations - dropping line-continuation and escape backslashes, quotes, and newlines.
+1. The stripped text lacks both protected-script markers, `fm-watch` and `fm-codex-stop-autoarm`, after mirroring the classifier's cheapest byte normalizations - dropping line-continuation and escape backslashes, quotes, and newlines.
 2. The raw command carries no quoting-decoder marker: a `$` immediately followed by a single quote (ANSI-C `$'...'`) or a double quote (bash locale `$"..."`).
 
-Any `fm-watch` match or any quoting-decoder marker delegates to the classifier.
-Normalizing first keeps this a strict superset: a protected watcher path obfuscated as `fm-watc\<newline>h-arm.sh` or `fm-"watch"-arm.sh` still delegates, and stripping only those non-alphanumeric bytes can never destroy an existing `fm-watch` run.
+Any protected-script marker match or any quoting-decoder marker delegates to the classifier.
+Normalizing first keeps this a strict superset: a protected watcher path obfuscated as `fm-watc\<newline>h-arm.sh` or `fm-"watch"-arm.sh` still delegates, and stripping only those non-alphanumeric bytes can never destroy an existing marker run.
 The quoting-decoder marker closes the case the byte strip cannot: `bin/fm-$'\x77'atch-arm.sh` and `bin/fm-$"watch"-arm.sh` both resolve to `bin/fm-watch-arm.sh` only after the classifier decodes the encoded character, so a cheap byte strip would otherwise lose the `fm-watch` bytes and fast-allow them.
 This marker set is coupled to the classifier's decoder set in `bin/fm-arm-command-policy.mjs`: adding any new quote or expansion form the classifier decodes requires extending this marker set in the same change, or the prefilter stops being a strict superset.
 The prefilter owns no semantic exception: it can only ever fast-allow a command that is definitely not a watcher command, so it never flips a classification and the classifier remains the single owner of every decision.
@@ -64,6 +64,7 @@ A command word in executed position is a protected execution when its normalized
 bin/fm-watch-arm.sh          (arm; blessed entry point)
 bin/fm-watch-checkpoint.sh   (checkpoint; blessed entry point)
 bin/fm-watch.sh              (watch; protected but never blessed)
+bin/fm-codex-stop-autoarm.sh (supervisor; protected but never blessed)
 ```
 
 The relative form, the `<code-root>`-anchored absolute form, and any word ending in `/bin/<script>` all resolve to that identity.

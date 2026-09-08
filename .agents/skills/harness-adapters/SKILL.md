@@ -217,7 +217,7 @@ A primary Firstmate Codex session always starts or resumes through `bin/fm-codex
 Codex worker launch remains separate under `bin/fm-spawn.sh`.
 
 **Primary-session guard fact (verified 2026-07-08, codex-cli 0.142.1; typed continuation verified 2026-08-09, codex-cli 0.147.0).**
-The firstmate PRIMARY's own `.codex/hooks.json` registers a Stop hook that pipes Codex's Stop payload to `bin/fm-turnend-guard.sh`.
+The firstmate PRIMARY's own `.codex/hooks.json` registers two Stop hooks on the same event, piping Codex's Stop payload to `bin/fm-codex-stop-autoarm.sh` first and then to `bin/fm-turnend-guard.sh`.
 It also registers `bin/fm-codex-away-pretool-check.sh` for Bash calls.
 Its operator contract and compatibility limits are owned by [`docs/configuration.md`](../../../docs/configuration.md#harness-support), with dated evidence in [`docs/verification/supervision.md`](../../../docs/verification/supervision.md#codex-primary-permission-policy).
 The operational consequence is that restricted or unverified Codex cannot enter away mode, while the supported primary's already-authorized routine path remains available.
@@ -225,7 +225,7 @@ Codex Stop hooks honor a native typed `decision:"block"` continuation - the hook
 They expose `stop_hook_active`, which the guard's non-`--claude` loop safety uses to let the second stop of a turn finish after one continuation.
 Codex's Stop payload includes `cwd`, but the tracked primary hook does not use it to choose the guard executable.
 Verified on 2026-07-08: Codex runs the Stop hook command with process PWD set to the hook-loaded project root, and no `CODEX_PROJECT_DIR`, `CODEX_WORKSPACE_ROOT`, or `CODEX_CWD` root variable is set.
-The tracked hook anchors to `pwd -P`, verifies that root is firstmate-shaped and hook-bearing, and then invokes `bin/fm-turnend-guard.sh --codex` with the original payload.
+Each tracked Stop hook anchors to `pwd -P`, verifies that root is firstmate-shaped and hook-bearing, and then invokes its own executable with the original payload.
 Codex's primary watcher protocol is the Stop-owned background wake in `bin/fm-codex-stop-autoarm.sh`; the model never arms a cycle itself.
 `codex queue --thread <session_id> --message <text>` is the supported wake primitive, and the Stop payload's `session_id` is the only supported source of that thread id.
 Verified on 2026-09-07 against codex-cli 0.153.4 on macOS: a queued message resumes an idle interactive conversation, is held rather than dropped while one is mid-turn, and reports success even for a conversation that has already exited - so a successful publication is never delivery proof.

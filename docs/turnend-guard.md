@@ -69,7 +69,7 @@ The Codex mode waits up to `FM_CODEX_AUTOARM_SYNC_WAIT_MS` (default 1500 millise
 The first is a live supervisor recorded in `state/.codex-autoarm-session` whose pid is alive and still matches its recorded process identity, and only while the home carries no unresolved arm-failure episode.
 That proof is optimistic: a supervisor records `arming` within milliseconds of detaching, seconds before its arm wrapper reports, so `state/.codex-autoarm-failure-episode` withdraws it whenever the last completed cycle failed to bring a watcher up.
 Without that withdrawal every turn end after an episode's single notice would pass silently and blind; with it the stop falls through to the typed continuation, still bounded to one per turn by the shared `stop_hook_active` loop guard.
-The auto-arm opens that episode on every failed cycle and closes it only on an actionable wake or a verified healthy watcher, never because a new supervisor started.
+The auto-arm opens that episode on every failed cycle and never closes it merely because a new supervisor started.
 The second is that record carrying `outcome=wake` no older than `FM_CODEX_AUTOARM_OUTCOME_FRESH` (default 15 seconds), because a supervisor whose whole cycle fits inside the wait window publishes its wake and exits, and process liveness alone would then send the session to repair a hook registration that just worked.
 The supervisor writes that outcome only after its publication call returns success, so the record proves a published wake and never a delivery receipt; a publication that fails records `wake-unpublished` instead, and the durable `state/.wake-queue` record remains the recovery path for a wake no live conversation consumed.
 Both proofs require the record's `session` to equal this Stop payload's `session_id`, so a supervisor bound to a closed conversation never buys this one a blind stop.
@@ -82,8 +82,8 @@ A wake published mid-turn can still be fresh at the next turn end; the auto-arm 
 Both proofs read the binding as one snapshot: a single open and a single pass, so an atomic replacement of that record cannot mix the session of one version with the pid of another.
 The episode has one owner and every transition has a home.
 The auto-arm opens it on a failed arm cycle, on a retirement that timed out and therefore left this conversation with no route, and on a wake whose publication failed after its bounded retries.
-It closes the episode on a wake it actually published.
-This guard closes it at the two boundaries no supervisor survives to reach: a home with no supervision need left, and a home whose watcher is verifiably healthy again AND whose delivery route for this conversation is intact.
+It closes the episode on a wake it actually published, on a cycle that finds this home's watcher already verified healthy, and on a cycle that finds no supervision need left.
+This guard closes it too, for the runs where no supervisor survives to reach either boundary: a home with no supervision need left, and a home whose watcher is verifiably healthy again AND whose delivery route for this conversation is intact.
 Both halves are required, because an episode opened by a routing or publication failure is about the route to this conversation and the stuck supervisor's own watcher is usually still beating; a healthy watcher alone would close it while the failure it records is still true.
 
 The typed continuation reports what was actually refused, and so does the operator banner behind it.
@@ -134,6 +134,8 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 - A valid secondmate home is in scope; an idle secondmate endpoint with no X-mode relay poll remains healthy because it has no supervision need.
 - The direct-blocking and bounded passive-follow-up split is limited to the primary integrations listed above.
 - OpenCode headless mode and untrusted Grok project hooks remain fail-open at the host boundary.
+- The Codex Stop-owned background wake needs a `codex` executable on `PATH`; without one the Stop hook arms no supervisor, so a home that still needs supervision blocks at this guard every turn end.
+- A `codex` build without `queue --thread` arms normally but cannot deliver, so the cycle records `wake-unpublished` and opens the failure episode instead of looking healthy; [`verification/supervision.md`](verification/supervision.md#codex-stop-owned-background-wake) records the exact client that capability was verified on.
 - Kimi Code CLI 0.29.1 exposes only global `[[hooks]]` configuration in `~/.kimi-code/config.toml`, including a `Stop` event with snake_case payload fields `hook_event_name`, `session_id`, `cwd`, and `stop_hook_active`.
 - Kimi has no project-level hook configuration and remains outside the primary guard integrations above.
 - Captain-approved Kimi crew wake support uses `bin/fm-kimi-turnend-hook.sh` to edit only one marker-delimited Firstmate region in that global config and install a silent always-zero hook.
