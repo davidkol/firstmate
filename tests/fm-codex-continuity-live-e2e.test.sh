@@ -173,7 +173,11 @@ mkdir -p "$HOME_DIR/state" "$HOME_DIR/config"
 # only once the isolated home exists and is pointed at, because the library
 # resolves and creates a state directory from the environment as it loads; at
 # the top of this file that would be the developer's own checkout.
+# Both are read by bin/fm-wake-lib.sh as it is sourced just below, so they are
+# required runtime inputs aiming it at the isolated lab, not unused variables.
+# shellcheck disable=SC2034
 FM_HOME="$HOME_DIR"
+# shellcheck disable=SC2034
 FM_STATE_OVERRIDE="$HOME_DIR/state"
 # shellcheck source=/dev/null
 . "$PROJECT/bin/fm-wake-lib.sh"
