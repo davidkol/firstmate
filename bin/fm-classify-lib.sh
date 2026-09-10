@@ -36,9 +36,8 @@ _FM_CLASSIFY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)"
 FM_CREW_STATE_BIN="${FM_CREW_STATE_BIN:-$_FM_CLASSIFY_LIB_DIR/fm-crew-state.sh}"
 
 # Captain-relevant status verbs. A status line carrying any of these is work
-# firstmate must see. Lines without these verbs are no-verb signals: the watcher
-# absorbs them only with positive provably-working evidence, while the daemon uses
-# its away-mode classification. FM_CAPTAIN_RE overrides the whole set when a home
+# firstmate must see. status_is_routine and signal_has_declaration below own
+# normal-mode routine eligibility; the daemon retains its away-mode classification. FM_CAPTAIN_RE overrides the whole set when a home
 # needs a custom verb vocabulary; absent, this default applies.
 #
 # Free-text tokens (PR ready, checks green, ready in branch, merged) exist only for
@@ -51,7 +50,8 @@ FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|
 # The deliberate-external-wait verb. A crew (or firstmate steering it) appends
 #   paused: <reason>
 # to declare it is intentionally idling on a KNOWN external dependency - an
-# upstream release, a vendor rate-limit reset, a scheduled window. Unlike
+# upstream release, a vendor rate-limit reset, a scheduled window, or an answer
+# from the captain in the worker window. Unlike
 # `blocked:` (stuck, firstmate must help) an idle `paused:` pane is EXPECTED, so
 # the stale path absorbs it instead of escalating a possible wedge. It is
 # deliberately NOT in the captain-relevant set above: a pause is a "stop
@@ -61,12 +61,9 @@ FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|
 # drift between the two consumers. FM_CLASSIFY_PAUSED_VERB overrides it.
 FM_CLASSIFY_PAUSED_VERB_DEFAULT='paused'
 
-# Bounded re-surface cadence for a declared pause or a dead-agent captain hold.
-# Far longer than the wedge threshold (FM_STALE_ESCALATE_SECS, default 240s), it
-# avoids nagging a deliberate wait while ensuring a forgotten hold cannot rot
-# invisibly - it re-surfaces once for a recheck every window. One hour by default;
-# both consumers read FM_PAUSE_RESURFACE_SECS with this default so the cadence has
-# one owner.
+# Bounded internal recheck cadence for declared waits. The normal watcher stays
+# silent at this cadence; the away daemon retains its external-wait recheck
+# escalation. One hour by default, shared by both consumers.
 # shellcheck disable=SC2034 # Read by the watcher and daemon (fm-watch.sh, fm-supervise-daemon.sh), not this lib.
 FM_PAUSE_RESURFACE_SECS_DEFAULT=3600
 
@@ -133,9 +130,8 @@ status_is_paused() {  # <status-line>
 
 # 0 if a status line declares either an external-wait pause or a verified
 # captain-held transfer.
-# Both declarations can intentionally leave an exited crew's endpoint idle, so
-# the watcher applies its bounded pause cadence when agent death confirms that
-# no live decision gate is being silenced.
+# Both declarations intentionally leave a worker idle and keep routine stale
+# observations quiet. Active-run and failure precedence belongs to the watcher.
 status_is_paused_or_captain_held() {  # <status-line>
   local line=$1 verb
   status_is_paused "$line" && return 0
@@ -642,20 +638,75 @@ window_to_task() {
   t="${w##*:}"; t="${t#fm-}"; printf '%s' "$t"
 }
 
-# 0 (actionable) if ANY status file listed in a "signal:" wake carries a
-# captain-relevant last line; 1 otherwise. Pass the space-separated file list that
-# follows the "signal:" prefix. Non-.status arguments (e.g. .turn-ended markers,
-# which never carry a verb) are skipped. A 1 here is NOT "benign" on its own: a
-# no-verb signal (a bare turn-end, a working: note) is only benign when the crew is
-# also provably working (signal_crew_provably_working below); otherwise it surfaces.
+# Status verbs are the worker's routing intent, for every harness: working,
+# resolved, paused and captain-held are routine; captain-relevant verbs route
+# requests/blockers/outcomes to Firstmate. In-window questions use paused, not
+# needs-decision. A turn-end only reports a lifecycle boundary and defers to an
+# existing declaration. The existing captain-directed contract also covers
+# initialization before a first status; other undeclared workers retain recovery.
+status_is_routine() {  # <status-line>
+  status_is_paused_or_captain_held "$1" && return 0
+  case "$(status_line_verb "$1")" in working|resolved) return 0 ;; esac
+  return 1
+}
+
+# Reuse the existing delivery-process contract, never infer routing from task
+# prose or retrofit a process onto a scout. Missing/unreadable briefs retain the
+# ordinary recovery policy. This is a read, not a second routing registry.
+task_is_captain_directed() {  # <task-id>
+  local task=$1 data brief
+  data=${FM_DATA_OVERRIDE:-${FM_HOME:-$_FM_CLASSIFY_LIB_DIR/..}/data}
+  brief="$data/$task/brief.md"
+  [ -f "$brief" ] && [ -r "$brief" ] || return 1
+  [ "$("$_FM_CLASSIFY_LIB_DIR/fm-doctrine-contract.sh" process "$brief" 2>/dev/null)" = captain-directed ]
+}
+
+signal_has_declaration() {  # <status-or-turnend-file>
+  local f=$1 last task
+  case "$f" in
+    *.turn-ended) f=${f%.turn-ended}.status ;;
+    *.status) ;;
+    *) return 1 ;;
+  esac
+  last=$(last_status_line "$f")
+  if status_is_routine "$last" || status_is_captain_relevant "$last"; then return 0; fi
+  task=${f##*/}; task=${task%.status}
+  task_is_captain_directed "$task"
+}
+
+# Read only the unconsumed append bytes, bounded by the watcher's captured size.
+# Reuse its existing .seen-* signature: no second event ledger. A shorter or
+# same-size replacement is conservatively replayed. Callers acknowledge only
+# after queue publication or intentional absorb, never while reading this slice.
+status_unseen_coordination() {  # <status-file> [captured-size:mtime]
+  local f=$1 sig=${2:-} seen start end line
+  [ -f "$f" ] || return 1
+  seen="${f%/*}/.seen-$(basename "$f" | tr '.' '_')"
+  start=$(cat "$seen" 2>/dev/null || true); start=${start%%:*}
+  end=${sig%%:*}
+  [ -n "$end" ] || end=$(wc -c < "$f" | tr -d '[:space:]')
+  case "$start" in ''|*[!0-9]*) start=0 ;; esac
+  case "$end" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$start" -lt "$end" ] || start=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    if status_is_captain_relevant "$line"; then printf '%s\n' "$line"; fi
+  done < <(dd if="$f" bs=1 skip="$start" count="$((end - start))" 2>/dev/null)
+  return 0
+}
+
+status_unseen_is_actionable() {  # <status-file> [captured-size:mtime]
+  [ -n "$(status_unseen_coordination "$@")" ]
+}
+
+# 0 when ANY status file contains an unconsumed explicit coordination event.
+# Scan the append slice, not just its last line: routine progress cannot mask a
+# request or outcome that landed during grace or while no watcher was running.
 signal_reason_is_actionable() {  # <file> ...
-  local f last
+  local f
   for f in "$@"; do
     [ -e "$f" ] || continue
     case "$f" in *.status) ;; *) continue ;; esac
-    last=$(last_status_line "$f")
-    [ -n "$last" ] || continue
-    status_is_captain_relevant "$last" && return 0
+    status_unseen_is_actionable "$f" && return 0
   done
   return 1
 }
@@ -668,7 +719,8 @@ signal_reason_is_actionable() {  # <file> ...
 #             (e.g. waiting on CI);
 #   paused  - the crew's authoritative current state is a declared external-wait
 #             pause (paused:), which is EXPECTED to idle;
-#   none    - neither, so the wake must surface (a stopped/finished/parked/failed/
+#   failed  - an authoritative failure; old declarations cannot hide it.
+#   none    - none of the above (a stopped/finished/parked/
 #             torn-down/unknown crew, or an unreadable verdict).
 # One fm-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
 # authoritatively (not the status log) is what keeps run-step precedence: a crew
@@ -683,6 +735,7 @@ crew_absorb_class() {  # <id>
   case "$line" in state:*) ;; *) printf 'none'; return ;; esac
   state=${line#state: }; state=${state%% *}
   if [ "$state" = paused ]; then printf 'paused'; return; fi
+  if [ "$state" = failed ]; then printf 'failed'; return; fi
   if [ "$state" = working ]; then
     src=${line#*source: }; src=${src%% *}
     case "$src" in run-step|pane) printf 'working'; return ;; esac

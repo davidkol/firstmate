@@ -110,14 +110,17 @@ mark_surfaced() {  # <status-file>
 
 # Act on a fresh actionable transition from a push-capable backend.
 handle_push_transition() {  # <backend> <session> <record>
-  local backend=$1 session=$2 record=$3 pane_id to window task reason
+  local backend=$1 session=$2 record=$3 pane_id to window task reason last
   pane_id=$(fm_transition_pane_id "$record")
   to=$(fm_transition_to_status "$record")
   [ -n "$pane_id" ] || { sleep 1; return; }
   window="$session:$pane_id"
   task=$(window_to_task "$window" "$STATE")
-  if status_is_paused "$(last_status_line "$STATE/$task.status")"; then
-    triage_log "absorbed push $to (declared pause, awaiting external): $window"
+  last=$(last_status_line "$STATE/$task.status")
+  if status_is_paused_or_captain_held "$last" \
+    || { [ ! -e "$STATE/.afk" ] && task_is_captain_directed "$task"; } \
+    || { [ "$(status_line_verb "$last")" = "done" ] && [ "$(cat "$(_hb_surfaced_path "$task")" 2>/dev/null)" = "$last" ]; }; then
+    triage_log "absorbed push $to (declared wait or delivered outcome): $window"
     fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
     return
   fi

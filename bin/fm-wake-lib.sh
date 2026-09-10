@@ -9,6 +9,10 @@ STATE="${FM_STATE_OVERRIDE:-${STATE:-$FM_HOME/state}}"
 FM_WAKE_QUEUE="${FM_WAKE_QUEUE:-$STATE/.wake-queue}"
 FM_WAKE_QUEUE_LOCK="${FM_WAKE_QUEUE_LOCK:-$STATE/.wake-queue.lock}"
 FM_LOCK_STALE_AFTER="${FM_LOCK_STALE_AFTER:-2}"
+# Display payload for a captured status append: reason + this tag + captured
+# size:mtime + ": " + explicit status text. The signature distinguishes repeated
+# identical appends; retries of the same snapshot may still collapse at drain.
+FM_WAKE_STATUS_SNAPSHOT_PREFIX=' | status snapshot '
 mkdir -p "$STATE"
 
 fm_current_pid() {
@@ -561,9 +565,15 @@ fm_wake_restore_queue() {
 
 fm_wake_print_deduped() {
   local file=$1
-  awk -F '\t' '
+  awk -F '\t' -v snapshot_prefix="$FM_WAKE_STATUS_SNAPSHOT_PREFIX" '
     NF >= 5 {
       dedupe = $3 SUBSEP $4
+      # Legacy path-only signals retain their existing latest-key collapse.
+      # Captured explicit work instead has snapshot identity: a newer request
+      # from the same task must never erase an earlier queued request.
+      if ($3 == "signal" && index($5, snapshot_prefix)) {
+        dedupe = dedupe SUBSEP $5
+      }
       if ($3 == "heartbeat") {
         dedupe = "heartbeat"
       }

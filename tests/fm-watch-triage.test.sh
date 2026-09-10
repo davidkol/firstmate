@@ -111,6 +111,227 @@ record_pi_busy() {  # <state-dir> <id>
 
 reap() { kill "$1" 2>/dev/null || true; wait "$1" 2>/dev/null || true; }
 
+# Declared routine state must not turn the primary model just because the
+# worker stopped to converse. Real watcher/queue, isolated producer files.
+test_declared_routine_signals_do_not_wake() {
+  local dir state fakebin out pid verb
+  for verb in working resolved paused captain-held; do
+    dir=$(make_case "routine-$verb"); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+    printf '%s: in-window conversation\n' "$verb" > "$state/task.status"
+    touch "$state/task.turn-ended"
+    watch_bg "$state" "$fakebin" "$out"
+    pid=$!
+    if ! wait_live "$pid" 25; then
+      reap "$pid"; fail "routine $verb and turn-end woke the primary: $(cat "$out")"
+    fi
+    [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "routine $verb queued work"; }
+    [ -s "$state/.seen-task_status" ] || { reap "$pid"; fail "routine $verb was never consumed"; }
+    reap "$pid"
+  done
+  pass "routine status declarations and associated turn ends cost zero wakes"
+}
+
+test_explicit_append_survives_later_routine_and_restart() {
+  local dir state fakebin out pid verb count
+  for verb in blocked needs-decision failed "done"; do
+    dir=$(make_case "buried-$verb"); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+    printf 'working: initial\n' > "$state/task.status"
+    prime_turnend_seen "$state/task.status"
+    # These are real worker appends while no watcher is alive.
+    printf '%s [key=handoff]: explicit coordination\nworking: subsequent progress\npaused: in-window wait\n' "$verb" >> "$state/task.status"
+    touch "$state/task.turn-ended"
+    watch_bg "$state" "$fakebin" "$out"
+    pid=$!
+    wait_for_exit "$pid" 50 || { reap "$pid"; fail "buried $verb was lost across restart"; }
+    count=$(awk -F '\t' '$3 == "signal" && $4 == "task.status" { n++ } END { print n+0 }' "$state/.wake-queue")
+    [ "$count" -eq 1 ] || fail "one $verb append produced $count status queue records"
+    grep -F "$verb [key=handoff]: explicit coordination" "$state/.wake-queue" >/dev/null \
+      || fail "queued $verb lost the explicit event behind routine notes"
+    FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
+    grep -F 'task.status' "$dir/drain.out" >/dev/null || fail "$verb was not delivered through drain"
+    watch_bg "$state" "$fakebin" "$out"
+    pid=$!
+    if ! wait_live "$pid" 25; then
+      reap "$pid"; fail "consumed $verb reawoke on restart"
+    fi
+    [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "restart requeued consumed $verb"; }
+    reap "$pid"
+  done
+  pass "each explicit verb survives later routine appends, queues once, drains, and stays consumed on restart"
+}
+
+test_declared_progress_gets_stall_grace_and_terminal_stays_consumed() {
+  local dir state fakebin out pane_file pid verb
+  for verb in working resolved "done" captain-held; do
+    dir=$(make_case "declared-stale-$verb"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; pane_file="$dir/pane.txt"
+    printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+    printf '%s: ordinary conversation boundary\n' "$verb" > "$state/task.status"
+    prime_turnend_seen "$state/task.status"
+    # mark_surfaced stores no newline.
+    [ "$verb" != "done" ] || printf 'done: ordinary conversation boundary' > "$state/.hb-surfaced-task"
+    printf 'idle in-window conversation\n' > "$pane_file"
+    watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+      FM_FAKE_TMUX_CAPTURE="$pane_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
+      FM_FAKE_CREW_STATE='state: unknown · source: none · between turns' FM_STALE_ESCALATE_SECS=999
+    pid=$!
+    if ! wait_live "$pid" 50; then
+      reap "$pid"; fail "$verb boundary was misreported as immediate stale: $(cat "$out")"
+    fi
+    printf 'captain continues the conversation\n' > "$pane_file"
+    if ! wait_live "$pid" 40; then
+      reap "$pid"; fail "$verb reawoke on another conversation pane hash"
+    fi
+    [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "$verb stale queued work"; }
+    reap "$pid"
+  done
+  pass "routine progress has stall grace, and delivered outcomes/holds stay quiet across pane changes"
+}
+
+test_owned_failure_overrides_done_or_pause_once() {
+  local dir state fakebin out capture_file pid verb key
+  for verb in "done" paused; do
+    dir=$(make_case "owned-failure-$verb"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; capture_file="$dir/pane.txt"; key=test_fm-task
+    printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+    printf '%s: previous stage\n' "$verb" > "$state/task.status"
+    prime_turnend_seen "$state/task.status"
+    printf '%s: previous stage' "$verb" > "$state/.hb-surfaced-task"
+    printf 'static validation failure output\n' > "$capture_file"
+    watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+      FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
+      FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' FM_STALE_ESCALATE_SECS=1
+    pid=$!
+    wait_for_exit "$pid" 50 || { reap "$pid"; fail "owned failure hidden behind $verb"; }
+    grep -F 'owned run failed' "$out" >/dev/null || fail "owned failure not identified"
+    [ ! -e "$state/.paused-$key" ] || fail "failed run recreated pause tracking"
+    FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
+    watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+      FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
+      FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' FM_STALE_ESCALATE_SECS=1
+    pid=$!
+    if ! wait_live "$pid" 40; then
+      reap "$pid"; fail "same failure behind $verb reawoke on timer"
+    fi
+    [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "consumed failure requeued"; }
+    reap "$pid"
+  done
+  pass "owned run failure overrides old done/pause once, without a periodic failure wake"
+}
+
+test_completion_retires_old_stall_timer() {
+  local dir state fakebin out capture_file pid key
+  dir=$(make_case completion-stall-timer); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; key=test_fm-task
+  printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+  printf 'unchanged pane\n' > "$capture_file"
+  printf '%s' "$(hash_text 'unchanged pane')" > "$state/.hash-$key"
+  cp "$state/.hash-$key" "$state/.stale-$key"
+  printf '3\n' > "$state/.count-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  printf 'done: final result\n' > "$state/task.status"
+  watch_bg "$state" "$fakebin" "$out"
+  pid=$!; wait_for_exit "$pid" 50 || { reap "$pid"; fail "completion did not deliver"; }
+  [ ! -e "$state/.stale-since-$key" ] || fail "completion kept the prior stall timer"
+  FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
+  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=1
+  pid=$!
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "delivered completion wedge-escalated on the same pane"
+  fi
+  reap "$pid"
+  pass "completion retires a preexisting same-pane stall timer"
+}
+
+test_append_snapshot_and_grace_preserve_explicit_work() {
+  local dir state fakebin out f sig content pid i
+  dir=$(make_case append-snapshot); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  f="$state/task.status"
+  printf 'working: initial\n' > "$f"; prime_turnend_seen "$f"
+  printf 'done: first outcome\n' >> "$f"; sig=$(seen_sig "$f")
+  printf 'failed: later failure\nworking: routine\n' >> "$f"
+  content=$(status_unseen_coordination "$f" "$sig")
+  [ "$content" = 'done: first outcome' ] || fail "captured snapshot included later writes or lost its outcome"
+  printf '%s' "$sig" > "$state/.seen-task_status"
+  content=$(status_unseen_coordination "$f")
+  [ "$content" = 'failed: later failure' ] || fail "write after the captured boundary was lost"
+  printf 'failed: replacement\n' > "$f"
+  [ "$(status_unseen_coordination "$f")" = 'failed: replacement' ] || fail "shortened status log was not replayed"
+
+  dir=$(make_case explicit-during-grace); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  printf 'working: before grace\n' > "$state/task.status"
+  watch_bg "$state" "$fakebin" "$out" FM_SIGNAL_GRACE=2
+  pid=$!; i=0
+  while [ ! -e "$state/.last-watcher-beat" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$state/.last-watcher-beat" ] || { reap "$pid"; fail "grace watcher never started"; }
+  printf 'blocked: appended during grace\nworking: later progress\n' >> "$state/task.status"
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "explicit append during grace was lost"; }
+  [ "$(wc -l < "$state/.wake-queue" | tr -d '[:space:]')" -eq 1 ] || fail "grace produced duplicate queue records"
+  grep -F 'blocked: appended during grace' "$state/.wake-queue" >/dev/null || fail "grace queue lost the actual request"
+  pass "bounded append snapshots, shortened logs and the grace race preserve explicit work"
+}
+
+test_routine_turnend_restarts_progress_grace() {
+  local dir state fakebin out capture_file pid key old
+  dir=$(make_case routine-turnend-grace); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; key=test_fm-task
+  printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+  printf 'working: ongoing conversation\n' > "$state/task.status"; prime_turnend_seen "$state/task.status"
+  printf 'same rendered pane\n' > "$capture_file"
+  printf '%s' "$(hash_text 'same rendered pane')" > "$state/.hash-$key"
+  cp "$state/.hash-$key" "$state/.stale-$key"
+  printf '3\n' > "$state/.count-$key"
+  old=$(( $(date +%s) - 1000 )); printf '%s\n' "$old" > "$state/.stale-since-$key"
+  touch "$state/task.turn-ended"
+  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=999
+  pid=$!
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "new routine turn end inherited an expired stall timer"
+  fi
+  [ "$(cat "$state/.stale-since-$key")" -gt "$old" ] || { reap "$pid"; fail "turn end did not refresh progress grace"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "routine turn end queued a stale wake"; }
+  reap "$pid"
+  pass "a routine completed turn refreshes progress grace even on an unchanged pane"
+}
+
+test_captain_directed_initialization_is_quiet_but_run_failure_delivers() {
+  local dir state fakebin out capture_file pid
+  dir=$(make_case captain-directed-no-status); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  mkdir -p "$dir/data/task"
+  printf '# Delivery contract\n- process: captain-directed\n' > "$dir/data/task/brief.md"
+  printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+  printf 'prelaunch shell, then ordinary worker conversation\n' > "$capture_file"
+  printf 'state: unknown · source: none · no status yet\n' > "$dir/crew-state"
+  printf '#!/usr/bin/env bash\ncat "%s"\n' "$dir/crew-state" > "$fakebin/fm-crew-state.sh"
+  chmod +x "$fakebin/fm-crew-state.sh"
+  touch "$state/task.turn-ended"
+  watch_bg "$state" "$fakebin" "$out" FM_HOME="$dir" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_STALE_ESCALATE_SECS=1
+  pid=$!
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "captain-directed initialization or no-status age woke the primary"
+  fi
+  printf 'state: working · source: run-step · active pipeline\n' > "$dir/crew-state"
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "captain-directed active-work age caused a model wake"
+  fi
+  printf 'state: failed · source: run-step · attributable failure\n' > "$dir/crew-state"
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail "captain-directed owned failure never delivered"; }
+  grep -F 'owned run failed' "$state/.wake-queue" >/dev/null || fail "captain-directed failure lost its cause"
+  FM_HOME="$dir" FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
+  watch_bg "$state" "$fakebin" "$out" FM_HOME="$dir" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_STALE_ESCALATE_SECS=1
+  pid=$!
+  if ! wait_live "$pid" 35; then
+    reap "$pid"; fail "the same captain-directed failure repeated on the timer"
+  fi
+  reap "$pid"
+  pass "captain-directed initialization and age stay quiet; owned failure delivers once"
+}
+
 # --- pure classifier predicates (fm-classify-lib.sh) ------------------------
 
 test_signal_reason_is_actionable_classifier() {
@@ -395,24 +616,22 @@ test_turn_ended_not_working_surfaced() {
   pass "a bare turn-end whose crew is not provably working is surfaced (the swallowed-finish fix)"
 }
 
-test_working_note_not_working_surfaced() {
-  local dir state fakebin out drain_out status_file pid
+test_working_note_not_working_absorbed() {
+  local dir state fakebin out status_file pid
   dir=$(make_case working-note-stopped); state="$dir/state"; fakebin="$dir/fakebin"
-  out="$dir/watch.out"; drain_out="$dir/drain.out"
+  out="$dir/watch.out"
   status_file="$state/task.status"
   printf 'working: compiling step 2\n' > "$status_file"
-  # A non-no-mistakes crew (no run) whose pane went idle: fm-crew-state falls back
-  # to the stale working: status-log line. That is NOT positive evidence, so the
-  # wake must surface - these users must never be left hanging.
   export FM_FAKE_CREW_STATE='state: working · source: status-log · working: compiling step 2'
   watch_bg "$state" "$fakebin" "$out"
   pid=$!
-  wait_for_exit "$pid" 40 || fail "watcher did not surface a working: note whose crew has no running pipeline and an idle pane"
-  grep -F "signal: $status_file" "$out" >/dev/null || fail "watcher did not print the surfaced working: signal"
-  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the surfaced working: note failed"
-  grep "$(printf '\tsignal\t')" "$drain_out" | grep -F "$status_file" >/dev/null || fail "surfaced working: note was not queued"
-  [ -s "$state/.seen-task_status" ] || fail "surfaced working: note did not advance its .seen-* suppressor"
-  pass "a no-verb working: note whose crew is idle with no running pipeline is surfaced"
+  if ! wait_live "$pid" 30; then
+    reap "$pid"; fail "routine working note woke the primary"
+  fi
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "routine working note queued work"; }
+  [ -s "$state/.seen-task_status" ] || { reap "$pid"; fail "routine working note was not consumed"; }
+  reap "$pid"
+  pass "a working declaration is routine even between active tool calls"
 }
 
 # --- actionable wakes are surfaced (queue + exit) ---------------------------
@@ -584,7 +803,7 @@ test_nonterminal_stale_not_working_surfaced() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/stopped.meta"
   # Non-terminal status (the crew never wrote a captain-relevant verb), .seen-*
   # primed so the signal scan does not pre-empt the stale path.
-  printf 'working: implementing\n' > "$state/stopped.status"
+  printf 'legacy note without a state declaration\n' > "$state/stopped.status"
   sig=$(seen_sig "$state/stopped.status"); printf '%s' "$sig" > "$state/.seen-stopped_status"
   key=$(printf '%s' "$window" | tr ':/.' '___')
   pane_hash=$(hash_text "idle prompt, finished")
@@ -779,7 +998,7 @@ test_nonterminal_stale_paused_absorbed_then_rechecked_silently() {
 # A still-live agent at an external-decision gate is the disconfirming case: it
 # must surface once, while the unchanged hash must not append the same wake on
 # every watcher re-arm.
-test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
+test_declared_pause_is_silent_for_live_and_exited_agents() {
   local dir state fakebin out capture_file statusf window key pane_hash sig pid back round wakes bare
   dir=$(make_case exited-declared-pause); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/held.status"
@@ -855,14 +1074,16 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
 
-  # First sight must surface promptly so a live external-decision gate is not
-  # hidden behind the pause cadence.
+  # The declared in-window wait is already explicit intent, even for a live agent.
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_FAKE_TMUX_CURRENT_COMMAND=grok FM_FAKE_CREW_STATE='state: paused · source: status-log · waiting at an active external-decision gate' \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" >> "$out" &
   pid=$!
-  wait_for_exit "$pid" 40 || fail "live external-decision gate did not surface immediately"
+  if ! wait_live "$pid" 40; then
+    reap "$pid"; fail "live declared pause woke the primary"
+  fi
+  reap "$pid"
 
   # Re-arm with the stale timer already beyond the wedge threshold. This is the
   # exact unchanged-hash fallback after the immediate surface: it must retain
@@ -881,11 +1102,8 @@ test_exited_declared_pause_is_bounded_but_live_gate_surfaces() {
   [ -e "$state/.paused-$key" ] || { reap "$pid"; fail "live external-decision gate lost its pause cadence marker"; }
   [ ! -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "live external-decision gate retained the wedge timer"; }
   reap "$pid"
-  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.wake-queue")
-  bare=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w && $5 == "stale: " w { n++ } END { print n + 0 }' "$state/.wake-queue")
-  [ "$wakes" -eq 1 ] || fail "live external-decision gate should surface once, got $wakes wakes"
-  [ "$bare" -eq 1 ] || fail "live external-decision gate lost its immediate bare stale surface"
-  pass "exited declared-pause and captain-held panes recheck silently while a live decision gate still surfaces once"
+  [ ! -s "$state/.wake-queue" ] || fail "live declared pause queued a stale wake"
+  pass "declared pauses recheck silently for both live and exited agents"
 }
 
 test_secondmate_paused_rechecks_silently_in_normal_mode() {
@@ -1657,6 +1875,15 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
   pass "AFK changed paused panes hand off plain stale identities for daemon-owned pause triage"
 }
 
+test_captain_directed_initialization_is_quiet_but_run_failure_delivers
+test_routine_turnend_restarts_progress_grace
+test_append_snapshot_and_grace_preserve_explicit_work
+test_owned_failure_overrides_done_or_pause_once
+test_completion_retires_old_stall_timer
+test_declared_progress_gets_stall_grace_and_terminal_stays_consumed
+test_declared_pause_is_silent_for_live_and_exited_agents
+test_declared_routine_signals_do_not_wake
+test_explicit_append_survives_later_routine_and_restart
 test_signal_reason_is_actionable_classifier
 test_stale_is_terminal_classifier
 test_scan_captain_relevant_statuses_classifier
@@ -1668,7 +1895,7 @@ test_signal_crew_provably_working_classifier
 test_provably_working_signal_absorbed
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
-test_working_note_not_working_surfaced
+test_working_note_not_working_absorbed
 test_actionable_signal_surfaced
 test_terminal_stale_surfaced
 test_stale_terminal_status_overridden_by_active_run
@@ -1685,7 +1912,6 @@ test_nonterminal_stale_not_working_surfaced
 test_recent_surfaced_signal_deduplicates_following_bare_stale
 test_pipeline_progress_token_resets_stale_timer_but_stall_escalates
 test_nonterminal_stale_paused_absorbed_then_rechecked_silently
-test_exited_declared_pause_is_bounded_but_live_gate_surfaces
 test_secondmate_paused_rechecks_silently_in_normal_mode
 test_secondmate_nonpaused_stale_remains_suppressed
 test_secondmate_unpause_clears_pause_tracking

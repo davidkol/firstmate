@@ -203,6 +203,7 @@ else
   printf '%s\n' '- X mode: inactive; use the default watcher cadence.'
 fi
 ordinary_wake_line
+printf '%s\n' '- Coordination: follow bin/fm-classify-lib.sh status routing. Handle explicit requests, blockers, outcomes, and genuine supervision failures; routine worker conversation stays in its own window. If a drained record needs no coordination, resume supervision silently without a no-action reply or routine pane inspection.'
 printf '\n'
 render_snippet
 printf '\n'
