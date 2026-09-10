@@ -839,7 +839,7 @@ test_recent_surfaced_signal_deduplicates_following_bare_stale() {
   window="test:fm-signal-stale"
   printf 'idle after completed turn' > "$capture_file"
   printf 'window=%s\nkind=ship\n' "$window" > "$state/signal-stale.meta"
-  printf 'working: implementation turn ended\n' > "$state/signal-stale.status"
+  printf 'legacy: implementation turn ended\n' > "$state/signal-stale.status"
   sig=$(seen_sig "$state/signal-stale.status"); printf '%s' "$sig" > "$state/.seen-signal-stale_status"
   : > "$state/.signal-surfaced-signal-stale"
   key=$(printf '%s' "$window" | tr ':/.' '___')
@@ -848,19 +848,24 @@ test_recent_surfaced_signal_deduplicates_following_bare_stale() {
   printf '1\n' > "$state/.count-$key"
   export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
 
-  watch_bg "$state" "$fakebin" "$out" FM_STALE_ESCALATE_SECS=999 FM_SIGNAL_STALE_GRACE=240
+  watch_bg "$state" "$fakebin" "$out" FM_STALE_ESCALATE_SECS=999 FM_SIGNAL_STALE_GRACE=240 \
+    FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file"
   pid=$!
+  wait_numeric_file "$state/.stale-since-$key" 80 \
+    || { reap "$pid"; fail "the intended stale pane was never classified: $(cat "$out")"; }
   if ! wait_live "$pid" 40; then
     reap "$pid"; fail "the stale duplicate after a surfaced signal woke again: $(cat "$out")"
   fi
   [ ! -s "$out" ] || { reap "$pid"; fail "the signal/stale duplicate printed a second reason: $(cat "$out")"; }
   [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "the signal/stale duplicate queued a second wake"; }
+  [ ! -e "$state/.signal-surfaced-signal-stale" ] || { reap "$pid"; fail "the duplicate signal marker was not consumed"; }
   [ -s "$state/.stale-since-$key" ] || { reap "$pid"; fail "the deduplicated stale did not retain stuck-worker timing"; }
   reap "$pid"
 
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
   : > "$out"
-  watch_bg "$state" "$fakebin" "$out" FM_STALE_ESCALATE_SECS=240 FM_SIGNAL_STALE_GRACE=240
+  watch_bg "$state" "$fakebin" "$out" FM_STALE_ESCALATE_SECS=240 FM_SIGNAL_STALE_GRACE=240 \
+    FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file"
   pid=$!
   wait_for_exit "$pid" 40 || fail "the deduplicated lane never escalated after the stuck threshold"
   grep -F "possible wedge" "$out" >/dev/null || fail "the delayed stuck-worker escalation lost its reason"
