@@ -719,7 +719,12 @@ signal_reason_is_actionable() {  # <file> ...
 #             (e.g. waiting on CI);
 #   paused  - the crew's authoritative current state is a declared external-wait
 #             pause (paused:), which is EXPECTED to idle;
-#   failed  - an authoritative failure; old declarations cannot hide it.
+#   failed  - an owned no-mistakes run that the run-step attributes to this
+#             crew's own code reports failed or cancelled; old declarations
+#             cannot hide it. A crew's own `failed:` status event is NOT this:
+#             it is a declared outcome that the status-signal path already
+#             delivers once, so it maps to `none` and takes the same
+#             delivered-outcome suppression as `done:`/`blocked:`.
 #   none    - none of the above (a stopped/finished/parked/
 #             torn-down/unknown crew, or an unreadable verdict).
 # One fm-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
@@ -734,10 +739,10 @@ crew_absorb_class() {  # <id>
   line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
   case "$line" in state:*) ;; *) printf 'none'; return ;; esac
   state=${line#state: }; state=${state%% *}
+  src=${line#*source: }; src=${src%% *}
   if [ "$state" = paused ]; then printf 'paused'; return; fi
-  if [ "$state" = failed ]; then printf 'failed'; return; fi
+  if [ "$state" = failed ] && [ "$src" = run-step ]; then printf 'failed'; return; fi
   if [ "$state" = working ]; then
-    src=${line#*source: }; src=${src%% *}
     case "$src" in run-step|pane) printf 'working'; return ;; esac
   fi
   printf 'none'

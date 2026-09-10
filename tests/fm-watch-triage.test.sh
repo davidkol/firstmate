@@ -332,6 +332,56 @@ test_captain_directed_initialization_is_quiet_but_run_failure_delivers() {
   pass "captain-directed initialization and age stay quiet; owned failure delivers once"
 }
 
+# A worker's own `failed:` event is a declared outcome, not an owned pipeline-run
+# failure: the status-signal path delivers it once and records it, so no later
+# idle-pane observation may re-announce it as `owned run failed`. Drives the real
+# watcher and queue for both delivery processes, across a drain and a re-arm.
+test_failed_status_outcome_delivers_once_for_every_process() {
+  local dir state fakebin out capture_file pid mode count
+  for mode in ordinary captain-directed; do
+    dir=$(make_case "failed-status-$mode"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; capture_file="$dir/pane.txt"
+    if [ "$mode" = captain-directed ]; then
+      mkdir -p "$dir/data/task"
+      printf '# Delivery contract\n- process: captain-directed\n' > "$dir/data/task/brief.md"
+    fi
+    printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+    printf 'failed: explicit worker failure\n' > "$state/task.status"
+    printf 'worker finished its failed turn\n' > "$capture_file"
+    watch_bg "$state" "$fakebin" "$out" FM_HOME="$dir" FM_FAKE_TMUX_WINDOW=test:fm-task \
+      FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
+      FM_FAKE_CREW_STATE='state: failed · source: status-log · explicit worker failure' \
+      FM_STALE_ESCALATE_SECS=1
+    pid=$!
+    wait_for_exit "$pid" 60 || { reap "$pid"; fail "$mode declared failure was never delivered"; }
+    count=$(wc -l < "$state/.wake-queue" | tr -d '[:space:]')
+    [ "$count" -eq 1 ] || fail "$mode declared failure produced $count queue records: $(cat "$state/.wake-queue")"
+    grep -F 'failed: explicit worker failure' "$state/.wake-queue" >/dev/null \
+      || fail "$mode declared failure lost its explicit text"
+    if grep -F 'owned run failed' "$state/.wake-queue" >/dev/null; then
+      fail "$mode attributed a worker-declared failure to an owned pipeline run"
+    fi
+    FM_HOME="$dir" FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
+    grep -F 'failed: explicit worker failure' "$dir/drain.out" >/dev/null \
+      || fail "$mode declared failure was not delivered through drain"
+    watch_bg "$state" "$fakebin" "$out" FM_HOME="$dir" FM_FAKE_TMUX_WINDOW=test:fm-task \
+      FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
+      FM_FAKE_CREW_STATE='state: failed · source: status-log · explicit worker failure' \
+      FM_STALE_ESCALATE_SECS=1
+    pid=$!
+    if ! wait_live "$pid" 40; then
+      reap "$pid"; fail "$mode re-announced the delivered failure after drain: $(cat "$out")"
+    fi
+    printf 'captain reads the failure in the window\n' > "$capture_file"
+    if ! wait_live "$pid" 40; then
+      reap "$pid"; fail "$mode re-announced the delivered failure on a changed pane: $(cat "$out")"
+    fi
+    [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "$mode requeued the delivered failure"; }
+    reap "$pid"
+  done
+  pass "a worker-declared failed: outcome wakes once per process and stays quiet across drain, re-arm and pane changes"
+}
+
 # --- pure classifier predicates (fm-classify-lib.sh) ------------------------
 
 test_signal_reason_is_actionable_classifier() {
@@ -506,6 +556,8 @@ test_status_is_paused_classifier() {
 # reasons - working (active run/busy pane), paused (declared external wait), or none
 # (surface it) - so the watcher's stale path gets both for one bounded call.
 # crew_is_paused delegates to it exactly as crew_is_provably_working does.
+# Provenance is part of every verdict, not just working's: only a run-step the
+# reader attributed to this crew's own code is an owned-run failure.
 test_crew_absorb_class_classifier() {
   local dir fakebin
   dir=$(make_case absorb-class); fakebin="$dir/fakebin"
@@ -521,12 +573,17 @@ test_crew_absorb_class_classifier() {
   ! crew_is_provably_working a || fail "a paused crew was treated as provably working"
   FM_FAKE_CREW_STATE='state: working · source: status-log · working: compiling'
   [ "$(crew_absorb_class a)" = none ] || fail "stale working: status-log classed absorbable"
+  FM_FAKE_CREW_STATE='state: failed · source: run-step · run failed'
+  [ "$(crew_absorb_class a)" = failed ] || fail "attributable owned run failure not classed failed"
+  FM_FAKE_CREW_STATE='state: failed · source: status-log · failed: worker declared failure'
+  [ "$(crew_absorb_class a)" = none ] \
+    || fail "a worker-declared failed: outcome was classed as an owned pipeline-run failure"
   FM_FAKE_CREW_STATE='state: unknown · source: none · worktree gone'
   [ "$(crew_absorb_class a)" = none ] || fail "unknown crew classed absorbable"
   ! crew_is_paused a || fail "unknown crew classed paused"
   [ "$(crew_absorb_class "")" = none ] || fail "empty id not classed none"
   unset FM_FAKE_CREW_STATE
-  pass "crew_absorb_class: working/paused/none from one read; crew_is_paused and crew_is_provably_working agree"
+  pass "crew_absorb_class: working/paused/failed/none from one read, each gated on its own provenance"
 }
 
 # signal_crew_provably_working: a no-verb "signal:" wake is benign ONLY when EVERY
@@ -1884,6 +1941,7 @@ test_captain_directed_initialization_is_quiet_but_run_failure_delivers
 test_routine_turnend_restarts_progress_grace
 test_append_snapshot_and_grace_preserve_explicit_work
 test_owned_failure_overrides_done_or_pause_once
+test_failed_status_outcome_delivers_once_for_every_process
 test_completion_retires_old_stall_timer
 test_declared_progress_gets_stall_grace_and_terminal_stays_consumed
 test_declared_pause_is_silent_for_live_and_exited_agents
