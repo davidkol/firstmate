@@ -452,9 +452,37 @@ nm_run_head_matches_worktree() {
   fm_nm_head_matches_worktree "$WT" "$run_head"
 }
 
+# Minimum abbreviation git itself will produce, and the floor this reader accepts
+# when the producer projects one commit two ways in a single answer.
+NM_MIN_ABBREV=7
+
+# 0 when two head fields FROM THE SAME producer answer name the same commit.
+# `axi status` renders the top-level head abbreviated (internal/cli/axi_render.go
+# shortSHA) while branch_sync.pipeline.current_head is full, so a literal string
+# comparison of the two can never hold. Neither side is resolvable with git here:
+# an unpublished pipeline commit lives in the gate's object store, not the worker's,
+# and this reader must never fetch it. Agreement is therefore decided on the
+# producer's own representations: both must be hex object names, the shorter must
+# reach NM_MIN_ABBREV, and the shorter must be a prefix of the longer. A differing
+# prefix, a non-hex value, an empty side, or an abbreviation below the floor is a
+# mismatch - this normalises representation only, and relaxes no binding.
+nm_same_producer_head() {  # <head-a> <head-b>
+  local a=$1 b=$2 short long
+  case "$a" in ''|*[!0-9a-f]*) return 1 ;; esac
+  case "$b" in ''|*[!0-9a-f]*) return 1 ;; esac
+  if [ "${#a}" -le "${#b}" ]; then short=$a; long=$b; else short=$b; long=$a; fi
+  [ "${#short}" -ge "$NM_MIN_ABBREV" ] || return 1
+  [ "${long#"$short"}" != "$long" ]
+}
+
 # Current no-mistakes explicitly reports a daemon-owned branch split during a
 # live fix round. Accept that divergence only when every ownership field binds
 # the active run to this exact branch and worktree tip.
+# Terminal statuses are accepted alongside active ones because the producer keeps
+# reporting pipeline_owned custody (safety blocked_pipeline_owned_recoverable) for a
+# failed or cancelled run whose commits are still unpublished. Dropping those was
+# how a genuinely failed owned run reached the status-log fallback and was reported
+# as ordinary progress instead of a failure.
 nm_pipeline_owned_matches_worktree() {
   local block local_block pipeline_block state run_status run_id pipeline_run
   local local_branch local_head submitted_head current_head run_head worktree_head
@@ -463,7 +491,7 @@ nm_pipeline_owned_matches_worktree() {
   state=$(strip_quotes "$(printf '%s\n' "$block" | sed -n 's/^  state:[[:space:]]*//p' | head -1)")
   [ "$state" = pipeline_owned ] || return 1
   run_status=$(strip_quotes "$(nm_field status)")
-  case "$run_status" in running|fixing|ci) ;; *) return 1 ;; esac
+  case "$run_status" in running|fixing|ci|failed|cancelled) ;; *) return 1 ;; esac
   run_id=$(strip_quotes "$(nm_field id)")
   run_head=$(strip_quotes "$(nm_field head)")
   [ -n "$run_id" ] && [ -n "$run_head" ] || return 1
@@ -481,7 +509,7 @@ nm_pipeline_owned_matches_worktree() {
     && [ "$local_head" = "$worktree_head" ] \
     && [ "$submitted_head" = "$worktree_head" ] \
     && [ "$pipeline_run" = "$run_id" ] \
-    && [ "$current_head" = "$run_head" ]
+    && nm_same_producer_head "$current_head" "$run_head"
 }
 
 nm_active_step() {
@@ -588,9 +616,16 @@ NM_IPC_PY
 # it from the `axi status` answer already in hand; the coarse path asks the producer
 # for it. Either way the value is the run ID alone, so it does not change when the
 # same run is projected with a short head in one answer and a full head in another.
+#
+# BOUNDARY, deliberate: the coarse path resolves an ID only for a FAILED or CANCELLED
+# run. That is the one identity any consumer needs - the watcher keys its
+# failure receipt on it - and every other coarse state would pay a socket round trip
+# for a value nothing reads. The cheap full-path ID is still reported for every
+# state, so a caller that only wants "which run is this" keeps it there.
 emit_run_identity() {
   local run_id known head_full
   if [ "${RUN_SOURCE:-}" = coarse ]; then
+    case "$COARSE_STATUS" in failed|cancelled) ;; *) return 0 ;; esac
     [ -n "$COARSE_HEAD_SHORT" ] || return 0
     head_full=$(git -C "$WT" rev-parse --verify "${COARSE_HEAD_SHORT}^{commit}" 2>/dev/null) || return 0
     [ -n "$head_full" ] || return 0

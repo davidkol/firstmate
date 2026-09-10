@@ -11,8 +11,10 @@
 # outcomes do not reawaken merely because the pane changes, and an owned-run
 # failure is announced once, keyed on the producer's exact run ID, so its idle pane
 # then stays quiet instead of re-surfacing as a possible wedge; the ordinary stuck
-# timer comes back as soon as that crew is positively read as working again, and a
-# genuinely different run that fails still delivers. A routine
+# timer comes back as soon as that worker positively resumes - a completed turn while
+# it fixes the same run locally, or a new run reported working - and a genuinely
+# different run that fails still delivers. While the run ID is unreadable an
+# owned-run failure is PENDING rather than announced unnamed. A routine
 # status or turn-end event is consumed without a model turn but is not evidence of
 # useful progress, so it never retires an ordinary window's possible-wedge timer or
 # escalation count; only owned pipeline progress and a changed pane do that.
@@ -398,14 +400,17 @@ clear_pause_tracking() {  # <window>
 # durably queued, matching the queue-before-consumption ordering every other
 # suppressor here follows.
 #
-# An observation that reports a failed run WITHOUT naming it is "not known", never a
-# different run. It therefore neither re-announces an existing receipt nor retires
-# it: the receipt is held exactly as it stands, and when a later observation does
-# name the run, an unnamed receipt adopts that ID silently. That is what keeps one
-# failure one wake while attribution degrades and recovers around it. The only case
-# left open is two DIFFERENT failed runs both observed unnamed with no positively
-# read state in between, which the reader avoids by resolving an ID even on its
-# coarse path (see fm-crew-state.sh's --with-run-identity contract).
+# An observation that reports a failed run WITHOUT naming it decides nothing. It is
+# not a second failure, and it is not proof that the recorded one is still current,
+# so it neither delivers nor consumes nor retires: delivery for that observation is
+# PENDING and the bounded cadence simply asks again. There is deliberately no
+# anonymous receipt and no adopting a later ID onto one, because either would let a
+# genuinely distinct failure be swallowed once reading recovered. The honest limit
+# this leaves is availability, not correctness: while the run identity is
+# unreadable, the automatic observer cannot announce an owned-run failure at all and
+# cannot promise a complete history of what it missed. A worker's own explicit
+# `failed:`, `blocked:` or `needs-decision:` status still routes through the signal
+# path untouched, which is the path that does not depend on the producer at all.
 failure_receipt_path() {  # <window>
   printf '%s/.failed-%s' "$STATE" "$(printf '%s' "$1" | tr ':/.' '___')"
 }
@@ -414,33 +419,45 @@ failure_receipt_exists() {  # <window>
   [ -e "$(failure_receipt_path "$1")" ]
 }
 
-failure_already_delivered() {  # <window> <observed-identity>
-  local rf=$1 ident=${2:-} stored
-  rf=$(failure_receipt_path "$rf")
-  [ -e "$rf" ] || return 1
-  stored=$(cat "$rf" 2>/dev/null || true)
-  # Unnamed observation, or an unnamed receipt: nothing contradicts the receipt.
-  [ -n "$ident" ] && [ -n "$stored" ] || return 0
-  [ "$stored" = "$ident" ]
+failure_already_delivered() {  # <window> <run-identity>
+  [ -n "${2:-}" ] || return 1
+  [ "$(cat "$(failure_receipt_path "$1")" 2>/dev/null)" = "$2" ]
 }
 
-record_failure_delivered() {  # <window> <observed-identity>
-  printf '%s' "${2:-}" > "$(failure_receipt_path "$1")"
-}
-
-# Adopt a newly learned ID onto a receipt that was consumed without one. Same
-# unresolved failure, so it must not wake anything.
-adopt_failure_identity() {  # <window> <observed-identity>
-  local rf
+record_failure_delivered() {  # <window> <run-identity>
   [ -n "${2:-}" ] || return 0
-  rf=$(failure_receipt_path "$1")
-  [ -e "$rf" ] && [ ! -s "$rf" ] || return 0
-  printf '%s' "$2" > "$rf"
+  printf '%s' "$2" > "$(failure_receipt_path "$1")"
 }
 
 failure_receipt_sync() {  # <window> <authoritative-class>
   case "$2" in failed|unknown) return 0 ;; esac
   rm -f "$(failure_receipt_path "$1")"
+}
+
+# 0 when this worker has positively resumed since its owned-run failure was
+# consumed: its harness-neutral completed-turn marker (state/<id>.turn-ended, the
+# same file the busy-duration bound reads) is newer than the receipt. Firstmate
+# hands a failed run back to the worker, which then fixes it locally at the SAME
+# head under the SAME run, so the reader keeps reporting that terminal run and no
+# state transition marks the resumption - the worker's own completed turn does.
+# A re-rendered idle pane is not resumption, and this cue only ever STARTS the
+# ordinary stuck timer; nothing restarts it while the receipt is held, so a stream
+# of turn ends cannot push the watchdog out indefinitely. A worker that resumed and
+# then hung mid-turn never settles, so the busy path's completed-turn age bound
+# covers it instead.
+worker_resumed_since_failure() {  # <window> <task>
+  local rf te
+  rf=$(failure_receipt_path "$1")
+  te="$STATE/$2.turn-ended"
+  [ -e "$rf" ] && [ -e "$te" ] || return 1
+  [ "$te" -nt "$rf" ]
+}
+
+# 0 when a consumed owned-run failure should keep this window's idle pane quiet:
+# the failure was delivered and the worker has not resumed since.
+failure_consumed_and_idle() {  # <window> <task>
+  failure_receipt_exists "$1" || return 1
+  ! worker_resumed_since_failure "$1" "$2"
 }
 
 # The one bounded cadence for authoritative fm-crew-state.sh reads on a pane hash
@@ -530,12 +547,21 @@ surface_nonterminal_stale() {  # <window> <hash> [failed [run-identity]]
   task=$(window_to_task "$win" "$STATE")
   signal_marker="$STATE/.signal-surfaced-$task"
   if [ "$failure" = failed ]; then
-    if failure_already_delivered "$win" "$ident"; then
-      adopt_failure_identity "$win" "$ident"
+    if [ -z "$ident" ]; then
       printf '%s' "$h" > "$STATE/.stale-$key"
-      rm -f "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key" \
-        "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key"
-      triage_log "absorbed stale (owned run failure already delivered): $win"
+      triage_log "absorbed stale (owned run failure pending: no readable run identity): $win"
+      return 0
+    fi
+    if failure_already_delivered "$win" "$ident"; then
+      printf '%s' "$h" > "$STATE/.stale-$key"
+      rm -f "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key"
+      if worker_resumed_since_failure "$win" "$task"; then
+        [ -e "$STATE/.stale-since-$key" ] || wedge_timer_start "$win" "$STATE/.stale-since-$key" "$task"
+        triage_log "absorbed stale (owned run failure already delivered; watchdog runs for resumed work): $win"
+      else
+        rm -f "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key"
+        triage_log "absorbed stale (owned run failure already delivered): $win"
+      fi
       return 0
     fi
   elif [ "$(age_of "$signal_marker")" -lt "$SIGNAL_STALE_GRACE" ]; then
@@ -579,8 +605,10 @@ handle_captain_directed_window() {  # <window> <task>
   class=${observation%%	*}; ident=${observation#*	}
   failure_receipt_sync "$win" "$class"
   if [ "$class" = failed ]; then
-    if failure_already_delivered "$win" "$ident"; then
-      adopt_failure_identity "$win" "$ident"
+    if [ -z "$ident" ]; then
+      triage_log "owned run failure pending: no readable run identity: $win"
+    elif failure_already_delivered "$win" "$ident"; then
+      :
     else
       reason="stale: $win (owned run failed)"
       fm_wake_append stale "$win" "$reason" || exit 1
@@ -1150,7 +1178,7 @@ EOF
             # a consumed failure stays quiet rather than re-surfacing as a wedge.
             # Positively resumed work restarts the ordinary stuck timer, including
             # on the same pane after a failure retired it.
-            if failure_receipt_exists "$w"; then
+            if failure_consumed_and_idle "$w" "$task"; then
               :
             elif [ -e "$ssf" ]; then
               wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf" "$task"
@@ -1204,11 +1232,11 @@ EOF
                 *)       handle_paused_stale "$w" "$task" "$h" ;;
               esac
             elif ! observe_classified_stale "$w" "$task" "$h"; then
-              if failure_receipt_exists "$w"; then
-                # A consumed owned-run failure keeps its idle pane quiet whatever
-                # its status log says, and never re-enters the pause cadence. The
-                # stuck timer comes back with positively resumed work, which
-                # retires the receipt through failure_receipt_sync above.
+              if failure_consumed_and_idle "$w" "$task"; then
+                # A consumed owned-run failure keeps an IDLE pane quiet whatever its
+                # status log says, and never re-enters the pause cadence. Once the
+                # worker positively resumes - locally under the same failed run, or
+                # under a new one - the ordinary stuck timer runs again.
                 triage_log "absorbed stale (owned run failure already delivered): $w"
               elif status_is_paused_or_captain_held "$last"; then
                 case "$stale_class" in

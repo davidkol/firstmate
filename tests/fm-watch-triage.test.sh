@@ -219,7 +219,8 @@ test_owned_failure_overrides_done_or_pause_once() {
     printf 'static validation failure output\n' > "$capture_file"
     watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
       FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
-      FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' FM_STALE_ESCALATE_SECS=1
+      FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' \
+      FM_FAKE_CREW_IDENTITY='01RUNA' FM_STALE_ESCALATE_SECS=1
     pid=$!
     wait_for_exit "$pid" 50 || { reap "$pid"; fail "owned failure hidden behind $verb"; }
     grep -F 'owned run failed' "$out" >/dev/null || fail "owned failure not identified"
@@ -227,7 +228,8 @@ test_owned_failure_overrides_done_or_pause_once() {
     FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
     watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
       FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
-      FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' FM_STALE_ESCALATE_SECS=1
+      FM_FAKE_CREW_STATE='state: failed · source: run-step · validation failed' \
+      FM_FAKE_CREW_IDENTITY='01RUNA' FM_STALE_ESCALATE_SECS=1
     pid=$!
     if ! wait_live "$pid" 40; then
       reap "$pid"; fail "same failure behind $verb reawoke on timer"
@@ -352,7 +354,7 @@ test_captain_directed_initialization_is_quiet_but_run_failure_delivers() {
   if ! wait_live "$pid" 40; then
     reap "$pid"; fail "captain-directed active-work age caused a model wake"
   fi
-  printf 'state: failed · source: run-step · attributable failure\n' > "$dir/crew-state"
+  printf 'state: failed · source: run-step · attributable failure\nrun-identity: 01RUNA\n' > "$dir/crew-state"
   wait_for_exit "$pid" 60 || { reap "$pid"; fail "captain-directed owned failure never delivered"; }
   grep -F 'owned run failed' "$state/.wake-queue" >/dev/null || fail "captain-directed failure lost its cause"
   FM_HOME="$dir" FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
@@ -439,7 +441,8 @@ test_owned_failure_after_working_reaches_a_declared_wait() {
     [ ! -e "$state/.paused-$key" ] || fail "fixture seeded pause tracking it meant to retire"
     watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
       FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
-      FM_FAKE_CREW_STATE='state: failed · source: run-step · run failed' FM_STALE_ESCALATE_SECS=999
+      FM_FAKE_CREW_STATE='state: failed · source: run-step · run failed' \
+      FM_FAKE_CREW_IDENTITY='01RUNA' FM_STALE_ESCALATE_SECS=999
     pid=$!
     wait_for_exit "$pid" 60 \
       || { reap "$pid"; fail "$verb worker: the failed run stayed invisible on an unchanged pane"; }
@@ -450,7 +453,8 @@ test_owned_failure_after_working_reaches_a_declared_wait() {
     FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
     watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
       FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
-      FM_FAKE_CREW_STATE='state: failed · source: run-step · run failed' FM_STALE_ESCALATE_SECS=999
+      FM_FAKE_CREW_STATE='state: failed · source: run-step · run failed' \
+      FM_FAKE_CREW_IDENTITY='01RUNA' FM_STALE_ESCALATE_SECS=999
     pid=$!
     if ! wait_live "$pid" 45; then
       reap "$pid"; fail "$verb worker: the same failed run reawoke after drain: $(cat "$out")"
@@ -814,6 +818,106 @@ test_consumed_failure_is_quiet_until_work_resumes() {
     reap "$pid"
   done
   pass "a consumed failure keeps an unchanged pane quiet, and resumed work restores the ordinary stuck timer"
+}
+
+# Firstmate hands a failed run back to the worker, which fixes it LOCALLY: same
+# worktree, same head, same run still reported failed on every read. The failure
+# stays consumed, but the worker is no longer idle, so its ordinary stuck watchdog
+# has to run again - and a stall during the fix must reach the same wedge escalation
+# any other stalled worker gets, not a second copy of the failure it already sent.
+test_resumed_local_fixing_keeps_its_ordinary_watchdog() {
+  local dir state fakebin out capture_file crew_state pid key
+  dir=$(make_case resumed-local-fixing); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; crew_state="$dir/crew-state"; key=test_fm-task
+  printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+  printf 'working: handed to validation\n' > "$state/task.status"
+  prime_turnend_seen "$state/task.status"
+  printf 'idle while firstmate validates\n' > "$capture_file"
+  printf 'state: failed · source: run-step · run failed\nrun-identity: 01RUNA\n' > "$crew_state"
+  install_file_backed_crew_state "$fakebin" "$crew_state"
+
+  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=2
+  pid=$!
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail "the owned run failure never delivered"; }
+  grep -F 'owned run failed' "$state/.wake-queue" >/dev/null || fail "the failure wake lost its cause"
+  FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
+
+  # The worker resumes on that same failed run and completes a turn, then stalls.
+  # Nothing about the run changes: the reader still reports the consumed failure.
+  sleep 1
+  touch "$state/task.turn-ended"
+  printf 'worker reopened the failing step\n' > "$capture_file"
+  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=2
+  pid=$!
+  wait_numeric_file "$state/.stale-since-$key" 80 \
+    || { reap "$pid"; fail "resumed local fixing left the worker with no stuck watchdog"; }
+  wait_for_exit "$pid" 120 || { reap "$pid"; fail "the stalled worker never reached its wedge escalation"; }
+  grep -F 'possible wedge' "$state/.wake-queue" >/dev/null \
+    || fail "the stall was not reported as an ordinary wedge: $(cat "$state/.wake-queue")"
+  grep -F 'owned run failed' "$state/.wake-queue" >/dev/null \
+    && fail "the already consumed failure was announced a second time"
+  [ "$(cat "$state/.failed-$key" 2>/dev/null)" = 01RUNA ] \
+    || fail "the consumed failure receipt was lost while the worker was fixing"
+  pass "a worker fixing its failed run locally keeps its ordinary stuck watchdog, without a second failure wake"
+}
+
+# An owned run that is reported failed but cannot be NAMED decides nothing: it is
+# neither a second failure nor proof the recorded one is current. Delivery waits for
+# a readable ID rather than announcing an anonymous failure, and once the ID arrives
+# it delivers - including for a run that was already failing while unreadable.
+test_unreadable_run_identity_leaves_failure_delivery_pending() {
+  local dir state fakebin out capture_file crew_state pid key
+  dir=$(make_case pending-identity); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; crew_state="$dir/crew-state"; key=test_fm-task
+  printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+  printf 'working: handed to validation\n' > "$state/task.status"
+  prime_turnend_seen "$state/task.status"
+  printf 'idle worker pane, take 1\n' > "$capture_file"
+  printf 'state: failed · source: run-step · run failed\n' > "$crew_state"
+  install_file_backed_crew_state "$fakebin" "$crew_state"
+
+  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=999
+  pid=$!
+  if ! wait_live "$pid" 60; then
+    reap "$pid"; fail "an unnameable failed run was announced anyway: $(cat "$out")"
+  fi
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "an unnameable failed run queued a wake"; }
+  [ ! -e "$state/.failed-$key" ] \
+    || { reap "$pid"; fail "an unnameable failed run was consumed without an identity"; }
+
+  # The identity becomes readable: the same pending failure now delivers.
+  printf 'state: failed · source: run-step · run failed\nrun-identity: 01RUNA\n' > "$crew_state"
+  printf 'idle worker pane, take 2\n' > "$capture_file"
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "a pending failure never delivered once its ID was readable"; }
+  grep -F 'owned run failed' "$state/.wake-queue" >/dev/null || fail "the recovered failure lost its cause"
+  [ "$(cat "$state/.failed-$key" 2>/dev/null)" = 01RUNA ] \
+    || fail "the recovered failure was not consumed by its exact run identity"
+  FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
+
+  # A DIFFERENT run fails while identity is unreadable again: still pending, and the
+  # earlier exact receipt is untouched rather than adopted onto the new run.
+  printf 'state: failed · source: run-step · run failed\n' > "$crew_state"
+  printf 'idle worker pane, take 3\n' > "$capture_file"
+  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=999
+  pid=$!
+  if ! wait_live "$pid" 60; then
+    reap "$pid"; fail "an unnameable later failure was announced anyway: $(cat "$out")"
+  fi
+  [ "$(cat "$state/.failed-$key" 2>/dev/null)" = 01RUNA ] \
+    || { reap "$pid"; fail "an unnameable observation overwrote a known exact receipt"; }
+
+  # Naming it proves the pending run really was a different one.
+  printf 'state: failed · source: run-step · run failed\nrun-identity: 01RUNB\n' > "$crew_state"
+  printf 'idle worker pane, take 4\n' > "$capture_file"
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "the distinct later failure never delivered after recovery"; }
+  grep -F 'owned run failed' "$state/.wake-queue" >/dev/null || fail "the later failure lost its cause"
+  [ "$(cat "$state/.failed-$key" 2>/dev/null)" = 01RUNB ] \
+    || fail "the later failure did not consume its own run identity"
+  pass "an unnameable owned-run failure stays pending, delivers once its ID is readable, and never adopts a receipt"
 }
 
 # --- pure classifier predicates (fm-classify-lib.sh) ------------------------
@@ -2397,6 +2501,8 @@ test_unreadable_verdict_preserves_a_consumed_failure
 test_consumed_failure_survives_attribution_degrading_and_recovering
 test_routine_declared_worker_reports_a_later_owned_failure
 test_consumed_failure_is_quiet_until_work_resumes
+test_resumed_local_fixing_keeps_its_ordinary_watchdog
+test_unreadable_run_identity_leaves_failure_delivery_pending
 test_completion_retires_old_stall_timer
 test_declared_progress_gets_stall_grace_and_terminal_stays_consumed
 test_declared_pause_is_silent_for_live_and_exited_agents
