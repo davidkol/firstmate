@@ -64,6 +64,16 @@
 # `--progress-token <id>` prints a stable token for an attributable active
 # run-step and its bounded active-step log tail, or nothing when no such owned
 # progress source is active.
+# `--with-run-identity <id>` prints the ordinary current-state line and then, when
+# the run-step path attributed a FULL `axi status` run to this crew, one extra
+# `run-identity: run=<id> head=<head>` line naming that exact run. It answers "WHICH
+# owned run is this state about", which a supervisor needs to tell one failed run
+# from its rerun without having observed the working interval between them. No extra
+# producer call is made: both fields come from the `axi status` output this reader
+# already holds. KNOWN LIMIT, not worked around here: the coarse fallback reads the
+# plain `no-mistakes runs` listing, whose rows are `<status> <branch> <short-sha>`
+# and carry no run ID, so a coarse-attributed run has no identity to print and the
+# line is omitted rather than synthesised from state words, a sha, or a timestamp.
 # Read-only and side-effect free. Always exits 0 on a successful read regardless
 # of state; exit 2 only on a usage error.
 set -u
@@ -85,13 +95,14 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
 
 PROGRESS_TOKEN_MODE=0
-if [ "${1:-}" = --progress-token ]; then
-  PROGRESS_TOKEN_MODE=1
-  shift
-fi
+RUN_IDENTITY_MODE=0
+case "${1:-}" in
+  --progress-token)    PROGRESS_TOKEN_MODE=1; shift ;;
+  --with-run-identity) RUN_IDENTITY_MODE=1; shift ;;
+esac
 ID=${1:-}
 [ -n "$ID" ] && [ "$#" -eq 1 ] \
-  || { echo "usage: fm-crew-state.sh [--progress-token] <id>" >&2; exit 2; }
+  || { echo "usage: fm-crew-state.sh [--progress-token|--with-run-identity] <id>" >&2; exit 2; }
 
 META="$STATE/$ID.meta"
 LOG="$STATE/$ID.status"
@@ -116,6 +127,9 @@ emit() {  # <state> <source> [detail]
   fi
   [ -n "${3:-}" ] && line="$line${SEP}$3"
   printf '%s\n' "$line"
+  if [ "$RUN_IDENTITY_MODE" -eq 1 ] && [ "$2" = run-step ] && [ "${RUN_SOURCE:-}" = full ]; then
+    emit_run_identity
+  fi
   exit 0
 }
 
@@ -472,6 +486,16 @@ nm_active_step() {
   row=$(trim "$row")
   step=$(trim "${row%%,*}")
   strip_quotes "$step"
+}
+
+# The exact producer identity of the run this reader attributed, straight from the
+# `axi status` fields. Printed only from the full path, where both fields exist.
+emit_run_identity() {
+  local run_id run_head
+  run_id=$(strip_quotes "$(nm_field id)")
+  [ -n "$run_id" ] || return 0
+  run_head=$(strip_quotes "$(nm_field head)")
+  printf 'run-identity: run=%s head=%s\n' "$run_id" "$run_head"
 }
 
 emit_run_progress_token() {

@@ -109,16 +109,20 @@ SH
 # `--progress-token <id>` uses the parallel FM_FAKE_CREW_PROGRESS variables so
 # pipeline-progress tests can change the daemon-owned source independently of
 # the pane/current-state verdict.
+# `--with-run-identity <id>` prints the same verdict plus, when a per-id
+# FM_FAKE_CREW_IDENTITY_<sanitized-id> or the shared FM_FAKE_CREW_IDENTITY is set,
+# the reader's `run-identity: <value>` line. Absent means the reader attributed no
+# full run, which is what the coarse listing fallback really produces.
 make_fake_crew_state() {  # <fakebin>
   local fakebin=$1
   cat > "$fakebin/fm-crew-state.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
 mode=state
-if [ "${1:-}" = --progress-token ]; then
-  mode=progress
-  shift
-fi
+case "${1:-}" in
+  --progress-token)    mode=progress; shift ;;
+  --with-run-identity) mode=identity; shift ;;
+esac
 id=${1:-}
 key=$(printf '%s' "$id" | tr -c 'A-Za-z0-9' '_')
 if [ "$mode" = progress ]; then
@@ -126,9 +130,15 @@ if [ "$mode" = progress ]; then
   printf '%s\n' "${!var:-${FM_FAKE_CREW_PROGRESS:-}}"
   exit 0
 fi
+[ -z "${FM_FAKE_CREW_STATE_READS:-}" ] || printf '%s\n' "$mode" >> "$FM_FAKE_CREW_STATE_READS"
 var="FM_FAKE_CREW_STATE_$key"
 val=${!var:-${FM_FAKE_CREW_STATE:-}}
 printf '%s\n' "${val:-state: unknown · source: none · fake default}"
+if [ "$mode" = identity ]; then
+  var="FM_FAKE_CREW_IDENTITY_$key"
+  val=${!var:-${FM_FAKE_CREW_IDENTITY:-}}
+  [ -z "$val" ] || printf 'run-identity: %s\n' "$val"
+fi
 exit 0
 SH
   chmod +x "$fakebin/fm-crew-state.sh"

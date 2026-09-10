@@ -866,6 +866,84 @@ test_terminal_failed() {
   pass "terminal failed run is authoritative"
 }
 
+# --- --with-run-identity: WHICH owned run a verdict is about ----------------
+#
+# A supervisor that consumed one failed run needs to tell that run from its rerun
+# without having watched the working interval between them, so the reader names the
+# exact run it attributed. Both fields come from the same `axi status` answer the
+# verdict came from; the installed producer's TOON carries `id:` and `head:`
+# (verified read-only against no-mistakes v1.46.0). The plain listing used by the
+# coarse fallback carries no run ID at all - its rows are
+# "<status> <branch> <short-sha> <date>" - so that path emits no identity rather
+# than a synthesised one, and this suite pins that limit rather than papering it.
+run_failed_with_id() {  # <branch> <run-id> <head>
+  cat <<EOF
+run:
+  id: "$2"
+  branch: $1
+  status: completed
+  head: "$3"
+  pr: ""
+  findings: none
+outcome: failed
+EOF
+}
+
+test_run_identity_names_the_attributed_run() {
+  reset_fakes
+  local d out; d=$(new_case run-identity)
+  make_repo_on_branch "$d/wt" fm/feat-ident
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-ident.meta" "window=fm:fm-feat-ident" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_failed_with_id fm/feat-ident 01RUNA "$FM_FAKE_RUN_HEAD")"
+  out=$(PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" --with-run-identity feat-ident)
+  assert_contains "$out" "state: failed" "identity mode still reports the ordinary verdict"
+  assert_contains "$out" "run-identity: run=01RUNA head=$FM_FAKE_RUN_HEAD" "identity mode names the attributed run"
+  out=$(run_crew_state "$d" feat-ident)
+  assert_not_contains "$out" "run-identity" "the ordinary mode stays a single verdict line"
+  pass "--with-run-identity adds the attributed run's exact id and head to the same verdict"
+}
+
+test_run_identity_separates_two_runs_at_the_same_branch_and_head() {
+  reset_fakes
+  local d first second; d=$(new_case run-identity-rerun)
+  make_repo_on_branch "$d/wt" fm/feat-rerun
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-rerun.meta" "window=fm:fm-feat-rerun" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_failed_with_id fm/feat-rerun 01RUNA "$FM_FAKE_RUN_HEAD")"
+  first=$(PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" --with-run-identity feat-rerun \
+    | sed -n 's/^run-identity: //p')
+  # A rerun of the same code: same branch, same head, different run.
+  FM_FAKE_AXI_STATUS="$(run_failed_with_id fm/feat-rerun 01RUNB "$FM_FAKE_RUN_HEAD")"
+  second=$(PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" --with-run-identity feat-rerun \
+    | sed -n 's/^run-identity: //p')
+  [ -n "$first" ] && [ -n "$second" ] || fail "a rerun at the same head produced no identity"
+  [ "$first" != "$second" ] || fail "a rerun at the same branch and head reused the earlier run's identity"
+  pass "two runs of the same branch at the same head carry distinct identities"
+}
+
+test_run_identity_absent_when_only_the_coarse_listing_attributed_the_run() {
+  reset_fakes
+  local d short out; d=$(new_case run-identity-coarse)
+  make_repo_on_branch "$d/wt" fm/feat-coarse-ident
+  short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-coarse-ident.meta" "window=fm:fm-feat-coarse-ident" "worktree=$d/wt" "kind=ship"
+  # The repo-wide answer belongs to another crew, so attribution falls back to the
+  # plain listing, whose real rows carry no run id.
+  FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  FM_FAKE_RUNS_LIST="$(cat <<EOF
+  running    fm/other-crew aaaaaaa  2026-09-10 22:10
+  failed     fm/feat-coarse-ident ${short}  2026-09-10 22:05
+EOF
+)"
+  out=$(PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" --with-run-identity feat-coarse-ident)
+  assert_contains "$out" "state: failed" "the coarse listing still attributes the failed run"
+  assert_contains "$out" "source: run-step" "coarse attribution keeps run-step provenance"
+  assert_not_contains "$out" "run-identity" "a coarse-attributed run must not invent an identity"
+  pass "coarse-listing attribution reports the run without an identity the producer cannot supply"
+}
+
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
 # routine case once more than one crew validates the same underlying repo
 # concurrently - they share ONE no-mistakes repo registration), so the helper
@@ -1558,6 +1636,9 @@ test_light_path_passed_run_with_done_event_is_done
 test_light_path_terminal_run_keeps_the_crews_own_verb
 test_light_path_guard_covers_status_completed_transition
 test_terminal_failed
+test_run_identity_names_the_attributed_run
+test_run_identity_separates_two_runs_at_the_same_branch_and_head
+test_run_identity_absent_when_only_the_coarse_listing_attributed_the_run
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status

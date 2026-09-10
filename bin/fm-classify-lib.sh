@@ -708,19 +708,26 @@ status_unseen_coordination() {  # <status-file> [captured-size:mtime]
 #             it is a declared outcome that the status-signal path already
 #             delivers once, so it maps to `none` and takes the same
 #             delivered-outcome suppression as `done:`/`blocked:`.
-#   none    - none of the above (a stopped/finished/parked/
-#             torn-down/unknown crew, or an unreadable verdict).
+#   none    - positively read, and none of the above: a stopped, finished,
+#             parked or torn-down crew.
+#   unknown - NO authoritative verdict: an empty id, an unreadable or malformed
+#             answer, or a reader that itself reported `unknown`. Kept distinct
+#             from `none` because "the crew is not failing" and "we could not
+#             find out" are different facts, and a caller that consumed a failure
+#             must not treat a failed query as proof the run recovered. Every
+#             absorb decision still treats it exactly like `none`.
 # One fm-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
 # authoritatively (not the status log) is what keeps run-step precedence: a crew
 # that appended paused: but then STARTED a run reports working, never paused.
 # NOT a pure read: fm-crew-state.sh may make a bounded no-mistakes call, so callers
-# run it only on no-verb signal and first-sighting stale paths, never every wake.
+# run it on no-verb signal and first-sighting stale paths, and on an
+# already-classified pane only through their own bounded cadence - never every
+# wake. That cadence exists because an idle worker's pane hash stops changing, so
+# first sighting alone cannot notice a run that fails after the crew went quiet.
 # FM_CREW_STATE_BIN lets tests stub the verdict.
-crew_absorb_class() {  # <id>
-  local id=$1 line state src
-  [ -n "$id" ] || { printf 'none'; return; }
-  line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
-  case "$line" in state:*) ;; *) printf 'none'; return ;; esac
+crew_absorb_class_of_line() {  # <current-state-line>
+  local line=$1 state src
+  case "$line" in state:*) ;; *) printf 'unknown'; return ;; esac
   state=${line#state: }; state=${state%% *}
   src=${line#*source: }; src=${src%% *}
   if [ "$state" = paused ]; then printf 'paused'; return; fi
@@ -728,7 +735,31 @@ crew_absorb_class() {  # <id>
   if [ "$state" = working ]; then
     case "$src" in run-step|pane) printf 'working'; return ;; esac
   fi
+  if [ "$state" = unknown ]; then printf 'unknown'; return; fi
   printf 'none'
+}
+
+crew_absorb_class() {  # <id>
+  local id=$1 line
+  [ -n "$id" ] || { printf 'unknown'; return; }
+  line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
+  crew_absorb_class_of_line "$line"
+}
+
+# ONE bounded read that answers both "what is this crew doing" and "WHICH owned run
+# is that answer about". Prints "<class><TAB><run-identity>"; the identity is empty
+# whenever fm-crew-state.sh could not attribute a full run, which is the honest
+# answer on the coarse-listing fallback (see that reader's --with-run-identity
+# contract). Callers that must tell one failed run from its rerun use this instead
+# of crew_absorb_class, so the two facts always come from the same observation and
+# cannot straddle a run transition.
+crew_absorb_observation() {  # <id>
+  local id=$1 out line ident
+  [ -n "$id" ] || { printf 'unknown\t'; return; }
+  out=$("$FM_CREW_STATE_BIN" --with-run-identity "$id" 2>/dev/null) || true
+  line=$(printf '%s\n' "$out" | head -1)
+  ident=$(printf '%s\n' "$out" | sed -n 's/^run-identity: //p' | head -1)
+  printf '%s\t%s' "$(crew_absorb_class_of_line "$line")" "$ident"
 }
 
 # 0 if crew <id> shows POSITIVE evidence it is still working (crew_absorb_class

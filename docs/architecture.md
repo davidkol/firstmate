@@ -15,7 +15,7 @@ Its grace scan coalesces each changed file once and queues only eligible files.
 Captured status snapshots retain their signature and explicit text through drain, so a later same-task message cannot erase earlier queued work; exact publication retries still collapse.
 Authenticated check results, owned-run failures and unsurfaced coordination statuses retain their recovery paths.
 The existing `process: captain-directed` delivery contract also makes initialization, lifecycle boundaries, native in-window menus and clock-only observations routine before any status exists.
-Those builders use the existing pause/recheck detector state for bounded owned-run failure checks, without model polling or a second routing registry.
+Those builders use the same bounded observation cadence and the same failure receipt as every other worker for owned-run failure checks, without model polling or a second routing registry.
 A shell observation alone cannot establish an unexpected exit during launch or recovery, so unproven no-status exits remain with targeted and session-start recovery.
 Other processes retain undeclared-worker and stalled-work recovery.
 Repeated provably-working stale escalations on the same unchanged pane add an escalation count to the wake reason and, at `FM_WEDGE_DEMAND_INSPECT_COUNT`, a `demand-deep-inspection` marker.
@@ -30,7 +30,10 @@ Declared pauses and durable captain holds remain silent while idle, including li
 The normal watcher rechecks these waits internally without a model wake; an active or failed owned run takes precedence over an old declaration.
 Routine progress receives the existing stall grace instead of an immediate idle-pane wake; only owned pipeline progress and a changed pane reset that bookkeeping, so a worker that keeps emitting routine notes on an unchanged pane still reaches its possible-wedge escalation.
 An already delivered outcome cannot become another wake merely because its idle pane changes, while a subsequent owned-run failure remains actionable.
-An owned-run failure attributed to the crew's own code is announced once for both delivery processes, across changed panes and watcher restarts, and is re-armed for announcement only when an authoritative read classifies the crew as something other than failed.
+An owned-run failure attributed to the crew's own code is announced once for both delivery processes, across changed panes and watcher restarts, because what is consumed is the failed run's exact producer identity (`bin/fm-crew-state.sh --with-run-identity`) rather than a delivered flag; a later run that fails is a different identity and delivers even though an idle worker's unchanged pane gave the watcher no chance to observe the rerun in between.
+A query that fails, times out, or answers with something unusable never re-arms a consumed failure, because an unreadable verdict is reported distinctly from a positively read one and is not evidence that a failed run recovered.
+KNOWN LIMIT: the coarse `no-mistakes runs` listing carries no run ID, so a failure attributed only through that fallback is consumed without an identity and is re-armed by the weaker rule - the next positively read non-failed state - which a rerun shorter than the observation cadence can outrun.
+A pane hash this loop already classified is re-observed on one shared bounded cadence rather than never or every poll, so a run that fails after its worker went idle is still reported, the reader is called at most once per `FM_STALE_ESCALATE_SECS` per window whether or not it answers, and the pane-based stuck safeguards keep running on their own timer in between.
 Native backend blocked transitions respect declared waits, delivered outcomes and the captain-directed process; other working or undeclared workers retain the native permission-gate recovery path.
 Away mode keeps its separate daemon-owned triage and long external-wait rechecks.
 No-change heartbeats are also benign.
