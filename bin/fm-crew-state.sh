@@ -65,15 +65,19 @@
 # run-step and its bounded active-step log tail, or nothing when no such owned
 # progress source is active.
 # `--with-run-identity <id>` prints the ordinary current-state line and then, when
-# the run-step path attributed a FULL `axi status` run to this crew, one extra
-# `run-identity: run=<id> head=<head>` line naming that exact run. It answers "WHICH
-# owned run is this state about", which a supervisor needs to tell one failed run
-# from its rerun without having observed the working interval between them. No extra
-# producer call is made: both fields come from the `axi status` output this reader
-# already holds. KNOWN LIMIT, not worked around here: the coarse fallback reads the
-# plain `no-mistakes runs` listing, whose rows are `<status> <branch> <short-sha>`
-# and carry no run ID, so a coarse-attributed run has no identity to print and the
-# line is omitted rather than synthesised from state words, a sha, or a timestamp.
+# the run-step path attributed a run to this crew, one extra `run-identity: <run-id>`
+# line naming that exact run. It answers "WHICH owned run is this state about", which
+# a supervisor needs to tell one failed run from its rerun without having observed
+# the working interval between them. The value is the producer's own run ID and
+# nothing else: a ULID is already globally unique, so consumption stays stable when
+# a head is projected short in one answer and full in another, or when the same run
+# is read through a different surface.
+# The full path takes the ID from the `axi status` output this reader already holds,
+# with no extra producer call. The coarse fallback's `no-mistakes runs` rows carry
+# no ID, so that path resolves one through nm_exact_run_id (below) - the producer's
+# OWN existing read-only lookup - rather than synthesising a token from state words,
+# a sha, or a timestamp. When neither can name the run the line is omitted, and a
+# consumer must treat that as "not known", never as a different run.
 # Read-only and side-effect free. Always exits 0 on a successful read regardless
 # of state; exit 2 only on a usage error.
 set -u
@@ -127,7 +131,7 @@ emit() {  # <state> <source> [detail]
   fi
   [ -n "${3:-}" ] && line="$line${SEP}$3"
   printf '%s\n' "$line"
-  if [ "$RUN_IDENTITY_MODE" -eq 1 ] && [ "$2" = run-step ] && [ "${RUN_SOURCE:-}" = full ]; then
+  if [ "$RUN_IDENTITY_MODE" -eq 1 ] && [ "$2" = run-step ]; then
     emit_run_identity
   fi
   exit 0
@@ -402,6 +406,9 @@ nm_ci_checks_state() {
 # is a run for THIS branch active right now. Echoes the first (most recent)
 # matching row's status word (running/completed/cancelled/failed), or empty
 # when the branch has no run within FM_CREW_STATE_RUNS_LIMIT rows.
+# Prints "<status>\t<short-sha>" for the matched row: the sha is what lets the exact
+# identity lookup below resolve this row's full head, and it is already validated
+# against the worktree by the same code-identity rule the full path uses.
 nm_runs_status_for_branch() {  # <branch>
   local branch=$1 out row st rest br sha
   out=$(nm_run runs --limit "$FM_CREW_STATE_RUNS_LIMIT")
@@ -422,7 +429,7 @@ nm_runs_status_for_branch() {  # <branch>
       if ! nm_coarse_head_matches_worktree "$sha"; then
         continue
       fi
-      printf '%s' "$st"
+      printf '%s\t%s' "$st" "$sha"
       return 0
     fi
   done <<< "$out"
@@ -488,14 +495,113 @@ nm_active_step() {
   strip_quotes "$step"
 }
 
-# The exact producer identity of the run this reader attributed, straight from the
-# `axi status` fields. Printed only from the full path, where both fields exist.
+# The local no-mistakes daemon endpoint, resolved by the producer's OWN documented
+# rule (NM_HOME, else ~/.no-mistakes; internal/paths/paths.go). FM_NM_IPC_SOCKET is
+# the test seam, and FM_NM_IPC_TIMEOUT bounds the whole exchange.
+FM_NM_IPC_SOCKET="${FM_NM_IPC_SOCKET:-${NM_HOME:-$HOME/.no-mistakes}/socket}"
+FM_NM_IPC_TIMEOUT=${FM_NM_IPC_TIMEOUT:-5}
+case "$FM_NM_IPC_TIMEOUT" in ''|*[!0-9]*) FM_NM_IPC_TIMEOUT=5 ;; esac
+
+# Resolve the exact producer run ID for a run this reader attributed through the
+# coarse listing, which prints no ID of its own.
+#
+# This is a BOUNDED, FIXED-PURPOSE read of the producer's existing API, not a new
+# capability and not a database reader: exactly two read-only JSON-RPC methods that
+# the installed daemon already serves and its own CLI already uses - `get_run` to
+# learn the repository identity from a run the answer we hold already names, and
+# `get_runs_for_head` to ask for this crew's exact branch and full head. Repository
+# identity therefore comes from the producer, never from a guessed path or hash.
+#
+# Every returned record is re-validated against the exact repo, branch and full head
+# that were asked for, and against the status this reader attributed, so a wrong,
+# reordered, partial or unrelated answer yields nothing rather than a wrong ID. One
+# connection, one socket deadline, a 1 MiB frame bound, and no retry. A missing
+# socket, missing python3, refused connection, timeout, malformed frame or absent
+# method all print nothing, which callers must read as "not known".
+nm_exact_run_id() {  # <known-run-id> <branch> <full-head> <status>
+  [ -S "$FM_NM_IPC_SOCKET" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$FM_NM_IPC_SOCKET" "$FM_NM_IPC_TIMEOUT" "$1" "$2" "$3" "$4" <<'NM_IPC_PY' 2>/dev/null || true
+import json, socket, sys
+
+sock_path, timeout, known_run, branch, head, status = sys.argv[1:7]
+FRAME_MAX = 1024 * 1024
+
+
+def call(reader, writer, method, params, rid):
+    writer.write((json.dumps({"jsonrpc": "2.0", "method": method,
+                              "params": params, "id": rid}) + "\n").encode())
+    writer.flush()
+    line = reader.readline(FRAME_MAX)
+    if not line or len(line) >= FRAME_MAX:
+        return None
+    try:
+        msg = json.loads(line.decode("utf-8", "replace"))
+    except ValueError:
+        return None
+    if not isinstance(msg, dict) or msg.get("id") != rid or msg.get("error") is not None:
+        return None
+    result = msg.get("result")
+    return result if isinstance(result, dict) else None
+
+
+try:
+    conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    conn.settimeout(float(timeout))
+    conn.connect(sock_path)
+    reader = conn.makefile("rb")
+    writer = conn.makefile("wb")
+
+    result = call(reader, writer, "get_run", {"run_id": known_run}, 1)
+    run = (result or {}).get("run")
+    if not isinstance(run, dict) or run.get("id") != known_run:
+        raise SystemExit(0)
+    repo = run.get("repo_id")
+    if not isinstance(repo, str) or not repo:
+        raise SystemExit(0)
+
+    result = call(reader, writer, "get_runs_for_head",
+                  {"repo_id": repo, "branch": branch, "head_sha": head}, 2)
+    runs = (result or {}).get("runs")
+    if not isinstance(runs, list):
+        raise SystemExit(0)
+    for record in runs:
+        if not isinstance(record, dict):
+            continue
+        if record.get("repo_id") != repo or record.get("branch") != branch \
+                or record.get("head_sha") != head:
+            continue
+        if status and record.get("status") != status:
+            continue
+        run_id = record.get("id")
+        if isinstance(run_id, str) and run_id:
+            sys.stdout.write(run_id + "\n")
+            break
+except SystemExit:
+    raise
+except Exception:
+    pass
+NM_IPC_PY
+}
+
+# The exact producer identity of the run this reader attributed. The full path reads
+# it from the `axi status` answer already in hand; the coarse path asks the producer
+# for it. Either way the value is the run ID alone, so it does not change when the
+# same run is projected with a short head in one answer and a full head in another.
 emit_run_identity() {
-  local run_id run_head
-  run_id=$(strip_quotes "$(nm_field id)")
+  local run_id known head_full
+  if [ "${RUN_SOURCE:-}" = coarse ]; then
+    [ -n "$COARSE_HEAD_SHORT" ] || return 0
+    head_full=$(git -C "$WT" rev-parse --verify "${COARSE_HEAD_SHORT}^{commit}" 2>/dev/null) || return 0
+    [ -n "$head_full" ] || return 0
+    known=$(strip_quotes "$(nm_field id)")
+    [ -n "$known" ] || return 0
+    run_id=$(nm_exact_run_id "$known" "$CREW_BRANCH" "$head_full" "$COARSE_STATUS")
+  else
+    run_id=$(strip_quotes "$(nm_field id)")
+  fi
   [ -n "$run_id" ] || return 0
-  run_head=$(strip_quotes "$(nm_field head)")
-  printf 'run-identity: run=%s head=%s\n' "$run_id" "$run_head"
+  printf 'run-identity: %s\n' "$run_id"
 }
 
 emit_run_progress_token() {
@@ -526,6 +632,7 @@ HAVE_RUN=0
 # run-step block below skips the TOON field parsing entirely for this crew.
 RUN_SOURCE=full
 COARSE_STATUS=""
+COARSE_HEAD_SHORT=""
 # Scouts and secondmates never drive a no-mistakes validation of their own
 # worktree, so skip the lookup for them and read state from pane/log directly.
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then
@@ -543,7 +650,10 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
       # primary call means the CLI itself did not respond, so retrying it
       # immediately with a second bounded call would just double the wait
       # for no better answer.
-      COARSE_STATUS=$(nm_runs_status_for_branch "$CREW_BRANCH")
+      COARSE_ROW=$(nm_runs_status_for_branch "$CREW_BRANCH")
+      COARSE_STATUS=${COARSE_ROW%%	*}
+      COARSE_HEAD_SHORT=${COARSE_ROW#*	}
+      [ "$COARSE_HEAD_SHORT" != "$COARSE_ROW" ] || COARSE_HEAD_SHORT=""
       if [ -n "$COARSE_STATUS" ]; then
         HAVE_RUN=1
         RUN_SOURCE=coarse

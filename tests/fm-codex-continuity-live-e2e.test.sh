@@ -169,8 +169,6 @@ binding_field() {  # <field>
 
 mkdir -p "$LAB"
 git clone -q "$ROOT" "$PROJECT"
-# A local clone contains only committed objects, so project this candidate diff
-# into the isolated clone before asking Codex to exercise the behavior.
 # A local clone carries only committed objects, so any uncommitted candidate has
 # to be projected into it. An EMPTY diff means the clone already has the exact
 # candidate, which is the shape of a pipeline commit or any clean checkout: that

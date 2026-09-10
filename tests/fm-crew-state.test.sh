@@ -876,6 +876,80 @@ test_terminal_failed() {
 # coarse fallback carries no run ID at all - its rows are
 # "<status> <branch> <short-sha> <date>" - so that path emits no identity rather
 # than a synthesised one, and this suite pins that limit rather than papering it.
+# A one-shot stand-in for the running no-mistakes daemon's local JSON-RPC socket.
+# It speaks the SAME newline-delimited protocol the real daemon serves, and answers
+# from a fixture file mapping method name -> result object, so these tests exercise
+# the reader's real client path (request shape, framing, validation) rather than a
+# mocked-out helper. A method missing from the fixture is answered with a JSON-RPC
+# error, and the reserved key "raw" makes the server emit that literal line instead
+# of a reply, for the malformed-frame case.
+# A unix socket path is capped near 104 bytes, well under the suite temp root, so
+# every fake endpoint lives in its own short directory reaped with the suite.
+FM_IPC_SOCK_DIR=$(mktemp -d /tmp/fmipc.XXXXXX)
+FM_TEST_CLEANUP_DIRS+=("$FM_IPC_SOCK_DIR")
+FAKE_NM_IPC_PID=
+
+stop_fake_nm_ipc() {
+  [ -n "$FAKE_NM_IPC_PID" ] || return 0
+  kill "$FAKE_NM_IPC_PID" 2>/dev/null || true
+  wait "$FAKE_NM_IPC_PID" 2>/dev/null || true
+  FAKE_NM_IPC_PID=
+}
+
+start_fake_nm_ipc() {  # <socket-path> <fixture-json-path>
+  stop_fake_nm_ipc
+  python3 - "$1" "$2" <<'IPC_PY' &
+import json, os, socket, sys, threading
+
+sock_path, fixture_path = sys.argv[1], sys.argv[2]
+try:
+    os.unlink(sock_path)
+except OSError:
+    pass
+srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+srv.bind(sock_path)
+srv.listen(8)
+
+
+def serve(conn):
+    reader = conn.makefile("rb")
+    writer = conn.makefile("wb")
+    fixture = json.load(open(fixture_path))
+    for line in reader:
+        try:
+            msg = json.loads(line.decode())
+        except ValueError:
+            break
+        raw = fixture.get("raw")
+        if raw is not None:
+            writer.write((raw + "\n").encode())
+            writer.flush()
+            continue
+        method = msg.get("method")
+        if method in fixture:
+            reply = {"jsonrpc": "2.0", "id": msg.get("id"), "result": fixture[method]}
+        else:
+            reply = {"jsonrpc": "2.0", "id": msg.get("id"),
+                     "error": {"code": -32601, "message": "method not found"}}
+        writer.write((json.dumps(reply) + "\n").encode())
+        writer.flush()
+    conn.close()
+
+
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=serve, args=(conn,), daemon=True).start()
+IPC_PY
+  FAKE_NM_IPC_PID=$!
+  local i=0
+  while [ "$i" -lt 100 ]; do
+    [ -S "$1" ] && return 0
+    sleep 0.05
+    i=$((i + 1))
+  done
+  fail "the fake no-mistakes IPC socket never came up at $1"
+}
+
 run_failed_with_id() {  # <branch> <run-id> <head>
   cat <<EOF
 run:
@@ -898,7 +972,10 @@ test_run_identity_names_the_attributed_run() {
   FM_FAKE_AXI_STATUS="$(run_failed_with_id fm/feat-ident 01RUNA "$FM_FAKE_RUN_HEAD")"
   out=$(PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" --with-run-identity feat-ident)
   assert_contains "$out" "state: failed" "identity mode still reports the ordinary verdict"
-  assert_contains "$out" "run-identity: run=01RUNA head=$FM_FAKE_RUN_HEAD" "identity mode names the attributed run"
+  assert_contains "$out" "run-identity: 01RUNA" "identity mode names the attributed run"
+  FM_FAKE_AXI_STATUS="$(run_failed_with_id fm/feat-ident 01RUNA "$(git -C "$d/wt" rev-parse --short=8 HEAD)")"
+  out=$(PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" --with-run-identity feat-ident)
+  assert_contains "$out" "run-identity: 01RUNA" "the identity changed when the same run projected a short head"
   out=$(run_crew_state "$d" feat-ident)
   assert_not_contains "$out" "run-identity" "the ordinary mode stays a single verdict line"
   pass "--with-run-identity adds the attributed run's exact id and head to the same verdict"
@@ -922,26 +999,139 @@ test_run_identity_separates_two_runs_at_the_same_branch_and_head() {
   pass "two runs of the same branch at the same head carry distinct identities"
 }
 
-test_run_identity_absent_when_only_the_coarse_listing_attributed_the_run() {
-  reset_fakes
-  local d short out; d=$(new_case run-identity-coarse)
-  make_repo_on_branch "$d/wt" fm/feat-coarse-ident
-  short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
-  make_fakebin "$d" >/dev/null
-  fm_write_meta "$d/state/feat-coarse-ident.meta" "window=fm:fm-feat-coarse-ident" "worktree=$d/wt" "kind=ship"
+# The coarse listing prints no run ID, so that path asks the producer's own
+# read-only lookup for one. These cases drive the real client against a socket
+# speaking the daemon's protocol: repository identity comes from get_run on a run
+# the answer already named, never from a guessed path or hash, and the record it
+# names must agree on repo, branch, full head and the attributed status.
+# Sets IDENT_CASE_DIR and the producer fixtures in THIS shell (the fixtures are
+# environment, so a command substitution would drop them).
+coarse_ident_case() {  # <name> <branch>
+  local name=$1 branch=$2 short
+  IDENT_CASE_DIR=$(new_case "$name")
+  make_repo_on_branch "$IDENT_CASE_DIR/wt" "$branch"
+  short=$(git -C "$IDENT_CASE_DIR/wt" rev-parse --short=7 HEAD)
+  make_fakebin "$IDENT_CASE_DIR" >/dev/null
+  fm_write_meta "$IDENT_CASE_DIR/state/ident.meta" "window=fm:fm-ident" \
+    "worktree=$IDENT_CASE_DIR/wt" "kind=ship"
   # The repo-wide answer belongs to another crew, so attribution falls back to the
-  # plain listing, whose real rows carry no run id.
-  FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  # plain listing. That other crew's run is the only ID this reader holds.
+  FM_FAKE_AXI_STATUS="$(run_failed_with_id fm/other-crew 01OTHER deadbee)"
   FM_FAKE_RUNS_LIST="$(cat <<EOF
   running    fm/other-crew aaaaaaa  2026-09-10 22:10
-  failed     fm/feat-coarse-ident ${short}  2026-09-10 22:05
+  failed     $branch ${short}  2026-09-10 22:05
 EOF
 )"
-  out=$(PATH="$d/fakebin:$PATH" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" --with-run-identity feat-coarse-ident)
+}
+
+read_coarse_identity() {  # <case-dir> <socket>
+  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" FM_NM_IPC_SOCKET="$2" FM_NM_IPC_TIMEOUT=5 \
+    "$CREW_STATE" --with-run-identity ident
+}
+
+test_run_identity_resolves_coarse_attribution_through_the_producer() {
+  reset_fakes
+  local d head out sock; coarse_ident_case run-identity-coarse fm/feat-coarse-ident; d=$IDENT_CASE_DIR
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  sock="$FM_IPC_SOCK_DIR/${FUNCNAME[0]}.sock"
+  # The named run is deliberately one the plain listing never shows an ID for, and
+  # is not the repo's newest run either: only the exact branch/head lookup finds it.
+  cat > "$d/ipc.json" <<EOF
+{
+  "get_run": {"run": {"id": "01OTHER", "repo_id": "e7a400468416",
+                      "branch": "fm/other-crew", "head_sha": "deadbee", "status": "failed"}},
+  "get_runs_for_head": {"runs": [
+    {"id": "01OLDBEYONDTHEVISIBLELIST", "repo_id": "e7a400468416",
+     "branch": "fm/feat-coarse-ident", "head_sha": "$head", "status": "failed"}
+  ]}
+}
+EOF
+  start_fake_nm_ipc "$sock" "$d/ipc.json"
+  out=$(read_coarse_identity "$d" "$sock")
   assert_contains "$out" "state: failed" "the coarse listing still attributes the failed run"
   assert_contains "$out" "source: run-step" "coarse attribution keeps run-step provenance"
-  assert_not_contains "$out" "run-identity" "a coarse-attributed run must not invent an identity"
-  pass "coarse-listing attribution reports the run without an identity the producer cannot supply"
+  assert_contains "$out" "run-identity: 01OLDBEYONDTHEVISIBLELIST" \
+    "the coarse path did not resolve the exact run through the producer"
+  pass "coarse-listing attribution resolves its exact run ID through the producer's own read-only lookup"
+}
+
+test_run_identity_picks_the_attributed_run_among_several_at_one_head() {
+  reset_fakes
+  local d head out sock; coarse_ident_case run-identity-coarse-multi fm/feat-multi; d=$IDENT_CASE_DIR
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  sock="$FM_IPC_SOCK_DIR/${FUNCNAME[0]}.sock"
+  # Two runs of the same branch at the same head. The listing attributed a FAILED
+  # one, so a newer running record must not be named instead.
+  cat > "$d/ipc.json" <<EOF
+{
+  "get_run": {"run": {"id": "01OTHER", "repo_id": "e7a400468416",
+                      "branch": "fm/other-crew", "head_sha": "deadbee", "status": "failed"}},
+  "get_runs_for_head": {"runs": [
+    {"id": "01RERUNRUNNING", "repo_id": "e7a400468416",
+     "branch": "fm/feat-multi", "head_sha": "$head", "status": "running"},
+    {"id": "01FIRSTFAILED", "repo_id": "e7a400468416",
+     "branch": "fm/feat-multi", "head_sha": "$head", "status": "failed"}
+  ]}
+}
+EOF
+  start_fake_nm_ipc "$sock" "$d/ipc.json"
+  out=$(read_coarse_identity "$d" "$sock")
+  assert_contains "$out" "run-identity: 01FIRSTFAILED" \
+    "the lookup named a run whose status was not the one attributed"
+  assert_not_contains "$out" "01RERUNRUNNING" "a newer unrelated record was named"
+  pass "several runs at one branch and head resolve to the one whose status was attributed"
+}
+
+test_run_identity_rejects_a_producer_answer_that_does_not_match() {
+  reset_fakes
+  local d head out sock variant; coarse_ident_case run-identity-coarse-bad fm/feat-bad-ident; d=$IDENT_CASE_DIR
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  sock="$FM_IPC_SOCK_DIR/${FUNCNAME[0]}.sock"
+  for variant in wrong-repo wrong-branch wrong-head wrong-run malformed unavailable; do
+    case "$variant" in
+      wrong-repo) cat > "$d/ipc.json" <<EOF
+{"get_run": {"run": {"id": "01OTHER", "repo_id": "e7a400468416", "branch": "fm/other-crew",
+                     "head_sha": "deadbee", "status": "failed"}},
+ "get_runs_for_head": {"runs": [{"id": "01X", "repo_id": "ffffffffffff",
+   "branch": "fm/feat-bad-ident", "head_sha": "$head", "status": "failed"}]}}
+EOF
+        ;;
+      wrong-branch) cat > "$d/ipc.json" <<EOF
+{"get_run": {"run": {"id": "01OTHER", "repo_id": "e7a400468416", "branch": "fm/other-crew",
+                     "head_sha": "deadbee", "status": "failed"}},
+ "get_runs_for_head": {"runs": [{"id": "01X", "repo_id": "e7a400468416",
+   "branch": "fm/somewhere-else", "head_sha": "$head", "status": "failed"}]}}
+EOF
+        ;;
+      wrong-head) cat > "$d/ipc.json" <<EOF
+{"get_run": {"run": {"id": "01OTHER", "repo_id": "e7a400468416", "branch": "fm/other-crew",
+                     "head_sha": "deadbee", "status": "failed"}},
+ "get_runs_for_head": {"runs": [{"id": "01X", "repo_id": "e7a400468416",
+   "branch": "fm/feat-bad-ident", "head_sha": "0123456789abcdef0123456789abcdef01234567",
+   "status": "failed"}]}}
+EOF
+        ;;
+      wrong-run) cat > "$d/ipc.json" <<EOF
+{"get_run": {"run": {"id": "01SOMEONEELSE", "repo_id": "e7a400468416", "branch": "fm/other-crew",
+                     "head_sha": "deadbee", "status": "failed"}},
+ "get_runs_for_head": {"runs": [{"id": "01X", "repo_id": "e7a400468416",
+   "branch": "fm/feat-bad-ident", "head_sha": "$head", "status": "failed"}]}}
+EOF
+        ;;
+      malformed) printf '%s\n' '{"raw": "not json at all"}' > "$d/ipc.json" ;;
+      unavailable) printf '%s\n' '{}' > "$d/ipc.json" ;;
+    esac
+    rm -f "$sock"
+    start_fake_nm_ipc "$sock" "$d/ipc.json"
+    out=$(read_coarse_identity "$d" "$sock")
+    assert_contains "$out" "state: failed" "$variant: the failed run stopped being attributed"
+    assert_not_contains "$out" "run-identity" "$variant: an unvalidated producer answer was named"
+  done
+  out=$(read_coarse_identity "$d" "$d/no-such.sock")
+  assert_contains "$out" "state: failed" "no socket: the failed run stopped being attributed"
+  assert_not_contains "$out" "run-identity" "no socket: an identity appeared without a producer"
+  stop_fake_nm_ipc
+  pass "a wrong, malformed, unsupported or unreachable producer answer names no run at all"
 }
 
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
@@ -1638,7 +1828,9 @@ test_light_path_guard_covers_status_completed_transition
 test_terminal_failed
 test_run_identity_names_the_attributed_run
 test_run_identity_separates_two_runs_at_the_same_branch_and_head
-test_run_identity_absent_when_only_the_coarse_listing_attributed_the_run
+test_run_identity_resolves_coarse_attribution_through_the_producer
+test_run_identity_picks_the_attributed_run_among_several_at_one_head
+test_run_identity_rejects_a_producer_answer_that_does_not_match
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
