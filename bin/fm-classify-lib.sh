@@ -694,23 +694,6 @@ status_unseen_coordination() {  # <status-file> [captured-size:mtime]
   return 0
 }
 
-status_unseen_is_actionable() {  # <status-file> [captured-size:mtime]
-  [ -n "$(status_unseen_coordination "$@")" ]
-}
-
-# 0 when ANY status file contains an unconsumed explicit coordination event.
-# Scan the append slice, not just its last line: routine progress cannot mask a
-# request or outcome that landed during grace or while no watcher was running.
-signal_reason_is_actionable() {  # <file> ...
-  local f
-  for f in "$@"; do
-    [ -e "$f" ] || continue
-    case "$f" in *.status) ;; *) continue ;; esac
-    status_unseen_is_actionable "$f" && return 0
-  done
-  return 1
-}
-
 # Classify WHY an idle/stale crew MIGHT be safely absorbed instead of surfaced,
 # from bin/fm-crew-state.sh's one authoritative current-state line
 # ("state: <s> · source: <src> · <detail>"). Prints exactly one token:
@@ -759,16 +742,9 @@ crew_is_provably_working() {  # <id>
   [ "$(crew_absorb_class "$1")" = working ]
 }
 
-# 0 if crew <id>'s authoritative current state is a declared external-wait pause.
-# The stale path absorbs such a crew (on a long re-surface cadence) instead of
-# escalating a possible wedge.
-crew_is_paused() {  # <id>
-  [ "$(crew_absorb_class "$1")" = paused ]
-}
-
 # 0 (benign/absorb) if EVERY task referenced by a no-verb "signal:" wake is provably
 # working; 1 (actionable/surface) if any is not, or no task can be resolved. Pass the
-# same space-separated file list as signal_reason_is_actionable. Files are mapped to
+# same space-separated signal-file list the watcher scanned. Files are mapped to
 # task ids by stripping the .status / .turn-ended suffix; a no-verb wake with nothing
 # provably working must surface, so an empty/unresolvable list returns 1.
 signal_crew_provably_working() {  # <file> ...

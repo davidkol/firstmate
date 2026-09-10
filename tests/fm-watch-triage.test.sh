@@ -272,8 +272,13 @@ test_append_snapshot_and_grace_preserve_explicit_work() {
   pass "bounded append snapshots, shortened logs and the grace race preserve explicit work"
 }
 
-test_routine_turnend_restarts_progress_grace() {
-  local dir state fakebin out capture_file pid key old
+# A routine status note or turn-end marker costs no model turn, but it is not
+# evidence that an ordinary unchanged loop is making useful progress. It must
+# therefore leave the possible-wedge timer and its consecutive-escalation count
+# exactly as they were, so a worker that keeps ending turns on an unchanged pane
+# still reaches wedge escalation with its accumulated count.
+test_routine_turnend_preserves_wedge_bookkeeping() {
+  local dir state fakebin out capture_file pid key seeded
   dir=$(make_case routine-turnend-grace); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; key=test_fm-task
   printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
@@ -282,18 +287,29 @@ test_routine_turnend_restarts_progress_grace() {
   printf '%s' "$(hash_text 'same rendered pane')" > "$state/.hash-$key"
   cp "$state/.hash-$key" "$state/.stale-$key"
   printf '3\n' > "$state/.count-$key"
-  old=$(( $(date +%s) - 1000 )); printf '%s\n' "$old" > "$state/.stale-since-$key"
+  seeded=$(( $(date +%s) - 100 )); printf '%s\n' "$seeded" > "$state/.stale-since-$key"
+  printf '2\n' > "$state/.wedge-escalations-$key"
   touch "$state/task.turn-ended"
   watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
     FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=999
   pid=$!
   if ! wait_live "$pid" 40; then
-    reap "$pid"; fail "new routine turn end inherited an expired stall timer"
+    reap "$pid"; fail "a routine turn end woke the primary: $(cat "$out")"
   fi
-  [ "$(cat "$state/.stale-since-$key")" -gt "$old" ] || { reap "$pid"; fail "turn end did not refresh progress grace"; }
+  [ "$(cat "$state/.stale-since-$key" 2>/dev/null)" = "$seeded" ] \
+    || { reap "$pid"; fail "a routine turn end restarted the possible-wedge timer"; }
+  [ "$(cat "$state/.wedge-escalations-$key" 2>/dev/null)" = 2 ] \
+    || { reap "$pid"; fail "a routine turn end zeroed the consecutive wedge-escalation count"; }
   [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "routine turn end queued a stale wake"; }
   reap "$pid"
-  pass "a routine completed turn refreshes progress grace even on an unchanged pane"
+  # The preserved bookkeeping must still reach escalation, carrying its count.
+  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail "the preserved stall timer never escalated"; }
+  grep -F 'escalation 3' "$state/.wake-queue" >/dev/null \
+    || fail "wedge escalation lost its accumulated count: $(cat "$state/.wake-queue")"
+  pass "a routine completed turn neither restarts the possible-wedge timer nor zeroes its escalation count"
 }
 
 test_captain_directed_initialization_is_quiet_but_run_failure_delivers() {
@@ -382,21 +398,113 @@ test_failed_status_outcome_delivers_once_for_every_process() {
   pass "a worker-declared failed: outcome wakes once per process and stays quiet across drain, re-arm and pane changes"
 }
 
-# --- pure classifier predicates (fm-classify-lib.sh) ------------------------
-
-test_signal_reason_is_actionable_classifier() {
-  local dir state
-  dir=$(make_case classify-signal); state="$dir/state"
-  printf 'working: step 1\nworking: step 2\n' > "$state/a.status"
-  signal_reason_is_actionable "$state/a.status" && fail "benign working: signal classified actionable"
-  printf 'working: x\nneeds-decision: pick A or B\n' > "$state/b.status"
-  signal_reason_is_actionable "$state/b.status" || fail "captain-relevant signal classified benign"
-  : > "$state/c.turn-ended"
-  signal_reason_is_actionable "$state/c.turn-ended" && fail "a bare turn-ended marker classified actionable"
-  # Coalesced batch: one benign + one captain-relevant -> actionable.
-  signal_reason_is_actionable "$state/a.status" "$state/b.status" || fail "coalesced benign+actionable not actionable"
-  pass "signal_reason_is_actionable: benign absorbed, captain verbs and coalesced batches surfaced"
+# An attributable owned-run failure must reach firstmate even when an earlier
+# provably-working classification already retired this window's pause tracking and
+# the worker's pane never changes again - the normal shape of a worker idling in a
+# declared wait while firstmate runs its validation. First delivery must not depend
+# on a pause marker that the working classification itself deleted.
+test_owned_failure_after_working_reaches_a_declared_wait() {
+  local dir state fakebin out capture_file pid key verb
+  for verb in paused captain-held; do
+    dir=$(make_case "failure-after-working-$verb"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; capture_file="$dir/pane.txt"; key=test_fm-task
+    printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+    printf '%s: waiting on the validation run\n' "$verb" > "$state/task.status"
+    prime_turnend_seen "$state/task.status"
+    printf 'idle while firstmate validates\n' > "$capture_file"
+    # Exactly the state a prior working classification leaves behind: the stale
+    # suppressor and wedge timer are live, and pause tracking is already retired.
+    printf '%s' "$(hash_text 'idle while firstmate validates')" > "$state/.hash-$key"
+    cp "$state/.hash-$key" "$state/.stale-$key"
+    printf '3\n' > "$state/.count-$key"
+    date +%s > "$state/.stale-since-$key"
+    [ ! -e "$state/.paused-$key" ] || fail "fixture seeded pause tracking it meant to retire"
+    watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+      FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
+      FM_FAKE_CREW_STATE='state: failed · source: run-step · run failed' FM_STALE_ESCALATE_SECS=999
+    pid=$!
+    wait_for_exit "$pid" 60 \
+      || { reap "$pid"; fail "$verb worker: the failed run stayed invisible on an unchanged pane"; }
+    grep -F 'owned run failed' "$state/.wake-queue" >/dev/null \
+      || fail "$verb worker: the failure wake lost its cause: $(cat "$state/.wake-queue")"
+    [ "$(wc -l < "$state/.wake-queue" | tr -d '[:space:]')" -eq 1 ] \
+      || fail "$verb worker: one failed run produced more than one queue record"
+    FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
+    watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+      FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
+      FM_FAKE_CREW_STATE='state: failed · source: run-step · run failed' FM_STALE_ESCALATE_SECS=999
+    pid=$!
+    if ! wait_live "$pid" 45; then
+      reap "$pid"; fail "$verb worker: the same failed run reawoke after drain: $(cat "$out")"
+    fi
+    [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "$verb worker: requeued the delivered failure"; }
+    reap "$pid"
+  done
+  pass "an owned run failure reaches a declared wait whose pause tracking a prior working classification retired"
 }
+
+# One attributable failure is one wake. An unresolved run keeps reporting failed on
+# every read, so neither a changed pane nor a watcher restart may re-announce it;
+# a genuinely distinct later failure, after the crew classifies as working again,
+# must still deliver.
+test_owned_failure_delivers_once_across_pane_changes_and_restart() {
+  local dir state fakebin out capture_file crew_state pid key i
+  dir=$(make_case failure-once-ordinary); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; crew_state="$dir/crew-state"; key=test_fm-task
+  printf 'window=test:fm-task\nkind=ship\nharness=codex\nbackend=tmux\n' > "$state/task.meta"
+  printf 'working: handed to validation\n' > "$state/task.status"
+  prime_turnend_seen "$state/task.status"
+  printf 'idle worker pane, take 1\n' > "$capture_file"
+  # File-backed crew state so the authoritative verdict can change while one real
+  # watcher keeps running, the way a pipeline run actually transitions.
+  printf 'state: failed · source: run-step · run failed\n' > "$crew_state"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the generated fake expands $1 itself.
+  printf '#!/usr/bin/env bash\n[ "${1:-}" = --progress-token ] && exit 0\ncat "%s"\n' "$crew_state" \
+    > "$fakebin/fm-crew-state.sh"
+  chmod +x "$fakebin/fm-crew-state.sh"
+
+  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=999
+  pid=$!
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail "the owned run failure never delivered"; }
+  grep -F 'owned run failed' "$state/.wake-queue" >/dev/null \
+    || fail "the failure wake lost its cause: $(cat "$state/.wake-queue")"
+  [ "$(wc -l < "$state/.wake-queue" | tr -d '[:space:]')" -eq 1 ] \
+    || fail "one failed run produced more than one queue record"
+  FM_SUPERVISION_MODEL=autoarm FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" 2>/dev/null
+
+  # Restart on a different settled pane: the same unresolved failure stays quiet.
+  printf 'idle worker pane, take 2\n' > "$capture_file"
+  watch_bg "$state" "$fakebin" "$out" FM_FAKE_TMUX_WINDOW=test:fm-task \
+    FM_FAKE_TMUX_CAPTURE="$capture_file" FM_FAKE_TMUX_CURRENT_COMMAND=codex FM_STALE_ESCALATE_SECS=999
+  pid=$!
+  if ! wait_live "$pid" 60; then
+    reap "$pid"; fail "the same failure re-announced on a changed pane after restart: $(cat "$out")"
+  fi
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "the delivered failure was requeued"; }
+
+  # The run is re-armed: an authoritative working read must retire the receipt.
+  printf 'state: working · source: run-step · validating (running)\n' > "$crew_state"
+  printf 'idle worker pane, take 3\n' > "$capture_file"
+  i=0
+  while [ -e "$state/.failed-$key" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ ! -e "$state/.failed-$key" ] || { reap "$pid"; fail "a re-armed run did not retire the failure receipt"; }
+  if ! wait_live "$pid" 20; then
+    reap "$pid"; fail "a re-armed run woke the primary: $(cat "$out")"
+  fi
+
+  # A genuinely distinct later failure must deliver again.
+  printf 'state: failed · source: run-step · run failed\n' > "$crew_state"
+  printf 'idle worker pane, take 4\n' > "$capture_file"
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "a distinct later failure was suppressed"; }
+  grep -F 'owned run failed' "$state/.wake-queue" >/dev/null \
+    || fail "the later failure lost its cause: $(cat "$state/.wake-queue")"
+  [ "$(wc -l < "$state/.wake-queue" | tr -d '[:space:]')" -eq 1 ] \
+    || fail "the later failure produced more than one queue record"
+  pass "an owned run failure is announced once across pane changes and restart, and a distinct later failure still delivers"
+}
+
+# --- pure classifier predicates (fm-classify-lib.sh) ------------------------
 
 test_stale_is_terminal_classifier() {
   local dir state
@@ -555,7 +663,7 @@ test_status_is_paused_classifier() {
 # crew_absorb_class: the single fm-crew-state.sh read that returns BOTH absorb
 # reasons - working (active run/busy pane), paused (declared external wait), or none
 # (surface it) - so the watcher's stale path gets both for one bounded call.
-# crew_is_paused delegates to it exactly as crew_is_provably_working does.
+# crew_is_provably_working delegates to it for the watcher's absorb decision.
 # Provenance is part of every verdict, not just working's: only a run-step the
 # reader attributed to this crew's own code is an owned-run failure.
 test_crew_absorb_class_classifier() {
@@ -569,7 +677,6 @@ test_crew_absorb_class_classifier() {
   [ "$(crew_absorb_class a)" = working ] || fail "busy pane not classed working"
   FM_FAKE_CREW_STATE='state: paused · source: status-log · awaiting upstream'
   [ "$(crew_absorb_class a)" = paused ] || fail "declared pause not classed paused"
-  crew_is_paused a || fail "crew_is_paused did not recognize a paused verdict"
   ! crew_is_provably_working a || fail "a paused crew was treated as provably working"
   FM_FAKE_CREW_STATE='state: working · source: status-log · working: compiling'
   [ "$(crew_absorb_class a)" = none ] || fail "stale working: status-log classed absorbable"
@@ -580,7 +687,7 @@ test_crew_absorb_class_classifier() {
     || fail "a worker-declared failed: outcome was classed as an owned pipeline-run failure"
   FM_FAKE_CREW_STATE='state: unknown · source: none · worktree gone'
   [ "$(crew_absorb_class a)" = none ] || fail "unknown crew classed absorbable"
-  ! crew_is_paused a || fail "unknown crew classed paused"
+  ! crew_is_provably_working a || fail "unknown crew classed absorbable by the working wrapper"
   [ "$(crew_absorb_class "")" = none ] || fail "empty id not classed none"
   unset FM_FAKE_CREW_STATE
   pass "crew_absorb_class: working/paused/failed/none from one read, each gated on its own provenance"
@@ -1938,16 +2045,17 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
 }
 
 test_captain_directed_initialization_is_quiet_but_run_failure_delivers
-test_routine_turnend_restarts_progress_grace
+test_routine_turnend_preserves_wedge_bookkeeping
 test_append_snapshot_and_grace_preserve_explicit_work
 test_owned_failure_overrides_done_or_pause_once
 test_failed_status_outcome_delivers_once_for_every_process
+test_owned_failure_after_working_reaches_a_declared_wait
+test_owned_failure_delivers_once_across_pane_changes_and_restart
 test_completion_retires_old_stall_timer
 test_declared_progress_gets_stall_grace_and_terminal_stays_consumed
 test_declared_pause_is_silent_for_live_and_exited_agents
 test_declared_routine_signals_do_not_wake
 test_explicit_append_survives_later_routine_and_restart
-test_signal_reason_is_actionable_classifier
 test_stale_is_terminal_classifier
 test_scan_captain_relevant_statuses_classifier
 test_classifier_primitives

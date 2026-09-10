@@ -8,7 +8,11 @@
 # captain-directed contract, workers retain the positive-working recovery fallback.
 # Declared waits are rechecked internally, and progress uses the existing stall
 # grace. Owned active runs and failures take precedence over old status. Delivered
-# outcomes do not reawaken merely because the pane changes.
+# outcomes do not reawaken merely because the pane changes, and an owned-run
+# failure is announced once until the crew classifies as something else. A routine
+# status or turn-end event is consumed without a model turn but is not evidence of
+# useful progress, so it never retires an ordinary window's possible-wedge timer or
+# escalation count; only owned pipeline progress and a changed pane do that.
 # While state/.afk exists, the daemon retains its own one-shot triage policy.
 # Printed reason lines:
 #   signal: <file>...      explicit status events or undeclared-worker recovery
@@ -366,6 +370,35 @@ clear_pause_tracking() {  # <window>
   rm -f "$STATE/.stale-$key" "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key" "$STATE/.wedge-escalations-$key"
 }
 
+# Per-window receipt for an owned no-mistakes run that fm-crew-state.sh attributes
+# to this crew's own code and reports failed. An unresolved failed run keeps
+# reporting failed on every later read, so without a receipt each new settled pane
+# hash - or each watcher restart - would re-announce the same failure. It lives in
+# its own marker rather than sharing .paused-<key>, because pause tracking is
+# retired by unrelated transitions (a prior provably-working classification) that
+# say nothing about whether the failure was delivered. Both delivery processes use
+# it, so an ordinary and a captain-directed worker announce a failure identically.
+# failure_receipt_sync is the ONLY retirement path: any authoritative class other
+# than failed (the run was re-armed, finished, or the crew is working again) clears
+# the receipt, so a genuinely distinct later failure delivers again.
+failure_receipt_path() {  # <window>
+  printf '%s/.failed-%s' "$STATE" "$(printf '%s' "$1" | tr ':/.' '___')"
+}
+
+failure_already_delivered() {  # <window>
+  [ "$(cat "$(failure_receipt_path "$1")" 2>/dev/null)" = failed ]
+}
+
+# Recorded only AFTER the wake is durably queued, matching the queue-before-
+# consumption ordering every other suppressor here follows.
+record_failure_delivered() {  # <window>
+  printf 'failed' > "$(failure_receipt_path "$1")"
+}
+
+failure_receipt_sync() {  # <window> <authoritative-class>
+  [ "$2" = failed ] || rm -f "$(failure_receipt_path "$1")"
+}
+
 # Reconcile a declared pause or captain-held status with authoritative crew state.
 # A deliberate ordinary-worker wait survives stopped or unknown state; only
 # positive active-run or failure evidence overrides it.
@@ -376,14 +409,19 @@ pause_state_class() {  # <window> <task>
   recheck_file="$STATE/.paused-rechecked-$key"
   if ! status_is_paused_or_captain_held "$last"; then
     rm -f "$recheck_file"
-    crew_absorb_class "$task"
+    class=$(crew_absorb_class "$task")
+    failure_receipt_sync "$win" "$class"
+    printf '%s' "$class"
     return
   fi
+  # The throttled arm answers from the pause marker alone, without an
+  # authoritative read, so it is never evidence that a failure was resolved.
   if [ -e "$STATE/.paused-$key" ] && [ "$(age_of "$recheck_file")" -lt "$STALE_ESCALATE_SECS" ]; then
     printf 'paused'
     return
   fi
   class=$(crew_absorb_class "$task")
+  failure_receipt_sync "$win" "$class"
   case "$class" in
     working|failed) rm -f "$recheck_file"; printf '%s' "$class"; return ;;
   esac
@@ -406,7 +444,14 @@ surface_nonterminal_stale() {  # <window> <hash> [failed]
   key=$(printf '%s' "$win" | tr ':/.' '___')
   task=$(window_to_task "$win" "$STATE")
   signal_marker="$STATE/.signal-surfaced-$task"
-  if [ "$failure" != failed ] && [ "$(age_of "$signal_marker")" -lt "$SIGNAL_STALE_GRACE" ]; then
+  if [ "$failure" = failed ]; then
+    if failure_already_delivered "$win"; then
+      printf '%s' "$h" > "$STATE/.stale-$key"
+      rm -f "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key"
+      triage_log "absorbed stale (owned run failure already delivered): $win"
+      return 0
+    fi
+  elif [ "$(age_of "$signal_marker")" -lt "$SIGNAL_STALE_GRACE" ]; then
     printf '%s' "$h" > "$STATE/.stale-$key"
     rm -f "$signal_marker"
     wedge_timer_start "$win" "$STATE/.stale-since-$key" "$task"
@@ -418,6 +463,7 @@ surface_nonterminal_stale() {  # <window> <hash> [failed]
   fm_wake_append stale "$win" "$reason" || exit 1
   printf '%s' "$h" > "$STATE/.stale-$key"
   rm -f "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key" "$signal_marker"
+  [ "$failure" != failed ] || record_failure_delivered "$win"
   last=$(last_status_line "$STATE/$task.status")
   if [ "$failure" != failed ] && status_is_paused_or_captain_held "$last"; then
     : > "$STATE/.paused-$key"
@@ -431,24 +477,25 @@ surface_nonterminal_stale() {  # <window> <hash> [failed]
 
 # Captain-directed builders route coordination explicitly. Reuse the existing
 # pause/recheck detector state for a bounded current-state read, never a model
-# wake based on pane or busy age. The pause marker stores `failed` only after a
-# failed-run wake is durable; recovery to any other state clears that receipt.
+# wake based on pane or busy age. An owned-run failure is announced once through
+# the shared failure receipt, exactly as the ordinary process announces it.
 # A dead/missing shell is not proof of an exit: spawn publishes metadata before
 # launch and Codex has no generation-bound turn-end source. Such unproven exits
-# remain the targeted/session-start recovery owner's responsibility.
+# remain the targeted/session-start recovery owner's responsibility, and this
+# process deliberately carries no silent-crash or hang guarantee.
 handle_captain_directed_window() {  # <window> <task>
-  local win=$1 task=$2 key class recheck paused reason
+  local win=$1 task=$2 key class recheck reason
   key=$(printf '%s' "$win" | tr ':/.' '___')
   recheck="$STATE/.paused-rechecked-$key"
-  paused="$STATE/.paused-$key"
   [ "$(age_of "$recheck")" -ge "$STALE_ESCALATE_SECS" ] || return 0
   class=$(crew_absorb_class "$task")
+  failure_receipt_sync "$win" "$class"
   if [ "$class" = failed ]; then
-    if [ "$(cat "$paused" 2>/dev/null)" != failed ]; then
+    if ! failure_already_delivered "$win"; then
       reason="stale: $win (owned run failed)"
       fm_wake_append stale "$win" "$reason" || exit 1
       clear_pause_tracking "$win"
-      printf 'failed' > "$paused"
+      record_failure_delivered "$win"
       date +%s > "$recheck"
       wake "$reason"
     fi
@@ -895,17 +942,6 @@ EOF
             : > "$STATE/.signal-surfaced-$signal_task"
           fi
           ;;
-        *)
-          case "$f" in
-            *.status|*.turn-ended)
-              signal_task=${f##*/}; signal_task=${signal_task%.status}
-              signal_task=${signal_task%.turn-ended}
-              task_is_captain_directed "$signal_task" && continue
-              signal_window=$(fm_backend_target_of_meta "$STATE/$signal_task.meta" 2>/dev/null || true)
-              [ -z "$signal_window" ] || clear_pause_tracking "$signal_window"
-              ;;
-          esac
-          ;;
       esac
     done <<EOF
 $pending
@@ -990,6 +1026,7 @@ EOF
           # over the log) a chance to override before trusting the log.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             terminal_class=$(crew_absorb_class "$task")
+            failure_receipt_sync "$w" "$terminal_class"
             if [ "$terminal_class" = failed ]; then
               surface_nonterminal_stale "$w" "$h" failed
             elif [ "$terminal_class" = working ]; then
@@ -1064,9 +1101,7 @@ EOF
                          printf '%s' "$h" > "$sf"
                          wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf" "$task"
                          triage_log "absorbed non-terminal stale (provably working): $w" ;;
-                failed)  if [ -e "$pf" ]; then
-                           surface_nonterminal_stale "$w" "$h" failed
-                         fi ;;
+                failed)  surface_nonterminal_stale "$w" "$h" failed ;;
                 *)       handle_paused_stale "$w" "$task" "$h" ;;
               esac
             else

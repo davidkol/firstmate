@@ -28,8 +28,9 @@ A concurrent replacement remains armed, every non-merged or invalid observation 
 A known status declaration makes its associated turn-end routine; workers without either a declaration or the captain-directed contract retain the positive-working-evidence fallback.
 Declared pauses and durable captain holds remain silent while idle, including live workers waiting for an answer in their own window.
 The normal watcher rechecks these waits internally without a model wake; an active or failed owned run takes precedence over an old declaration.
-Routine progress receives the existing stall grace instead of an immediate idle-pane wake, and fresh progress resets that bookkeeping.
+Routine progress receives the existing stall grace instead of an immediate idle-pane wake; only owned pipeline progress and a changed pane reset that bookkeeping, so a worker that keeps emitting routine notes on an unchanged pane still reaches its possible-wedge escalation.
 An already delivered outcome cannot become another wake merely because its idle pane changes, while a subsequent owned-run failure remains actionable.
+An owned-run failure attributed to the crew's own code is announced once for both delivery processes, across changed panes and watcher restarts, and is re-armed for announcement only when an authoritative read classifies the crew as something other than failed.
 Native backend blocked transitions respect declared waits, delivered outcomes and the captain-directed process; other working or undeclared workers retain the native permission-gate recovery path.
 Away mode keeps its separate daemon-owned triage and long external-wait rechecks.
 No-change heartbeats are also benign.
