@@ -2,9 +2,28 @@
 
 Audience: maintainer verification.
 
-This record supports four current ordinary-route guarantees: that a no-mistakes ship task reports its PR at the pipeline's CI-ready return point, including on a repository whose PR registers no checks, that the `validated-main` delivery mode validates through the same pipeline without ever opening a PR, that the pipeline reads repository `commands` and `agent` from the trusted default-branch config, and that `bin/fm-teardown.sh` can conclude a task's own parked run before removing the worker that would have answered its gate.
+This record preserves empirical guarantees for explicitly requested no-mistakes runs and existing run custody: PR CI-readiness, mode-derived pipeline skips, trusted configuration, and parked-run cleanup.
+Ordinary tasks use direct checks and one fresh-context review; mode names alone never request a pipeline.
 `AGENTS.md` section 7 owns the operating contract and `bin/fm-crew-state.sh` owns the state mapping.
 Task-specific chronology, temporary paths, run identifiers, and delivery transcripts remain in private reports or PR evidence.
+
+## Ordinary validation and explicit opt-in
+
+Verified on 2026-09-11 with Bash 5.3.15 and stock macOS Bash 3.2.57.
+The bootstrap and brief suites executed through `bin/fm-test-run.sh --all --exclude-family real-herdr-gated --json /tmp/fm-optional-full.json` exercise isolated homes with absent or broken no-mistakes, ordinary brief generation in every topology, canonical reviewer duties, and explicitly requested pipeline scaffolds.
+The bootstrap fixture checks all other required tools before generating an ordinary validated-main brief in the same home.
+Current assertions include:
+
+```text
+ok - bootstrap needs neither installed nor working no-mistakes
+ok - ordinary briefs use direct checks and one review in every topology
+ok - no-mistakes opt-in refuses nonordinary variants before writing
+```
+
+`tests/fm-promote.test.sh` covers ordinary and explicitly opted-in promotion; `tests/fm-validate.test.sh` exercises the preserved optional wrapper with a recording CLI mock.
+`tests/fm-secondmate-safety.test.sh` verifies seeding preserves existing gates and does not initialize new ones.
+`tests/fm-merge-main.test.sh` and `tests/fm-merge-local.test.sh` cover the unchanged guarded delivery mechanics.
+These are executable fixture and instruction-delivery guarantees; they do not assert a new live no-mistakes run or live harness validation.
 
 ## Captain-directed instruction delivery
 
@@ -21,8 +40,8 @@ ok - fm-doctrine-contract.sh: evidence depth stays proportional across ordinary 
 
 The automated interface assertions cover instructions for routine correction versus reserved captain decisions, focused checks versus trivial changes, the ledger-owner pointer, measurement handoff, and the absence of obsolete captain-picked-fix instructions.
 Partial and complete play clocks, active captain attention, attribution gaps, and historical unknowns were reviewed manually against the linked ledger owner using synthetic scenarios; accounting behavior was not executed.
-Separately generated briefs were read alongside their linked owner, including an ordinary validated-main control that retained its existing pipeline instructions.
-This verifies instruction delivery and preservation of the ordinary route, not future game correctness, actual slice measurements, live harness behavior, or a newly executed no-mistakes pipeline.
+Separately generated briefs were read alongside their linked owner, including a then-ordinary validated-main control that retained pipeline instructions; that control is now covered only with explicit opt-in.
+That historical verification covers instruction delivery, not future game correctness, actual slice measurements, live harness behavior, or a newly executed no-mistakes pipeline.
 
 ## No registered checks is a CI-ready result
 
@@ -81,7 +100,7 @@ Nothing in firstmate should be built on the assumption that a repository can dec
 
 Verified on 2026-07-28 against the same binary version.
 
-This is the evidence the ordinary `validated-main` route rests on, and it settles a question that is easy to get wrong in the opposite direction.
+This supports explicitly opted-in `validated-main` runs; ordinary direct validation does not depend on a pipeline.
 
 The pipeline refuses to run on the default branch at all, so no flag combination makes it push the default branch itself.
 The shipped skill at `~/.claude/skills/no-mistakes/SKILL.md` states it under "Before you start":
@@ -135,7 +154,7 @@ pr_state: none
 
 The review step ran for 28.7 seconds and parked at its gate with a real finding before anything else advanced, so skipping `pr` does not skip `review`.
 Only `pr` and `ci` report `skipped`; the entire local review surface completed, and `pr_state: none` confirms no pull request was ever created.
-On this ordinary route, dropping the PR drops ceremony, not the reviewer; reading "no PR" as "no pipeline" would remove the route's only independent read before the default branch.
+For this optional run, the pipeline supplied the independent review while omitting PR delivery.
 
 The same run also pins why landing must read the published head rather than the local branch:
 
@@ -226,7 +245,7 @@ On a separate 6-line shell helper it returned three findings including a confirm
 
 ### The local-only review publishes nothing
 
-On the ordinary route, `local-only` forbids reaching any remote, so its pipeline review is only safe because `push` is one of the eight skipped steps.
+`local-only` forbids publishing to any remote, including when it explicitly opts into pipeline review; that run skips `push`.
 Verified on 2026-07-30 against the same binary, on a repository shaped like the registry's `local-only` project: an `origin` pointing at a local filesystem path rather than a forge.
 
 `bin/fm-validate.sh` announced the derived set, and the review ran:
@@ -242,7 +261,7 @@ The task branch was never published, and no other ref appeared.
 ### A repository with no remote at all cannot run this review
 
 Verified on 2026-07-30 against the same binary.
-This is a real limit, not a configuration mistake, and it is the one case where the ordinary pipeline route cannot carry its reviewer.
+This is a limit of the optional pipeline, not of ordinary direct review.
 
 `no-mistakes axi run` refuses without an initialized gate:
 
@@ -261,7 +280,7 @@ no-mistakes pushes your branch and opens a pull request, so it needs a remote to
 ```
 
 An `origin` on a local filesystem path satisfies it, which is what a clone of a local repository already has, so the fleet's registered `local-only` project can run the review.
-A project with genuinely no remote cannot, and that must be recorded as a named gap on the project rather than described as a safeguard that is running.
+A project with no remote cannot run that optional pipeline review; report the gap for an opted-in task without adding a remote or blocking ordinary direct review.
 
 ### Measured cost
 

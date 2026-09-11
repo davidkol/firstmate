@@ -72,7 +72,7 @@ test_project_management_owner_covers_guarded_operations() {
     'Creating a GitHub repository is outward-facing.' \
     "captain's explicit consent" \
     'Never issue a raw removal command from Firstmate.' \
-    'no-mistakes init && no-mistakes doctor'; do
+    'Only when a task explicitly requests no-mistakes'; do
     assert_grep "$phrase" "$PROJECT" "project-management owner is missing '$phrase'"
   done
   pass "project-management owns registry, delivery posture, consent, initialization, and removal safety"
@@ -285,12 +285,12 @@ test_compressed_agents_retains_authority_and_supervision_safety() {
   for phrase in \
     'A lock-refused session must not spawn, steer, merge, drain the wake queue' \
     'A diagnostic request, report, recommendation, or implementation-ready finding is evidence, not authorization to change code.' \
-    'When no-mistakes is selected, no-mistakes alone owns review, fixes, tests, documentation, push, PR, and CI; otherwise follow the faster path and add no reviewer beyond the one that path already runs.' \
-    'No mode ever skips the review step' \
-    'Never hold work outside no-mistakes for a manual clean verdict, stack serial manual reviews, or infer authority for one from security, architecture, or risk alone.' \
+    'When selected, no-mistakes owns its review, fixes, tests, documentation, push, PR, and CI steps; do not stack a manual review ahead of or after that run.' \
+    'Use one fresh-context reviewer with the final diff' \
+    'Use no-mistakes only when explicitly requested for the task; neither a legacy registry mode nor an installed CLI opts a task in.' \
     'A separate review or audit is allowed only when the captain explicitly requests that deliverable or the authorized task is a knowledge-only review; one named question remains scoped to that question.' \
-    'has the worker stop with a clean ready branch, then waits for the configured merge authority' \
-    '**local-only** runs that same review-only pass, which publishes nothing' \
+    'stops with a clean ready branch, then waits for the configured merge authority' \
+    '**local-only** publishes nothing' \
     'A status line is a wake event, not current state' \
     'keep exactly one live supervision cycle' \
     'Never broadly kill watchers' \

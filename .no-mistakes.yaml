@@ -1,4 +1,4 @@
-# Per-repo no-mistakes overrides.
+# Per-repo overrides for explicitly requested no-mistakes tasks only.
 
 # firstmate is an agent-orchestration repo: its AGENTS.md installs a fleet-captain
 # identity. Disable project-level agent settings/instructions for gate agents so a
@@ -39,10 +39,8 @@ document:
 # tests instead of the end-to-end lanes that start terminal sessions, spawn
 # agents, and run daemons on real timing.
 #
-# Both alternatives are worse. `--all` makes every change pay for the complete
-# walk. An absent command leaves the regression suite running nowhere:
-# `.github/workflows/ci.yml` defines the reference lane composition, but no
-# hosted CI runs on this fork, so nothing executes those lanes.
+# Ordinary work runs these checks directly. Opted-in runs keep the same scoped
+# command; `.github/workflows/ci.yml` defines the complete reference lanes.
 # CONTRIBUTING.md owns the full local test policy and its entry points.
 #
 # `--require-nonempty` is what keeps this a gate. Without it an unmapped change

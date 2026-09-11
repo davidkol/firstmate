@@ -30,21 +30,9 @@ Do not overwrite or repurpose an existing path.
 
 ## Delivery posture
 
-Choose the delivery mode when adding or creating the project:
-The four modes below describe the ordinary ship route.
-The [`game-development-process`](../game-development-process/SKILL.md) skill owns the captain-directed review and landing procedure, so do not infer that procedure's pipeline behavior from these bullets.
-
-- `no-mistakes` runs the full validation pipeline before a PR and is the default when the captain does not specify a mode.
-- `validated-main` runs that same pipeline with only its PR and CI steps skipped, then lands on the default branch through the approved `bin/fm-merge-main.sh` path and pushes it; no PR is ever opened.
-- `direct-PR` runs the pipeline's review step alone, then pushes and opens a PR.
-- `local-only` runs the same review-only pass, which publishes nothing, has no required PR, and lands only through the approved local fast-forward path.
-
-The PR and CI omission is a property of the mode, not of a call site: `bin/fm-validate.sh` derives it from the task's recorded mode, so no worker passes a flag and any re-run inherits it.
-
-On the ordinary route, `validated-main` and `direct-PR` are not interchangeable, and the difference is how much of the pipeline runs, not the PR.
-`validated-main` keeps the pipeline's local review, test, document, and lint steps and drops only the two host-facing steps, which is what makes landing straight on the default branch safe.
-`direct-PR` keeps the review step alone and drops the other eight, so a light change is still read by an agent that did not write it before the PR opens.
-Every ordinary mode keeps the pipeline review; no ordinary mode may be configured to drop it.
+Choose the delivery topology when adding or creating a project; default new projects to `direct-PR`.
+`AGENTS.md` section 7 owns each mode's landing route, direct validation, and explicit per-task no-mistakes opt-in.
+Preserve existing registry entries, including legacy `no-mistakes` mode; a registry label does not request a validation tool for a task.
 
 The optional `+yolo` posture changes routine approval authority but does not change the delivery mode.
 Default it off, and enable it only on the captain's explicit instruction.
@@ -57,33 +45,25 @@ When the repository is not already present, clone it to the captain-approved pro
 Add the registry entry only after that canonical destination is known to be unused and is verified as the repository root.
 When migrating an existing pathless entry, use `bin/fm-project-path-set.sh`; it compares the existing managed checkout's `origin` identity with the requested canonical checkout, refuses physical aliases used by in-flight task metadata, and leaves unrelated pathless entries untouched.
 Land and clean up in-flight tasks recorded before migration first; [`docs/configuration.md` "Canonical project repositories"](../../../docs/configuration.md#canonical-project-repositories) owns that rule.
-A `no-mistakes` or `validated-main` project must have an `origin` remote and must complete the initialization procedure below.
-A `direct-PR` project needs an `origin` remote and drives the pipeline's review step, so it needs the same local gate; its first task initializes it lazily through the generated brief's `no-mistakes doctor` step, so an add that skips the procedure below still works.
-A `local-only` project's ordinary route runs the pipeline review step too, and its gate initializes from an `origin` pointing at a local filesystem path, which is what a clone of a local repository already has; its first ordinary task initializes it lazily the same way.
-A `local-only` project with no `origin` remote at all cannot run the ordinary pipeline review, because `no-mistakes init` refuses without one - record that as a named ordinary-route gap rather than describing a safeguard that is not running.
+Remote delivery modes need an `origin` remote.
+A `local-only` project needs no remote for direct checks, review, or guarded local landing.
 
 ## Create a project
 
 Creating a GitHub repository is outward-facing.
-Before making that remote change, propose the repository name, owner or organization, visibility, and delivery mode, defaulting visibility to private and delivery mode to `no-mistakes`, then obtain the captain's explicit consent for those values.
+Before making that remote change, propose the repository name, owner or organization, visibility, and delivery mode, defaulting visibility to private and delivery mode to `direct-PR`, then obtain the captain's explicit consent for those values.
 Use `gh-axi` for the approved GitHub operation and consult its current help rather than relying on remembered flags.
 After remote creation succeeds, clone it at the captain-approved canonical path, add the registry entry, and initialize it according to its delivery mode.
 
 For a purely `local-only` project, create a local Git repository at the captain-approved canonical path outside Firstmate's managed `projects/` directory, add the registry entry, and make no GitHub call.
 The captain's request to create that local project authorizes this local initialization, but it does not authorize an unmentioned remote repository.
-A repository created this way has no `origin` remote at all, which is exactly the case that cannot run the ordinary pipeline review, so record the named gap the add-or-clone section above requires rather than claiming that safeguard is active.
+The local path keeps direct verification and review without adding a remote.
 
-## Initialize
+## Optional no-mistakes initialization
 
-Run no-mistakes initialization for every project with an `origin` remote, because every delivery mode supports an ordinary route that drives at least the pipeline's review step:
-
-```sh
-cd /canonical/project/path && no-mistakes init && no-mistakes doctor
-```
-
-Initialization configures the local gate and does not vendor a no-mistakes skill into the project.
-Do not create a commit merely because initialization ran.
-If doctor reports an environment, authentication, or daemon problem, resolve that blocker before dispatching work and never restart the shared daemon from a project operation.
+Only when a task explicitly requests no-mistakes, have its worker follow the installed skill and live help to initialize the task's gate and run doctor.
+That optional tool requires an `origin` remote; report any missing prerequisite for the opted-in task without turning it into an ordinary dispatch requirement.
+Do not install, initialize, or restart a shared daemon as a side effect of project registration.
 
 ## Reconcile the project's state surfaces
 

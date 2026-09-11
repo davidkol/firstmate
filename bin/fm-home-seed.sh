@@ -37,10 +37,9 @@
 #       never converts populated homes in place. An explicit <home> inside
 #       another firstmate home - any ancestor carrying .fm-secondmate-home or
 #       .fm-peer-home - is refused without change. The charter brief
-#       is copied to data/charter.md, newly cloned no-mistakes projects are
-#       initialized, an ignored .fm-secondmate-home identity marker is written, and
+#       is copied to data/charter.md, an ignored .fm-secondmate-home identity marker is written, and
 #       data/secondmates.md is updated.
-#       Seeding is transactional: on validation, clone, init, or registry failure,
+#       Seeding is transactional: on validation, clone, or registry failure,
 #       generated briefs, new homes, new project clones, and registry edits are
 #       rolled back. Treehouse-acquired homes are returned only when the rollback
 #       target is safe; a failed return warns because the lease may still be held.
@@ -816,12 +815,6 @@ seed_remove_created_home_dirs() {
   done
 }
 
-seed_project_was_created() {
-  local project_path=$1
-  [ -n "${SEED_CREATED_PROJECTS_FILE:-}" ] || return 1
-  [ -f "$SEED_CREATED_PROJECTS_FILE" ] || return 1
-  grep -Fx -- "$project_path" "$SEED_CREATED_PROJECTS_FILE" >/dev/null 2>&1
-}
 
 seed_rollback() {
   local project_path
@@ -871,13 +864,6 @@ registry_line_for_project() {
   printf '%s\n' "$line"
 }
 
-project_mode_in_home() {
-  local home=$1 project=$2 mode
-  read -r mode _ <<EOF
-$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' FM_HOME="$home" "$FM_ROOT/bin/fm-project-mode.sh" "$project")
-EOF
-  printf '%s\n' "$mode"
-}
 
 sync_project_registry() {
   local home=$1 kind=$2 sub_reg tmp project line today names
@@ -913,39 +899,6 @@ sync_project_registry() {
   mv "$tmp" "$sub_reg"
 }
 
-initialize_no_mistakes_project() {
-  local home=$1 project=$2 created=$3 mode dst
-  mode=$(project_mode_in_home "$home" "$project")
-  # Every delivery mode supports an ordinary route that drives at least the
-  # pipeline's review step, so every project with an origin remote needs a local
-  # gate. The seed still creates it
-  # only for the full-pipeline modes, which need it before their first run:
-  # validated-main drives the same pipeline as no-mistakes and only skips its PR
-  # and CI steps at run time. A light-path clone gets its gate lazily instead,
-  # from the `no-mistakes doctor` step in the brief fm-brief.sh generates, which
-  # keeps the seed from touching a preexisting clone the `created != 1` guard
-  # below deliberately refuses to mutate.
-  case "$mode" in
-    no-mistakes|validated-main) ;;
-    *) return 0 ;;
-  esac
-  dst=$(validate_project_destination "$home" "$project") || return 1
-  if git -C "$dst" remote get-url no-mistakes >/dev/null 2>&1; then
-    return 0
-  fi
-  if [ "$created" != 1 ]; then
-    echo "error: seeded project $project at $dst is not initialized for no-mistakes; refusing to mutate preexisting clone" >&2
-    return 1
-  fi
-  command -v no-mistakes >/dev/null 2>&1 || {
-    echo "error: no-mistakes command not found; cannot initialize $project in $home" >&2
-    return 1
-  }
-  ( cd "$dst" && no-mistakes init && no-mistakes doctor ) || {
-    echo "error: failed to initialize no-mistakes for $project at $dst" >&2
-    return 1
-  }
-}
 
 write_registry() {
   local id=$1 home=$2 projects_csv=$3 brief=$4 scope summary tmp today
@@ -1186,21 +1139,11 @@ seed_home() {
       clone_project "$project" "$home" "$SEED_HOME_NOUN"
     done
     # The secondmate resolver's clone exception is marker-gated. Publish the
-    # transactional marker before mode-driven initialization reads this home's
+    # transactional marker before project resolution reads this home's
     # registry; the rollback journal above restores or removes it on failure.
     printf '%s\n' "$id" > "$home/$SUB_HOME_MARKER"
   fi
   sync_project_registry "$home" "$SEED_HOME_NOUN" "$@"
-  if [ "$peer" -eq 0 ]; then
-    for project in "$@"; do
-      project_dst=$(validate_project_destination "$home" "$project") || return 1
-      if seed_project_was_created "$project_dst"; then
-        initialize_no_mistakes_project "$home" "$project" 1
-      else
-        initialize_no_mistakes_project "$home" "$project" 0
-      fi
-    done
-  fi
 
   if [ "$peer" -eq 1 ]; then
     printf '%s\n' "$id" > "$home/$PEER_HOME_MARKER"

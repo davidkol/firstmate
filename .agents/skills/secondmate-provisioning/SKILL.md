@@ -117,11 +117,11 @@ Direct seed without a preexisting brief requires `FM_SECONDMATE_CHARTER`.
 Run `bin/fm-home-seed.sh validate` when checking registry integrity; it refuses duplicate ids, duplicate homes, and nested or overlapping homes.
 
 Seeding is transactional.
-If validation, cloning, no-mistakes initialization, or registry update fails, generated briefs, new homes, new project clones, and registry edits are rolled back.
+If validation, cloning, or registry update fails, generated briefs, new homes, new project clones, and registry edits are rolled back.
 
 Secondmate project lists may include remote-backed projects only: `no-mistakes`, `validated-main`, and `direct-PR`.
 `local-only` projects stay with the main firstmate.
-For `no-mistakes` and `validated-main` projects, seeding initializes only projects newly cloned into a secondmate home and refuses to mutate a preexisting clone that is not already initialized.
+Seeding never initializes a validation tool; explicit task opt-in is owned by `AGENTS.md` section 7.
 
 ## Backlog handoff
 

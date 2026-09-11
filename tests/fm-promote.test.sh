@@ -66,7 +66,7 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
   brief="$dir/home/data/scout-a/brief.md"
   printf -- '- project [local-only] - promotion fixture (added 2026-08-12)\n  path: %s\n' "$dir/project" > "$dir/home/data/projects.md"
 
-  run_promote "$dir" \
+  run_promote "$dir" --no-mistakes \
     --task-tier T1 \
     --outcome 'captain decision 1 => Ship X through the bounded path.' \
     > "$dir/promote.out" 2> "$dir/promote.err" \
@@ -127,6 +127,20 @@ test_promotion_builds_a_validated_ship_prompt_before_changing_kind() {
   assert_grep 'matched captain authority receipt:' "$dir/no-mistakes.log" \
     "validation did not forward the promoted task's matched authority receipt"
   pass "fm-promote.sh: promotion constructs a validated role-specific ship prompt"
+}
+
+test_ordinary_promotion_uses_direct_checks() {
+  local dir brief
+  dir=$(make_scout direct-validation)
+  run_promote "$dir" --task-tier T1 \
+    --outcome 'captain decision 1 => Ship X through the bounded path.' >/dev/null \
+    || fail "ordinary promotion failed"
+  brief="$dir/home/data/scout-a/brief.md"
+  assert_no_grep 'bin/fm-validate.sh' "$brief" 'ordinary promotion selected a pipeline'
+  assert_no_grep 'no-mistakes doctor' "$brief" 'ordinary promotion requires optional initialization'
+  assert_grep 'project checks and lint' "$brief" 'ordinary promotion lost direct verification'
+  assert_grep 'one fresh-context reviewer' "$brief" 'ordinary promotion lost review'
+  pass "fm-promote.sh: ordinary promotion keeps direct verification and one review"
 }
 
 test_promotion_preserves_the_captain_directed_process() {
@@ -571,3 +585,5 @@ test_promoted_setup_refuses_non_firstmate_ignored_state
 test_promotion_resumes_after_brief_publication
 test_promotion_requires_explicit_authority_instead_of_scout_prose
 test_promotion_refuses_a_generic_decision_pointer
+
+test_ordinary_promotion_uses_direct_checks

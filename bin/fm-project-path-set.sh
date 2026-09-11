@@ -73,7 +73,7 @@ TMP=$(mktemp "$FM_PROJECT_DATA/.projects.md.XXXXXX")
 trap 'rm -f "$TMP"' EXIT HUP INT TERM
 awk -v id="$PROJECT_ID" -v path="$PHYSICAL" -v requested_mode="$NEW_MODE" '
   function render(line,    mode,yolo,flags,desc,n,a,i) {
-    mode="no-mistakes"
+    mode="direct-PR"
     yolo=""
     if (match(line, /\[[^]]*\]/)) {
       flags=substr(line, RSTART + 1, RLENGTH - 2)

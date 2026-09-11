@@ -1,35 +1,18 @@
 # Contributing
 
-Thanks for wanting to contribute.
-One rule up front:
-
-**Human-authored pull requests targeting `main` must be raised through [`no-mistakes`](https://github.com/kunchenguid/no-mistakes).**
-We require this to reduce the maintainer's burden of reviewing and merging contributions.
-
-`no-mistakes` puts a local git proxy in front of your real remote.
-Pushing through it runs an AI-driven review/test/lint pipeline in an isolated worktree, forwards the push upstream only after every check passes, and opens a clean PR automatically.
-
-A GitHub Actions check (`Require no-mistakes`) runs on PRs targeting `main` and fails if the body is missing the deterministic signature that no-mistakes writes.
-It evaluates every PR opening and body edit independently, so a later edit cannot replace an earlier pending compliance check.
-GitHub Actions and Dependabot are exempt so their automation keeps working, but regular contributor PRs without the signature will not be reviewed or merged.
+Contributions use direct repository checks and one fresh-context review before publication.
+No-mistakes is optional, only when explicitly requested for the task; a PR needs no tool signature.
 
 ## Workflow
 
-1. Fork the repo, then clone the parent repo or set your local `origin` back to the parent (`git@github.com:kunchenguid/firstmate.git`).
-2. Create a branch and make your changes.
-3. Initialize the gate with your fork as the push target: `no-mistakes init --fork-url git@github.com:<you>/firstmate.git` (firstmate expects **no-mistakes v1.31.2+**; without a fork, plain `no-mistakes init` still works for maintainers with push access).
-4. Commit your changes.
-5. Push through the gate instead of pushing to `origin`:
+1. Fork and clone the repo, then create a feature branch.
+2. Make the change, run the applicable checks below, and observe the changed behavior.
+3. Have one reviewer read the final diff and accepted scope in a fresh context.
+4. Apply bounded in-scope fixes, recheck the affected behavior, and report unresolved findings or unverified axes.
+5. Commit and push the feature branch to your fork, then open a PR against the parent repo.
 
-   ```sh
-   git push no-mistakes
-   ```
-
-6. Run `no-mistakes` to attach to the pipeline, watch findings, authorize auto-fixes, and review ask-user findings as needed.
-   Follow the installed no-mistakes version's SKILL.md and live `axi` help for gate mechanics.
-7. Once the pipeline passes, it pushes the branch to your fork and opens the PR against the parent repo for you.
-
-See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/start-here/quick-start/) for the full first-run walkthrough.
+For an explicit no-mistakes opt-in, follow its installed skill and live command help for initialization and pipeline mechanics.
+The optional configuration in `.no-mistakes.yaml` remains supported; see [gate defaults](docs/configuration.md#gate-defaults-no-mistakesyaml).
 
 ## Repo conventions
 
@@ -45,7 +28,7 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 - Helper scripts in `bin/` are plain bash.
   Each starts with a usage header comment; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
-  `bin/fm-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, and pinned shellcheck version), and both CI and the no-mistakes pre-push gate run it, so local and CI can never diverge.
+  `bin/fm-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, and pinned shellcheck version), and CI and an explicitly selected no-mistakes gate run it, so local and CI can never diverge.
   It pins one exact shellcheck version and refuses to run under any other; print it with `bin/fm-lint.sh --required-version` and install that build locally.
 - Changes to harness adapters (detection in `bin/fm-harness.sh`, launch and hook mechanics in `bin/fm-spawn.sh`, semantic busy sources and trust gates in `bin/fm-busy-lib.sh`, delivery-only rendered guards in `bin/fm-tmux-lib.sh`, cleanup in `bin/fm-teardown.sh`, and facts in `.agents/skills/harness-adapters/SKILL.md`) must be verified empirically against the real harness, never written from documentation alone.
 - Giving `bin/fm-send.sh`, `bin/fm-peek.sh`, `bin/fm-watch.sh`, `bin/fm-spawn.sh`, `bin/fm-teardown.sh`, or any library they source a new `bin/*-lib.sh` dependency also means adding it to `OLD_BIN_UNCHANGED_SIBLINGS` in [`tests/fm-backend.test.sh`](tests/fm-backend.test.sh), whose header owns the reason.
@@ -61,27 +44,27 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 
 Tracked changes to firstmate itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, and `skills/` - ship on a feature branch through the delivery path this repo's registry selects, and require an explicit merge approval.
 `bin/fm-project-mode.sh` resolves that path from the maintainer's own gitignored `data/projects.md` registry, and `AGENTS.md` section 7 owns what each mode runs.
-Every one of those paths runs the review step locally, so a change is always read by an agent that did not write it; a human-authored contribution still follows the pull request rule at the top of this file.
+Every one of those paths runs the review step locally, so a change is always read by an agent that did not write it; human-authored contributions follow the workflow above.
 Before making any such change, load the agent-only `firstmate-coding-guidelines` skill (`.agents/skills/firstmate-coding-guidelines/SKILL.md`).
 It has the knowledge-placement rules that keep `AGENTS.md` from regrowing after each diet pass.
 There is no reliable way for `bin/fm-brief.sh`'s scaffold to detect that a task's repo is firstmate itself, so firstmate adds this skill's load line to firstmate-repo briefs by hand.
 A crewmate picking up such a brief should load the skill even if the brief predates this instruction.
 When supervising live crewmates, keep firstmate's own long validation or build commands in the background so watcher wakes can still be handled.
-Crewmate validation follows the installed no-mistakes version's SKILL.md and live `axi` help instead of duplicating gate mechanics in firstmate docs.
+Explicitly opted-in no-mistakes validation follows the installed version's SKILL.md and live `axi` help instead of duplicating gate mechanics in firstmate docs.
 Firstmate's wrapper still matters: crewmates route every `ask-user` finding to firstmate, which applies the authority contract in `AGENTS.md`, and crewmates avoid `--yes` because it would bypass that check and any required captain escalation.
 Local `.no-mistakes/` state and test evidence stay out of this repo; `.no-mistakes.yaml` keeps evidence in a temp directory and pins the gate's lint command to `bin/fm-lint.sh`, matching the Linux CI lint job.
-Local no-mistakes Test is scoped rather than absent or full-suite; the "Check and test the toolbelt" section below owns that policy.
+Optional no-mistakes Test is scoped rather than absent or full-suite; the "Check and test the toolbelt" section below owns that policy.
 That is firstmate-specific; do not commit `.no-mistakes/evidence/` here even when another no-mistakes-managed target project keeps committed PR evidence.
 
 Check and test the toolbelt before pushing:
 
 ```sh
 while IFS= read -r script; do /bin/bash -n "$script" || exit; done < <(bin/fm-lint.sh --list-files)   # syntax-check the canonical shell surface
-bin/fm-lint.sh   # lint the toolbelt and behavior tests; the single owner CI and the no-mistakes gate both run
+bin/fm-lint.sh   # lint the toolbelt and behavior tests; the single lint owner for direct checks, CI, and optional no-mistakes
 bin/fm-test-run.sh tests/<subject>.test.sh   # one script (primary local focus path, timed)
 bin/fm-test-run.sh --family pure-contract-unit   # ordinary family-scoped local path (serial, timed)
 bin/fm-test-run.sh --changed   # conservative changed-file-informed set (never silent full suite)
-bin/fm-test-run.sh --changed --require-nonempty   # exactly what the no-mistakes Test gate runs
+bin/fm-test-run.sh --changed --require-nonempty   # direct changed-scope check, also used by optional no-mistakes
 bin/fm-test-run.sh --proven-isolated --jobs 4   # explicit local parallel of the proven set only (default is serial)
 bin/fm-test-run.sh --lane portable-serial   # portable serial remainder (watcher/AFK/tmux/stateful)
 bin/fm-test-run.sh --check-coverage   # prove portable shards + serial + Herdr equal the full inventory
@@ -97,12 +80,12 @@ tmp=$(mktemp -d) && printf 'done: smoke\n' > "$tmp/smoke.status" && FM_STATE_OVE
 Its header and `--help` own the flags, family labels, lanes, and changed-file map; this section only documents the entry points.
 `bin/fm-test-isolation-proof.sh` remains the single owner of the Phase 2 concurrent isolation proof and the exact proven candidate set; see `docs/fm-test-isolation-proof.md`.
 Portable shard balance evidence lives in `docs/fm-test-portable-shards.md`.
-`.no-mistakes.yaml` wires `commands.test` to `bin/fm-test-run.sh --changed --require-nonempty`, so the local gate runs a scope that follows what the change touches and an agent gets that scope for free rather than having to remember it.
+`.no-mistakes.yaml` wires `commands.test` to `bin/fm-test-run.sh --changed --require-nonempty`, so an opted-in run uses a scope that follows what the change touches and an agent gets that scope for free rather than having to remember it.
 Test scope follows what the change touches: an instructions, skill, or prose change runs the instruction-generation contract tests, not the end-to-end lanes that start terminal sessions, spawn agents, and run daemons on real timing.
 Keep `commands.test` scoped - never `--all` and never a `tests/*.test.sh` walk, which would make every change pay for the complete run.
 Family selection is the ordinary manual local path; `--all` is deliberate full regression only, and is not what the gate runs.
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) defines the reference lane composition - required portable parallel shards, the portable serial lane, the Herdr lane, lint, invariants, the coverage guard, and stock macOS Bash compatibility - and is what "complete coverage" means here.
-No hosted CI runs on this fork, so those lanes are a reference rather than an executing gate; the scoped local run is the gate.
+When hosted CI is unavailable, run the applicable lanes locally and report their results and skips.
 Three consequences follow, and none is optional to state.
 Scripts that need an optional tool skip instead of running: most of the real-Herdr family reports `skip: herdr not found` without a pinned Herdr, and the live-harness-optin, cmux, and zellij families skip the same way without those tools.
 Each lands in the runner's `skipped_gate` tally, and a pass carrying a non-zero `skipped_gate` is not full coverage.

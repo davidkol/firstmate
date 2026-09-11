@@ -5,7 +5,9 @@
 # remains evidence, and captain-sourced outcomes bind to existing provenance.
 # Promotion refuses without a non-empty scout report and publishes the rebuilt
 # brief plus ship metadata through a recoverable transaction.
-# Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<authoritative source> => <observable result>' [--captain-directed --target-design <pointer> --architecture <pointer>] [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
+# --no-mistakes opts the promoted task into the optional validation tool only
+# when explicitly requested; mode alone never selects it.
+# Usage: fm-promote.sh <task-id> --task-tier <tier> --outcome '<authoritative source> => <observable result>' [--captain-directed --target-design <pointer> --architecture <pointer>] [--no-mistakes] [--prove <evidence>] [--player <evidence>] [--parts <evidence>] [--platform <evidence>] [--correct <evidence>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +28,7 @@ PARTS=
 PLATFORM=
 CORRECT=
 CAPTAIN_DIRECTED=0
+NO_MISTAKES=0
 TARGET_DESIGN=
 ARCHITECTURE=
 while [ "$#" -gt 0 ]; do
@@ -59,6 +62,7 @@ while [ "$#" -gt 0 ]; do
     --platform=*) PLATFORM=${1#--platform=}; shift ;;
     --correct=*) CORRECT=${1#--correct=}; shift ;;
     --captain-directed) CAPTAIN_DIRECTED=1; shift ;;
+    --no-mistakes) NO_MISTAKES=1; shift ;;
     --target-design|--architecture)
       [ "$#" -ge 2 ] || { echo "error: $1 needs a value" >&2; exit 1; }
       case "$1" in
@@ -77,6 +81,11 @@ done
   echo "error: promotion needs --task-tier and explicit authoritative --outcome; the scout report is evidence only and task $ID remains a scout" >&2
   exit 1
 }
+if [ "$CAPTAIN_DIRECTED" -eq 1 ] && [ "$NO_MISTAKES" -eq 1 ]; then
+  echo "error: --no-mistakes cannot be combined with --captain-directed" >&2
+  exit 1
+fi
+
 if [ "$CAPTAIN_DIRECTED" -eq 1 ]; then
   TARGET_DESIGN=$(printf '%s\n' "$TARGET_DESIGN" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   ARCHITECTURE=$(printf '%s\n' "$ARCHITECTURE" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
@@ -267,6 +276,7 @@ if grep -Fx '# Herdr isolation - HARD SAFETY CONTRACT' "$BRIEF" >/dev/null; then
   HERDR_ARG=--herdr-lab
 fi
 BRIEF_ARGS=()
+[ "$NO_MISTAKES" -eq 0 ] || BRIEF_ARGS+=(--no-mistakes)
 [ -z "$HERDR_ARG" ] || BRIEF_ARGS+=("$HERDR_ARG")
 [ "$CAPTAIN_DIRECTED" -eq 0 ] || BRIEF_ARGS+=(--captain-directed)
 FM_BRIEF_PATH_OVERRIDE="$TEMPLATE" FM_BRIEF_MODE_OVERRIDE="$PROMOTION_MODE" FM_BRIEF_YOLO_OVERRIDE="$PROMOTION_YOLO" FM_PROMOTED_SCOUT=1 \

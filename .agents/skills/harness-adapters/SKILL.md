@@ -144,7 +144,7 @@ This preserves launch success instead of passing a known-bad value.
 
 ## no-mistakes skill invocation
 
-Send the validation skill using the target harness's skill invocation form.
+Only when no-mistakes is explicitly requested for the task, send the validation skill using the target harness's skill invocation form.
 Natural language is acceptable if uncertain.
 
 - claude: `/<skill>`, for example `/no-mistakes`.

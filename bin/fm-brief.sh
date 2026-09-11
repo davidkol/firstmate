@@ -27,7 +27,7 @@
 # result and bin/fm-spawn.sh runs it before launch. A secondmate charter is
 # standing scope rather than a task built from rulings, so it carries neither
 # section.
-# Usage: fm-brief.sh <task-id> <repo-name> [--scout|--design-intake|--target-design-intake|--captain-directed] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> [--scout|--design-intake|--target-design-intake|--captain-directed] [--herdr-lab] [--no-mistakes]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
@@ -65,15 +65,12 @@
 # For ordinary ship tasks, the delivery path inside the definition of done is shaped by the
 # project's delivery mode (data/projects.md via fm-project-mode.sh; see the
 # project-management skill and AGENTS.md task lifecycle):
-#   no-mistakes    implement -> fm-validate.sh -> full pipeline -> PR -> captain merge
-#   validated-main implement -> same pipeline with its PR and CI steps skipped ->
-#                  firstmate merges to main and pushes; no PR is ever opened
-#   direct-PR      implement -> review-only pipeline run (the fresh-context reviewer,
-#                  with the other eight steps skipped) -> push + open PR via gh-axi
-#                  -> captain merge
-#   local-only     implement on branch -> review-only pipeline run (publishes nothing)
-#                  -> stop and report "ready in branch" (no push/PR); captain
-#                  approves, firstmate merges to local main
+#   direct-PR / legacy no-mistakes: direct checks + one review -> branch + PR
+#   validated-main: direct checks + one review -> branch -> guarded main landing
+#   local-only: direct checks + one review -> ready local branch -> guarded merge
+#   --no-mistakes explicitly opts this task into the existing pipeline wrapper;
+#   mode alone never opts in. The pipeline's skip set still follows delivery mode.
+#   The flag is incompatible with captain-directed, scout, and secondmate variants.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # Scout tasks ignore mode - their deliverable is a report, not a merge.
 # Every scaffold's status protocol distinguishes the configured
@@ -140,6 +137,7 @@ HERDR_LAB=0
 DESIGN_INTAKE=0
 TARGET_DESIGN_INTAKE=0
 CAPTAIN_DIRECTED=0
+NO_MISTAKES=0
 SECONDMATE=0
 NO_PROJECTS=0
 POS=()
@@ -151,11 +149,18 @@ for a in "$@"; do
     --design-intake) DESIGN_INTAKE=1 ;;
     --target-design-intake) TARGET_DESIGN_INTAKE=1 ;;
     --captain-directed) CAPTAIN_DIRECTED=1 ;;
+    --no-mistakes) NO_MISTAKES=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
     *) POS+=("$a") ;;
   esac
 done
 ID=${POS[0]}
+
+if [ "$NO_MISTAKES" -eq 1 ] && { [ "$KIND" != ship ] || [ "$CAPTAIN_DIRECTED" -eq 1 ] || [ "$DESIGN_INTAKE" -eq 1 ] || [ "$TARGET_DESIGN_INTAKE" -eq 1 ]; }; then
+  echo "error: --no-mistakes requires an ordinary ship task" >&2
+  exit 1
+fi
+
 
 if [ "$DESIGN_INTAKE" -eq 1 ] && [ "$TARGET_DESIGN_INTAKE" -eq 1 ]; then
   echo "error: --design-intake cannot be combined with --target-design-intake" >&2
@@ -820,6 +825,7 @@ Pass every saved result or capture with `--evidence`; the validation wrapper pub
 EOF
 VALIDATE_EVIDENCE=${VALIDATE_EVIDENCE%$'\n'}
 
+if [ "$NO_MISTAKES" -eq 1 ]; then
 case "$MODE" in
   direct-PR)
     SETUP2="
@@ -935,9 +941,39 @@ EOF
     ;;
 esac
 
-# read -r -d '' preserves the heredoc's trailing newline that the removed
-# $(...) command substitution used to strip. Drop that one newline so generated
-# briefs stay byte-identical to the historical Bash 5 output.
+else
+  SETUP2=''
+  RULE1='1. Never push to the default branch and never merge. Push only your `fm/'"$ID"'` branch.'
+  IFS= read -r -d '' DOD <<EOF || true
+Run the applicable project checks and lint directly, and observe the changed behavior against the accepted outcome.
+Save proportionate executed evidence for the delivery contract; report any skipped or unverified axis honestly.
+Use one fresh-context reviewer with only the final diff, accepted scope, authoritative source pointers, and verification results, never the build conversation.
+Include the canonical tier, outcome, applicable evidence lines, and selected-review duty from \`$FM_ROOT/bin/fm-doctrine-contract.sh review-intent "$BRIEF"\` in that same reviewer's prompt.
+Apply bounded fixes for concrete in-scope findings and recheck the affected behavior; report unresolved issues to firstmate instead of restarting review or accepting known defects.
+Do not install or invoke no-mistakes unless explicitly requested for this task.
+Commit the final change and report its exact head, checks, review dispositions, and any remaining landing requirements.
+EOF
+  case "$MODE" in
+    local-only)
+      RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the approved local merge."
+      DOD="$DOD
+Keep a clean branch that can fast-forward the default branch.
+After checks and review succeed, append \`done: ready in branch fm/$ID\` and stop.
+Firstmate uses \`bin/fm-merge-local.sh $ID\` only after the configured merge authority approves." ;;
+    validated-main)
+      DOD="$DOD
+After checks and review succeed, publish only your feature branch, append \`done: validated on fm/$ID, ready to land\` and stop.
+Firstmate uses \`bin/fm-merge-main.sh $ID\` only after the configured merge authority approves.
+Never open a PR for this delivery mode." ;;
+    *)
+      DOD="$DOD
+After checks and review succeed, push only your feature branch and open a PR with \`gh-axi\`.
+Report the PR URL and check results with \`done: PR {url}\` and stop.
+Firstmate uses \`bin/fm-pr-merge.sh $ID <PR url>\` only after the configured merge authority approves; never merge a red PR." ;;
+  esac
+fi
+
+# Drop the one trailing newline preserved by read -r -d ''.
 DOD=${DOD%$'\n'}
 
 # Checklist text is built with printf, not a heredoc in a command substitution,

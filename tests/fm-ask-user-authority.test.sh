@@ -137,8 +137,15 @@ test_primary_and_secondmate_instruction_generation() {
   FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     "$BRIEF" authority-worker sample >/dev/null 2>&1
   ship="$home/data/authority-worker/brief.md"
+  assert_grep 'If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings)' "$ship" \
+    "ordinary implementation brief lets the worker own an ask-user decision"
+  assert_grep 'Firstmate will apply the configured authority and reply with the decision' "$ship" \
+    "ordinary implementation brief bypasses firstmate authority"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$BRIEF" authority-opt-in sample --no-mistakes >/dev/null 2>&1
+  ship="$home/data/authority-opt-in/brief.md"
   assert_grep 'ask-user findings are never yours to answer' "$ship" \
-    "generated implementation brief lets the worker own an ask-user decision"
+    "opted-in implementation brief lets the worker own an ask-user decision"
   assert_grep "Firstmate applies the authority contract in its \`AGENTS.md\`" "$ship" \
     "generated implementation brief bypasses the primary authority owner"
   assert_grep "silently bypass firstmate's authority check and any required captain escalation" "$ship" \

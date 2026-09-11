@@ -992,27 +992,23 @@ test_home_seed_skips_initialized_existing_no_mistakes_projects() {
   origin=$(git -C "$home/repos/alpha" remote get-url origin)
   git clone --quiet "$origin" "$subhome/projects/alpha"
   git -C "$subhome/projects/alpha" remote add no-mistakes "$TMP_ROOT/no-mistakes-alpha.git"
-  printf -- '- alpha - alpha project (added 2026-06-22)\n  path: %s\n- beta - beta project (added 2026-06-22)\n  path: %s\n' \
+  printf -- '- alpha [no-mistakes] - alpha project (added 2026-06-22)\n  path: %s\n- beta [validated-main] - beta project (added 2026-06-22)\n  path: %s\n' \
     "$home/repos/alpha" "$home/repos/beta" > "$home/data/projects.md"
   fakebin=$(make_recording_no_mistakes "$TMP_ROOT/existing-initialized-fake")
   : > "$log"
 
-  if PATH="$fakebin:$PATH" FM_FAKE_NO_MISTAKES_LOG="$log" FM_FAKE_NO_MISTAKES_FAIL_PROJECT=beta \
-    FM_HOME="$home" FM_SECONDMATE_CHARTER='existing init rollback scope' FM_SECONDMATE_SCOPE='existing init rollback scope' \
-    "$ROOT/bin/fm-home-seed.sh" design "$subhome" alpha beta >/dev/null 2>"$err"; then
-    fail "seed succeeded even though later no-mistakes initialization failed"
-  fi
-  grep -F 'failed to initialize no-mistakes for beta' "$err" >/dev/null \
-    || fail "seed did not explain later no-mistakes initialization failure"
-  grep -F "$subhome/projects/alpha" "$log" >/dev/null \
-    && fail "seed ran no-mistakes against an initialized existing clone"
-  [ ! -f "$subhome/projects/alpha/.no-mistakes-init" ] || fail "seed mutated initialized existing clone with no-mistakes init"
-  [ ! -f "$subhome/projects/alpha/.no-mistakes-doctor" ] || fail "seed mutated initialized existing clone with no-mistakes doctor"
-  [ ! -e "$subhome/projects/beta" ] || fail "failed seed left a newly cloned project after no-mistakes failure"
-  pass "home seeding skips initialized existing no-mistakes clones"
+  PATH="$fakebin:$PATH" FM_FAKE_NO_MISTAKES_LOG="$log" FM_FAKE_NO_MISTAKES_FAIL_PROJECT=beta \
+    FM_HOME="$home" FM_SECONDMATE_CHARTER='existing init scope' FM_SECONDMATE_SCOPE='existing init scope' \
+    "$ROOT/bin/fm-home-seed.sh" design "$subhome" alpha beta >/dev/null 2>"$err" \
+    || fail "seed required optional validation initialization: $(cat "$err")"
+  [ ! -s "$log" ] || fail "seed invoked no-mistakes"
+  [ ! -f "$subhome/projects/alpha/.no-mistakes-init" ] || fail "seed mutated existing gate"
+  [ -d "$subhome/projects/beta/.git" ] || fail "seed did not clone new project"
+  pass "home seeding preserves existing gates and never initializes new ones"
+
 }
 
-test_home_seed_refuses_uninitialized_existing_no_mistakes_project() {
+test_home_seed_accepts_uninitialized_existing_no_mistakes_project() {
   local home subhome err fakebin log origin
   home="$TMP_ROOT/existing-uninitialized-home"
   subhome="$TMP_ROOT/existing-uninitialized-subhome"
@@ -1029,16 +1025,14 @@ test_home_seed_refuses_uninitialized_existing_no_mistakes_project() {
   fakebin=$(make_recording_no_mistakes "$TMP_ROOT/existing-uninitialized-fake")
   : > "$log"
 
-  if PATH="$fakebin:$PATH" FM_FAKE_NO_MISTAKES_LOG="$log" \
+  PATH="$fakebin:$PATH" FM_FAKE_NO_MISTAKES_LOG="$log" \
     FM_HOME="$home" FM_SECONDMATE_CHARTER='existing uninitialized scope' \
-    "$ROOT/bin/fm-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err"; then
-    fail "seed initialized a preexisting no-mistakes clone"
-  fi
-  grep -F 'refusing to mutate preexisting clone' "$err" >/dev/null \
-    || fail "seed did not explain uninitialized existing no-mistakes clone refusal"
-  [ ! -s "$log" ] || fail "seed ran no-mistakes before refusing an uninitialized existing clone"
+    "$ROOT/bin/fm-home-seed.sh" design "$subhome" alpha >/dev/null 2>"$err" \
+    || fail "seed refused a project without an optional gate: $(cat "$err")"
+  [ ! -s "$log" ] || fail "seed ran no-mistakes for an existing clone"
   [ ! -f "$subhome/projects/alpha/.no-mistakes-init" ] || fail "seed mutated uninitialized existing clone"
-  pass "home seeding refuses uninitialized existing no-mistakes clones"
+  pass "home seeding accepts existing projects without optional gates"
+
 }
 
 test_home_seed_refuses_project_destinations_outside_subhome() {
@@ -2212,7 +2206,7 @@ test_home_seed_refuses_remote_backed_project_without_origin
 test_home_seed_refuses_existing_remote_backed_project_with_wrong_origin
 test_home_seed_resolves_relative_source_origins
 test_home_seed_skips_initialized_existing_no_mistakes_projects
-test_home_seed_refuses_uninitialized_existing_no_mistakes_project
+test_home_seed_accepts_uninitialized_existing_no_mistakes_project
 test_home_seed_refuses_project_destinations_outside_subhome
 test_home_seed_refuses_operational_dirs_outside_subhome
 test_home_seed_refuses_symlinked_leaf_files

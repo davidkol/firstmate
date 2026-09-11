@@ -66,7 +66,7 @@ The budget is reported on demand here; it is not a session-start gate, and nothi
      `data/learnings.md` may not exist yet; create it on first local learning, in the same dated, evidence-backed, curated style as the captain-preference files.
      If it holds an `fm-promotion` marker line, that block belongs to `bin/fm-learning-promote.sh`: curate around it, leave its shape alone, and never copy that marker line elsewhere in the file, because `land` refuses a block it did not write and refuses a slug carrying more than one marker line rather than risk deleting entries that are not part of it, and this file is gitignored with no recovery.
    - Project-intrinsic knowledge: never hand-write a project's `AGENTS.md`.
-     Route it through a normal ship task so a crewmate records it via `bin/fm-ensure-agents-md.sh` and commits it through that project's delivery pipeline, exactly as section 6 describes.
+     Route it through a normal ship task so a crewmate records it via `bin/fm-ensure-agents-md.sh` and commits it through that project's delivery path, exactly as section 6 describes.
      If the fleet is live, delegate this to a crewmate rather than doing it inline.
    - Knowledge generalizable to every firstmate user: this repo's own `AGENTS.md` (or other shared, tracked material), shipped on a feature branch through this repo's registry-selected delivery path (section 1), never hand-committed straight to `main`.
    - Task-scoped notes: inspect the relevant backlog item with `tasks-axi show <id> --full`, judge whether the new note is new, duplicate, superseding, or obsolete, then write a considered replacement body with `tasks-axi update <id> --body-file <path>`.
@@ -109,7 +109,7 @@ Promotion is the rare move, never the tidy default.
 Promotion runs in two phases with a gate between them, because retiring the local entry before the tracked change lands destroys it, and never retiring it leaves the same lesson in two places:
 
 1. `bin/fm-learning-promote.sh start <slug> --to <path> --evidence <where it proved true> --checkable <what makes it checkable> --landed-text <the distinguishing phrase the landed change will put in the destination>` records the promotion in flight in this home's `data/learnings.md`, so the session-start digest prints it every session until it is finished.
-   It refuses an unstated graduation case and a destination no other home would receive; it cannot judge whether your stated evidence is true, so that judgment stays with you and the review pipeline.
+   It refuses an unstated graduation case and a destination no other home would receive; it cannot judge whether your stated evidence is true, so that judgment stays with you and the task review.
    Choose `--landed-text` from the sentence you actually intend to add, not a paraphrase, because it is the only thing proving this lesson landed rather than someone else's.
 2. Ship the tracked change on a feature branch through this repo's registry-selected delivery path, exactly like any other shared-material change.
    Never hand-commit it to the default branch.
@@ -126,4 +126,4 @@ Inside step 2 the destination is chosen by the knowledge-placement decision tree
 There is no "graduate this to a skill" move in this skill's routing.
 This is a deliberate, standing exclusion, not an oversight: even with the two-tier skill layout, a stow sweep is a memory-routing operation, not a way to author or mutate skills.
 Writing learnings into either `.agents/skills/` or public `skills/` would still risk mixing fleet-local material with shared firstmate behavior or standalone installer-facing behavior.
-Until a human deliberately scopes a skill change as firstmate repo work, route generalizable knowledge to the shared `AGENTS.md` (or other shared, tracked material) via the pipeline, and fleet-local knowledge to `data/`, never to a skill.
+Until a human deliberately scopes a skill change as firstmate repo work, route generalizable knowledge to the shared `AGENTS.md` (or other shared, tracked material) via the approved delivery path, and fleet-local knowledge to `data/`, never to a skill.

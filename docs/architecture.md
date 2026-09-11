@@ -187,7 +187,7 @@ That keeps spawn launch compatible across claude, codex, grok, pi, opencode, and
 ## Optional secondmates
 
 `data/secondmates.md` records persistent secondmates with natural-language scopes, project clone lists, and home paths.
-`fm-home-seed.sh` provisions the isolated home, clones the listed remote-backed projects into it, initializes newly cloned full-pipeline projects (`no-mistakes` and `validated-main`; a `direct-PR` clone needs the same gate for its review step but initializes it lazily on its first task instead), copies the charter to `data/charter.md`, and `fm-spawn.sh --secondmate` launches it through the same session-provider and status-file path as any direct report.
+`fm-home-seed.sh` provisions the isolated home, clones the listed remote-backed projects into it without initializing validation tools, copies the charter to `data/charter.md`, and `fm-spawn.sh --secondmate` launches it through the same session-provider and status-file path as any direct report.
 For a domain whose subject is the firstmate repo itself, a deliberate `--no-projects` seed creates a project-less home whose crews take pooled worktrees of that repo instead of separate clones.
 The signal cannot be mixed with project names or omitted accidentally, and a populated home cannot be converted in place; the full seed contract is in [configuration.md](configuration.md#secondmate-routes-datasecondmatesmd).
 On the herdr backend, a secondmate launch lands in that secondmate home's labeled workspace, and crewmates spawned from that home land in the same workspace.
@@ -224,16 +224,14 @@ A home the captain opens and talks to directly is a peer home rather than a dire
 ## Project modes are explicit
 
 `data/projects.md` records each project's delivery mode and optional `+yolo` autonomy flag.
-On the ordinary ship route, `no-mistakes` projects run the full validation pipeline, `validated-main` projects run that same pipeline with only its PR and CI steps skipped and then land on the default branch through `bin/fm-merge-main.sh`, `direct-PR` projects run the pipeline's review step alone before opening a PR, and `local-only` projects run that same review-only pass, which publishes nothing, and stay local until firstmate performs an approved fast-forward merge.
-On that route, the difference between `validated-main` and `direct-PR` is how much of the pipeline runs rather than the pull request: `validated-main` keeps the local review, test, document, and lint steps, which is what makes landing straight on the default branch safe, while `direct-PR` keeps review alone so a light change is still read by an agent that did not write it.
-The [`game-development-process`](../.agents/skills/game-development-process/SKILL.md) skill owns the captain-directed review and landing procedure; the ordinary pipeline descriptions here do not apply to those slices.
-`bin/fm-doctrine-contract.sh` validates each ship brief's two-field delivery core, conditional evidence shape, and authoritative outcome-source binding before dispatch and renders the selected review contract from that same owner.
-On the ordinary route, `bin/fm-validate.sh` derives every mode's skip set, never skips review, requires an executed final-change capture from the task worktree, publishes it for isolated pipeline rounds, and replaces caller paraphrases with the brief's canonical selected-review intent; [`verification/validation-pipeline.md`](verification/validation-pipeline.md#the-review-step-runs-alone-and-in-its-own-agent-process) owns the empirical evidence that the review step runs alone in a separate agent process.
-The pipeline refuses to run on a default branch, so it validates and publishes the task branch and firstmate performs the landing; [`verification/validation-pipeline.md`](verification/validation-pipeline.md#the-pipeline-cannot-land-on-the-default-branch-but-it-can-validate-without-a-pr) owns that active empirical evidence.
-When a selected delivery path calls for a diff, `bin/fm-review-diff.sh` refreshes the authoritative base and, when task meta records `pr=`, always fetches and compares against `refs/pull/<n>/head` by default (recorded `pr_head=` is only an offline fallback) before falling back to the local branch with a warning.
-An ordinary `validated-main` task records no `pr=`, so that helper compares the published `origin/<branch>` head instead, which is the head `bin/fm-merge-main.sh` lands; the script's own header owns the resolution order.
+`AGENTS.md` section 7 owns delivery topology, ordinary direct validation, and explicit per-task no-mistakes opt-in.
+New projects default to `direct-PR`; existing registry modes are preserved without selecting a validation mechanism.
+For an opted-in run, `bin/fm-validate.sh` retains mode-derived skip sets, canonical intent, and shared final-change evidence.
+The guarded merge helpers retain their source-resolution and clean fast-forward checks for both directly checked branches and pipeline-published branches.
+`bin/fm-merge-main.sh` owns the resolution order when a pipeline published descendants of the worker's local head.
+
 For target project repos shipped through their own no-mistakes pipeline, commits under `.no-mistakes/evidence/` are the pipeline's PR-viewable validation evidence and are expected to stay in the crew branch until the evidence-hosting design changes.
-Under the ordinary `validated-main` route that crew branch is fast-forwarded into the default branch, so those evidence commits land with the change.
+Under an opted-in `validated-main` run that crew branch is fast-forwarded into the default branch, so those evidence commits land with the change.
 The firstmate repo itself is the exception: its `.no-mistakes/` directory is local state, stays gitignored, and is rejected by CI if tracked.
 PR-based task merges go through `bin/fm-pr-merge.sh`, which records `pr=` and any available `pr_head=` through `bin/fm-pr-check.sh` before calling `gh-axi pr merge`.
 The helper requires a full `https://github.com/<owner>/<repo>/pull/<n>` URL, invokes `gh-axi pr merge <n> --repo <owner>/<repo>`, defaults to `--squash`, preserves explicit merge-method flags, and rejects malformed URLs or repo override flags before recording merge state; a well-formed GitLab merge request URL (see [docs/gitlab-merge-watch.md](gitlab-merge-watch.md)) is refused too, explicitly, rather than sent to the wrong forge.
@@ -284,7 +282,7 @@ Home-domain captain preferences go to `data/captain.md`, cross-domain shared cap
 Memory writes use inspect-then-update: read the current destination first, then rewrite or prune matching bullets or notes in place instead of appending by default.
 Task-scoped notes use `tasks-axi show <id> --full` followed by `tasks-axi update <id> --body-file <path>`, adding `--archive-body` when the prior body should remain recoverable.
 Generalizable firstmate knowledge goes to shared tracked material through this repo's normal delivery path, gated twice: the `stow` skill owns the graduation rule that decides whether a learning has earned the move, and `bin/fm-learning-promote.sh` owns the two-phase gate that holds the home-local entry until the named destination on the default branch carries the distinguishing phrase the promotion recorded, because `data/` is gitignored and a prematurely retired entry is unrecoverable.
-The firstmate-internal `/stow` still never stores a sweep finding in either skill directory; a deliberately scoped repo change that a promotion ships through the pipeline is not that sweep, even when its reviewed destination is a skill.
+The firstmate-internal `/stow` still never stores a sweep finding in either skill directory; a deliberately scoped repo change that a promotion ships through the approved delivery path is not that sweep, even when its reviewed destination is a skill.
 
 ## Local clones stay fresh
 

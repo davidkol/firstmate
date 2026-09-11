@@ -454,6 +454,42 @@ test_captain_directed_brief_refuses_a_primary_checkout_before_branching() {
   pass "fm-brief.sh: --captain-directed refuses the primary checkout before branching"
 }
 
+test_no_mistakes_opt_in_rejects_nonordinary_variants() {
+  local home flag out
+  home="$TMP_ROOT/invalid-opt-in-home"
+  write_registry "$home"
+  for flag in --scout --design-intake --target-design-intake --captain-directed --secondmate; do
+    if out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" invalid-opt-in default-proj --no-mistakes "$flag" 2>&1); then
+      fail "opt-in accepted incompatible $flag"
+    fi
+    assert_contains "$out" '--no-mistakes requires an ordinary ship task' "missing incompatible opt-in diagnostic"
+    assert_absent "$home/data/invalid-opt-in/brief.md" 'invalid opt-in created a brief'
+  done
+  pass "no-mistakes opt-in refuses nonordinary variants before writing"
+}
+
+test_ordinary_briefs_use_direct_checks() {
+  local home proj id brief
+  home="$TMP_ROOT/ordinary-direct-home"
+  write_registry "$home"
+  for proj in default-proj main-proj direct-proj local-proj; do
+    id="ordinary-$proj"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" >/dev/null 2>&1 \
+      || fail "ordinary brief failed for $proj"
+    brief="$home/data/$id/brief.md"
+    assert_no_grep 'no-mistakes doctor' "$brief" "$proj requires optional setup"
+    assert_no_grep 'bin/fm-validate.sh' "$brief" "$proj invokes optional pipeline"
+    assert_grep 'project checks and lint' "$brief" "$proj lost direct checks"
+    assert_grep 'one fresh-context reviewer' "$brief" "$proj lost independent review"
+    assert_grep "bin/fm-doctrine-contract.sh review-intent \"$brief\"" "$brief" "$proj lost the canonical reviewer duty"
+    assert_grep 'bounded fixes' "$brief" "$proj lost bounded correction"
+    assert_grep 'Never' "$brief" "$proj lost delivery constraints"
+  done
+  assert_no_grep 'done: PR' "$home/data/ordinary-main-proj/brief.md" 'main topology opens PR'
+  assert_grep 'Never push to any remote' "$home/data/ordinary-local-proj/brief.md" 'local topology publishes'
+  pass "ordinary briefs use direct checks and one review in every topology"
+}
+
 test_captain_directed_brief_uses_each_modes_guarded_landing_without_a_pipeline() {
   local home id brief rebase_line review_line
   home="$TMP_ROOT/captain-directed-modes-home"
@@ -672,7 +708,7 @@ test_validated_main_brief_keeps_the_review_and_skips_only_pr_and_ci() {
   home="$TMP_ROOT/validated-main-home"
   write_registry "$home"
   id="brief-validated-main-a6"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" main-proj >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" main-proj --no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
 
   assert_grep "Skipping the PR does NOT skip the review" "$brief" \
@@ -704,7 +740,7 @@ test_full_mode_briefs_trigger_only_the_validation_wrapper() {
       full-nomistakes) proj=no-registry-proj ;;
       *) proj=main-proj ;;
     esac
-    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" >/dev/null 2>&1
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" "$proj" --no-mistakes >/dev/null 2>&1
     brief="$home/data/$id/brief.md"
     assert_grep "bin/fm-validate.sh $id --evidence" "$brief" \
       "$id: the full-mode trigger did not invoke the topology-independent wrapper"
@@ -725,7 +761,7 @@ test_direct_pr_brief_runs_one_fresh_context_review_before_the_pr() {
   home="$TMP_ROOT/direct-pr-review-home"
   write_registry "$home"
   id="brief-direct-review-a7"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj --no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
 
   assert_grep "bin/fm-validate.sh $id" "$brief" \
@@ -759,7 +795,7 @@ test_local_only_brief_runs_a_review_that_publishes_nothing() {
   home="$TMP_ROOT/local-only-review-home"
   write_registry "$home"
   id="brief-local-review-a7"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj --no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
 
   assert_grep "bin/fm-validate.sh $id" "$brief" \
@@ -788,14 +824,14 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   home="$TMP_ROOT/configured-authority-home"
   write_registry "$home"
   id="brief-direct-authority-a4"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj --no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_grep "The configured merge authority decides whether to merge the PR; firstmate relays the outcome." "$brief" \
     "direct-PR brief lost configured merge authority"
   assert_no_grep "The captain reviews and merges the PR" "$brief" \
     "direct-PR brief hard-coded captain-only authority"
   id="brief-local-authority-a4"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" local-proj --no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_grep "The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path." "$brief" \
     "local-only brief lost configured merge authority and guarded landing"
@@ -814,7 +850,7 @@ test_no_mistakes_dod_wording() {
   mkdir -p "$home/data"
   write_project_registry "$home" some-proj
   id="brief-wording-b1"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "no-mistakes itself provides for the mechanics" "$brief" \
@@ -846,7 +882,7 @@ test_no_mistakes_dod_no_checks_is_ready() {
   mkdir -p "$home/data"
   write_project_registry "$home" some-proj
   id="brief-no-checks-d1"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --no-mistakes >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "brief was not scaffolded"
   assert_grep "CI-ready return point" "$brief" \
@@ -1898,6 +1934,7 @@ test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_captain_directed_brief_scaffolds_the_warm_builder_loop
 test_captain_directed_brief_refuses_a_primary_checkout_before_branching
+test_ordinary_briefs_use_direct_checks
 test_captain_directed_brief_uses_each_modes_guarded_landing_without_a_pipeline
 test_scout_refuses_unmigrated_project_before_writing_brief
 test_ship_brief_scaffolds_only_two_core_doctrine_fields
@@ -1939,3 +1976,5 @@ test_target_design_intake_scaffold_separates_questionnaire_from_audit
 test_target_design_intake_rejects_incompatible_modes
 test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order
 test_design_intake_preserves_nonship_brief_bytes
+
+test_no_mistakes_opt_in_rejects_nonordinary_variants

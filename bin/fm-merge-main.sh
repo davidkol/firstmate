@@ -3,7 +3,8 @@
 # branch onto the approved task head, then push it to the host.
 #
 # This is firstmate's merge action for mode=validated-main. On the ordinary route,
-# the no-mistakes pipeline validates and publishes the task branch; on the
+# the worker validates and publishes the task branch (optionally through an
+# explicitly requested no-mistakes run); on the
 # captain-directed route owned by the game-development-process skill, the final
 # approved task branch remains local. This script selects the published head when
 # one exists, otherwise the local branch, then moves the default branch onto that
@@ -20,7 +21,7 @@
 # See AGENTS.md prime directives and task lifecycle.
 #
 # The merge source is the published head (origin/fm/<id>) whenever it exists,
-# because an ordinary pipeline may commit and push its own fix rounds while the
+# because an opted-in pipeline may commit and push its own fix rounds while the
 # local task branch remains behind. The local branch is used only when nothing was
 # published, including on the captain-directed route.
 # Usage: fm-merge-main.sh <task-id>

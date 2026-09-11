@@ -119,7 +119,7 @@ See [`wedge-alarm.md`](wedge-alarm.md) for the current channel reference, [`veri
 
 ## Gate defaults (.no-mistakes.yaml)
 
-The tracked `.no-mistakes.yaml` keeps test evidence outside the repo and pins `commands.lint` to `bin/fm-lint.sh` so local lint matches CI.
+For explicitly opted-in tasks, the tracked `.no-mistakes.yaml` keeps test evidence outside the repo and pins `commands.lint` to `bin/fm-lint.sh` so local lint matches CI.
 That evidence policy is specific to the firstmate repo: target projects may legitimately commit `.no-mistakes/evidence/` from their own no-mistakes pipeline, but firstmate keeps `.no-mistakes/` local and CI rejects tracked entries under that path.
 It sets `commands.test` to a scoped `bin/fm-test-run.sh --changed --require-nonempty` selection rather than a complete `tests/*.test.sh` walk.
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
@@ -168,7 +168,7 @@ A preexisting project-bearing charter is also refused until it is re-scaffolded 
 The lease is held under the secondmate id until explicit retirement or seed rollback returns it, so normal restarts do not free or recycle the home.
 Teardown of a leased home fails closed if `treehouse return` cannot release the lease; plain-clone homes with no treehouse pool slot are removed directly.
 Secondmate routes cover remote-backed projects (`no-mistakes`, `validated-main`, and `direct-PR`); `local-only` projects remain main-firstmate work.
-For `no-mistakes` and `validated-main` projects, seeding initializes only projects newly cloned into a secondmate home and refuses to mutate a preexisting clone that is not already initialized.
+Seeding never initializes a validation tool; explicit task opt-in is owned by `AGENTS.md` section 7.
 After creating a secondmate, move existing main-backlog queued items that you have judged in-scope with `fm-backlog-handoff.sh <secondmate-id> <item-key>...`; it is idempotent and refuses In flight, Done, or non-secondmate homes.
 Set `FM_SECONDMATE_CHARTER` to seed from inline charter text when no filled charter brief exists; set `FM_SECONDMATE_SCOPE` when the routing scope should differ from the charter text.
 The seeded home's `data/charter.md` owns the standard secondmate lifecycle and escalation contract; the route file points to it through the existing `home:` field instead of adding another pointer.
@@ -223,6 +223,8 @@ Each project entry has one top-level delivery-posture line followed immediately 
 ```
 
 `bin/fm-project-lib.sh` resolves the project id, physical Git root, delivery mode, and yolo posture as one record.
+An omitted mode defaults to `direct-PR`; explicit existing modes remain unchanged.
+`AGENTS.md` section 7 owns direct validation and per-task no-mistakes opt-in, independently of these delivery labels.
 It refuses missing, relative, nonexistent, non-root, duplicate, or primary/peer managed-directory paths rather than falling back to a similarly named clone.
 Secondmate homes may omit `path:` because their explicit exception resolves to the provisioned clone under that secondmate's own `projects/<id>`.
 `bin/fm-project-path-set.sh` migrates one primary or peer entry atomically, requires the old and requested checkouts to resolve to the same `origin` identity, and refuses while any in-flight task metadata physically names the prior checkout.
@@ -323,9 +325,10 @@ Secondmate homes inherit this file from the primary, so a secondmate's own crewm
 On session start the first mate detects what its required toolchain is missing or too old and lists each problem with either an exact install command or manual instructions.
 It installs automatically supported tools only after you say go; manual-only tools remain for you to install from the printed instructions.
 Required tools come in two parts: a universal toolchain every home needs regardless of backend, and a per-backend delta that follows the runtime backend actually resolved for this home.
-The universal toolchain is node, git, gh with GitHub auth via `gh auth login`, no-mistakes v1.31.2 or newer, gh-axi, chrome-devtools-axi, lavish-axi, compatible tasks-axi per "Backlog backend" above, and quota-axi.
+The universal toolchain is node, git, gh with GitHub auth via `gh auth login`, gh-axi, chrome-devtools-axi, lavish-axi, compatible tasks-axi per "Backlog backend" above, and quota-axi.
 This section is the single owner of that universal toolchain list; backend guides' prerequisites point here and add only their backend-specific tools.
-In that list, no-mistakes runs the validation pipeline, gh-axi, chrome-devtools-axi, and lavish-axi cover GitHub, browser, and rich-review operations, and tasks-axi plus quota-axi back backlog mutations and quota-aware array dispatch.
+No-mistakes is optional and only used when explicitly requested for a task; its absence or version never blocks ordinary dispatch.
+In that list, gh-axi, chrome-devtools-axi, and lavish-axi cover GitHub, browser, and rich-review operations, and tasks-axi plus quota-axi back backlog mutations and quota-aware array dispatch.
 The per-backend delta is required only for the backend resolved from `FM_BACKEND`, then `config/backend`, then runtime auto-detection, then default `tmux`, so a home is never told to install a tool an inactive backend or feature would need.
 That delta is owned in code by `fm_backend_required_tools` in `bin/fm-backend.sh`: the resolved backend's own session-provider CLI (`tmux`, `herdr`, `zellij`, `orca`, or `cmux`), `jq` for the JSON-emitting experimental adapters (`herdr`, `zellij`, `cmux`) whose spawn and liveness paths parse the backend's JSON output, and the `treehouse` worktree provider for every session-provider-only backend (`tmux`, `herdr`, `zellij`, `cmux`).
 Backend tool availability uses the adapter's own executable resolver, so bootstrap and spawn agree on supported non-`PATH` locations such as cmux's bundled CLI.

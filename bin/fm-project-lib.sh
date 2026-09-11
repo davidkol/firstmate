@@ -19,7 +19,7 @@ fm_project_records() {
       emit()
       id=$2
       path=""
-      mode="no-mistakes"
+      mode="direct-PR"
       yolo="off"
       if ($3 ~ /^\[/) {
         flags=""

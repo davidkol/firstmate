@@ -4,23 +4,19 @@
 # no-mistakes|validated-main|direct-PR|local-only and yolo is on|off.
 #
 # Registry line format (data/projects.md):
-#   - <name> - <desc> (added <date>)                  -> no-mistakes off  (legacy default)
+#   - <name> - <desc> (added <date>)                  -> direct-PR off  (default)
 #   - <name> [<mode>] - <desc> (added <date>)          -> <mode> off
 #   - <name> [<mode> +yolo] - <desc> (added <date>)    -> <mode> on
 #   Primary and peer entries require the next indented line to be an absolute
 #   canonical Git root: "  path: /absolute/path".
 #   Secondmate entries may omit it and resolve their provisioned projects/<name> clone.
 #
-# On the ordinary ship route, mode selects validation and how a finished change
-# reaches main. The game-development-process skill owns the captain-directed
-# route's distinct review and use of the same guarded landing modes:
-#   no-mistakes    full pipeline -> PR -> captain merge (default)
-#   validated-main same full pipeline, PR and CI steps skipped -> guarded merge to
-#                  main -> push to origin; no PR is ever opened
-#   direct-PR      review-only pipeline run, then push + PR via gh-axi -> captain
-#                  merge; the other eight pipeline steps are skipped
-#   local-only     local branch, review-only pipeline run that publishes nothing, no
-#                  remote/PR -> captain approve -> guarded local merge
+# Mode selects delivery topology, not the validation tool. AGENTS.md section 7
+# owns direct checks/review and explicit per-task no-mistakes opt-in:
+#   direct-PR      checked branch -> PR -> approved guarded merge (default)
+#   no-mistakes    legacy PR topology; does not implicitly select the pipeline
+#   validated-main checked branch -> approved guarded main merge -> origin push
+#   local-only     checked local branch -> approved guarded local merge; no push
 # yolo (orthogonal) = when on, firstmate may make routine approval decisions itself.
 #   AGENTS.md section 7 is the single owner of authority exceptions, including
 #   ask-user contract expansion and stronger captain boundaries.

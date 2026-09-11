@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Start (or restart) a task's no-mistakes validation run with the pipeline flags
+# Explicit opt-in helper: start (or restart) a task's requested no-mistakes run.
+# Ordinary validation never calls this helper; AGENTS.md section 7 owns that path.
+# Preserve existing run mechanics and the pipeline flags
 # its delivery mode requires.
 #
 # The skip set is a property of the delivery mode, not of a call site. A
@@ -24,14 +26,8 @@
 # The full-pipeline modes - no-mistakes and validated-main - additionally never drop
 # test, document, or lint; only the two host-facing steps are ever mode-skipped there.
 #
-# direct-PR and local-only are the light paths and invert that shape. Both ran no
-# pipeline at all until the captain's decision of 2026-07-30, which kept the light
-# path the fleet default but gave it "a fresh-context review on its own - one agent
-# reading the change cold, without the other eight pipeline steps around it". So
-# their derived set keeps review and skips the other eight. That ADDS a reviewer to
-# paths that had none; it does not remove steps from a path that had them, and the
-# review it adds is run by an agent process the no-mistakes daemon starts, never by
-# the worker that wrote the change.
+# When explicitly opted in, direct-PR and local-only keep review alone and skip
+# the other eight steps. Direct project verification still belongs to the worker.
 #
 # push is skipped on both, for different reasons: a direct-PR worker publishes and
 # opens its own pull request afterwards, and a local-only worker must never reach a

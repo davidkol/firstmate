@@ -318,35 +318,32 @@ ROWS
   pass "bootstrap reports treehouse lease + tasks-axi/quota-axi bootstrap contracts"
 }
 
-test_no_mistakes_min_version() {
-  local label version mode case_dir fakebin out missing n
-  missing='MISSING: no-mistakes (install: curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh)'
-  n=0
-  while IFS='^' read -r label version mode; do
-    [ -n "$label" ] || continue
-    n=$((n + 1))
-    case_dir="$TMP_ROOT/no-mistakes-$n"
-    mkdir -p "$case_dir/home"
+test_no_mistakes_is_optional() {
+  local version case_dir fakebin out
+  for version in absent broken; do
+    case_dir="$TMP_ROOT/no-mistakes-$version"
     mkdir -p "$case_dir/home/config"
-    printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
     fakebin=$(make_fake_toolchain "$case_dir")
-    add_tasks_axi "$fakebin" "0.1.1"
+    if [ "$version" = absent ]; then
+      rm "$fakebin/no-mistakes"
+      PATH="$fakebin:$BASE_PATH" command -v no-mistakes >/dev/null 2>&1 \
+        && fail "absent-tool fixture contains no-mistakes"
+    else
+      printf '%s\n' '#!/bin/sh' 'exit 99' > "$fakebin/no-mistakes"
+    fi
     out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
-      FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_FAKE_NO_MISTAKES_VERSION="$version" "$ROOT/bin/fm-bootstrap.sh")
-    case "$mode" in
-      empty)
-        [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
-      missing)
-        [ "$out" = "$missing" ] || fail "$label: expected '$missing', got: $out" ;;
-    esac
-  done <<'ROWS'
-minimum no-mistakes version is accepted^no-mistakes version v1.31.2 (fake)^empty
-newer no-mistakes minor is accepted^no-mistakes version v1.32.0 (fake)^empty
-newer no-mistakes major is accepted^no-mistakes version v2.0.0 (fake)^empty
-older no-mistakes patch reports an upgrade^no-mistakes version v1.31.1 (fake)^missing
-unparseable no-mistakes version reports an upgrade^no-mistakes development build^missing
-ROWS
-  pass "bootstrap enforces no-mistakes minimum version"
+      FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+    [ -z "$out" ] || fail "optional no-mistakes ($version) blocked ordinary prerequisites: $out"
+    mkdir -p "$case_dir/home/data"
+    fm_git_init_commit "$case_dir/project"
+    printf -- '- Ordinary [validated-main] - fixture\n  path: %s\n' "$case_dir/project" > "$case_dir/home/data/projects.md"
+    PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+      "$ROOT/bin/fm-brief.sh" ordinary Ordinary >/dev/null \
+      || fail "ordinary brief failed with no-mistakes $version"
+    assert_grep 'project checks and lint' "$case_dir/home/data/ordinary/brief.md" 'direct checks missing'
+    assert_no_grep 'bin/fm-validate.sh' "$case_dir/home/data/ordinary/brief.md" 'ordinary brief invoked pipeline'
+  done
+  pass "bootstrap needs neither installed nor working no-mistakes"
 }
 
 test_git_is_required_with_supported_install_instruction() {
@@ -831,7 +828,7 @@ ROWS
 }
 
 test_bootstrap_reporting
-test_no_mistakes_min_version
+test_no_mistakes_is_optional
 test_git_is_required_with_supported_install_instruction
 test_orca_backend_gates_orca_tool_only_when_selected
 test_session_provider_backends_do_not_require_tmux

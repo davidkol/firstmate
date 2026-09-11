@@ -68,6 +68,21 @@ EOF
   pass "canonical registry resolves path, delivery mode, and yolo"
 }
 
+test_default_mode_and_legacy_mode_preservation() {
+  local home repo out before
+  home=$(new_home)
+  repo=$(new_repo "$TMP_ROOT/default-mode")
+  printf -- '- Default - fixture\n  path: %s\n' "$repo" > "$home/data/projects.md"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-project-mode.sh" Default)
+  [ "$out" = 'direct-PR off' ] || fail "omitted mode did not default to direct-PR: $out"
+  printf -- '- Default [no-mistakes +yolo] - fixture\n  path: %s\n' "$repo" > "$home/data/projects.md"
+  before=$(cat "$home/data/projects.md")
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-project-mode.sh" Default)
+  [ "$out" = 'no-mistakes on' ] || fail "explicit legacy mode changed: $out"
+  [ "$(cat "$home/data/projects.md")" = "$before" ] || fail "resolver rewrote registry"
+  pass "default is direct-PR and explicit legacy registry modes stay untouched"
+}
+
 test_primary_refuses_missing_path_without_clone_fallback() {
   local home clone out rc
   home=$(new_home)
@@ -296,3 +311,5 @@ test_migration_blocks_physical_alias_of_inflight_old_clone
 test_argument_resolution_matches_registry_identity_not_basename
 test_legacy_task_identity_requirement_is_project_specific
 test_secondmate_seed_resolves_new_clone_during_initialization
+
+test_default_mode_and_legacy_mode_preservation
