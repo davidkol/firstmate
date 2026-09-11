@@ -1007,7 +1007,7 @@ stop_fake_nm_ipc() {
 start_fake_nm_ipc() {  # <socket-path> <fixture-json-path>
   stop_fake_nm_ipc
   python3 - "$1" "$2" <<'IPC_PY' &
-import json, os, socket, sys, threading
+import json, os, socket, sys, threading, time
 
 sock_path, fixture_path = sys.argv[1], sys.argv[2]
 try:
@@ -1039,8 +1039,21 @@ def serve(conn):
         else:
             reply = {"jsonrpc": "2.0", "id": msg.get("id"),
                      "error": {"code": -32601, "message": "method not found"}}
-        writer.write((json.dumps(reply) + "\n").encode())
-        writer.flush()
+        payload = (json.dumps(reply) + "\n").encode()
+        try:
+            delays = fixture.get("fragment_delays_s")
+            if delays:
+                midpoint = len(payload) // 2
+                for delay, chunk in zip(delays, (payload[:midpoint], payload[midpoint:])):
+                    time.sleep(delay)
+                    writer.write(chunk)
+                    writer.flush()
+            else:
+                time.sleep(fixture.get("reply_delays_s", {}).get(method, 0))
+                writer.write(payload)
+                writer.flush()
+        except OSError:
+            break  # A correctly bounded client can close before a delayed reply.
     conn.close()
 
 
@@ -1132,9 +1145,45 @@ EOF
 )"
 }
 
-read_coarse_identity() {  # <case-dir> <socket>
-  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" FM_NM_IPC_SOCKET="$2" FM_NM_IPC_TIMEOUT=5 \
+read_coarse_identity() {  # <case-dir> <socket> [timeout-seconds]
+  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" FM_NM_IPC_SOCKET="$2" FM_NM_IPC_TIMEOUT="${3:-5}" \
     "$CREW_STATE" --with-run-identity ident
+}
+
+assert_coarse_identity_deadline() {  # <fragmented|requests>
+  reset_fakes
+  local variant=$1 d head out sock timing
+  coarse_ident_case "run-identity-deadline-$variant" fm/feat-deadline
+  d=$IDENT_CASE_DIR; head=$(git -C "$d/wt" rev-parse HEAD)
+  sock="$FM_IPC_SOCK_DIR/deadline-$variant.sock"
+  case "$variant" in
+    fragmented) timing='"fragment_delays_s": [0.65, 0.65]' ;;
+    requests) timing='"reply_delays_s": {"get_run": 0.65, "get_runs_for_head": 0.65}' ;;
+  esac
+  cat > "$d/ipc.json" <<EOF
+{
+  $timing,
+  "get_run": {"run": {"id": "01OTHER", "repo_id": "e7a400468416"}},
+  "get_runs_for_head": {"runs": [{"id": "01SLOW", "repo_id": "e7a400468416",
+    "branch": "fm/feat-deadline", "head_sha": "$head", "status": "failed"}]}
+}
+EOF
+  start_fake_nm_ipc "$sock" "$d/ipc.json"
+  out=$(read_coarse_identity "$d" "$sock" 1)
+  stop_fake_nm_ipc
+  assert_contains "$out" "state: failed" "$variant: the fixture did not reach coarse failure attribution"
+  assert_contains "$out" "source: run-step" "$variant: the fixture did not use the run reader"
+  assert_not_contains "$out" "run-identity" "$variant: a reply beyond the total lookup deadline was accepted"
+}
+
+test_run_identity_deadline_bounds_fragmented_frames() {
+  assert_coarse_identity_deadline fragmented
+  pass "fragmented replies cannot extend the total identity-lookup deadline"
+}
+
+test_run_identity_deadline_spans_both_requests() {
+  assert_coarse_identity_deadline requests
+  pass "both identity-lookup requests share one total deadline"
 }
 
 test_run_identity_resolves_coarse_attribution_through_the_producer() {
@@ -1953,6 +2002,8 @@ test_pipeline_owned_custody_rejects_mismatched_ownership
 test_run_identity_resolves_coarse_attribution_through_the_producer
 test_run_identity_picks_the_attributed_run_among_several_at_one_head
 test_run_identity_rejects_a_producer_answer_that_does_not_match
+test_run_identity_deadline_bounds_fragmented_frames
+test_run_identity_deadline_spans_both_requests
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status

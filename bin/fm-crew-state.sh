@@ -550,17 +550,36 @@ nm_exact_run_id() {  # <known-run-id> <branch> <full-head> <status>
   [ -S "$FM_NM_IPC_SOCKET" ] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
   python3 - "$FM_NM_IPC_SOCKET" "$FM_NM_IPC_TIMEOUT" "$1" "$2" "$3" "$4" <<'NM_IPC_PY' 2>/dev/null || true
-import json, socket, sys
+import json, socket, sys, time
 
 sock_path, timeout, known_run, branch, head, status = sys.argv[1:7]
 FRAME_MAX = 1024 * 1024
 
 
-def call(reader, writer, method, params, rid):
-    writer.write((json.dumps({"jsonrpc": "2.0", "method": method,
-                              "params": params, "id": rid}) + "\n").encode())
-    writer.flush()
-    line = reader.readline(FRAME_MAX)
+def remaining_timeout(conn, deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("identity lookup deadline expired")
+    conn.settimeout(remaining)
+
+
+def call(conn, pending, deadline, method, params, rid):
+    remaining_timeout(conn, deadline)
+    conn.sendall((json.dumps({"jsonrpc": "2.0", "method": method,
+                             "params": params, "id": rid}) + "\n").encode())
+    while True:
+        newline = pending.find(b"\n")
+        if newline >= 0:
+            line = bytes(pending[:newline + 1])
+            del pending[:newline + 1]
+            break
+        if len(pending) >= FRAME_MAX:
+            return None
+        remaining_timeout(conn, deadline)
+        chunk = conn.recv(min(65536, FRAME_MAX - len(pending)))
+        if not chunk:
+            return None
+        pending.extend(chunk)
     if not line or len(line) >= FRAME_MAX:
         return None
     try:
@@ -574,37 +593,38 @@ def call(reader, writer, method, params, rid):
 
 
 try:
-    conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    conn.settimeout(float(timeout))
-    conn.connect(sock_path)
-    reader = conn.makefile("rb")
-    writer = conn.makefile("wb")
+    deadline = time.monotonic() + float(timeout)
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+        pending = bytearray()
+        remaining_timeout(conn, deadline)
+        conn.connect(sock_path)
 
-    result = call(reader, writer, "get_run", {"run_id": known_run}, 1)
-    run = (result or {}).get("run")
-    if not isinstance(run, dict) or run.get("id") != known_run:
-        raise SystemExit(0)
-    repo = run.get("repo_id")
-    if not isinstance(repo, str) or not repo:
-        raise SystemExit(0)
+        result = call(conn, pending, deadline, "get_run", {"run_id": known_run}, 1)
+        run = (result or {}).get("run")
+        if not isinstance(run, dict) or run.get("id") != known_run:
+            raise SystemExit(0)
+        repo = run.get("repo_id")
+        if not isinstance(repo, str) or not repo:
+            raise SystemExit(0)
 
-    result = call(reader, writer, "get_runs_for_head",
-                  {"repo_id": repo, "branch": branch, "head_sha": head}, 2)
-    runs = (result or {}).get("runs")
-    if not isinstance(runs, list):
-        raise SystemExit(0)
-    for record in runs:
-        if not isinstance(record, dict):
-            continue
-        if record.get("repo_id") != repo or record.get("branch") != branch \
-                or record.get("head_sha") != head:
-            continue
-        if status and record.get("status") != status:
-            continue
-        run_id = record.get("id")
-        if isinstance(run_id, str) and run_id:
-            sys.stdout.write(run_id + "\n")
-            break
+        result = call(conn, pending, deadline, "get_runs_for_head",
+                      {"repo_id": repo, "branch": branch, "head_sha": head}, 2)
+        runs = (result or {}).get("runs")
+        if not isinstance(runs, list):
+            raise SystemExit(0)
+        for record in runs:
+            if not isinstance(record, dict):
+                continue
+            if record.get("repo_id") != repo or record.get("branch") != branch \
+                    or record.get("head_sha") != head:
+                continue
+            if status and record.get("status") != status:
+                continue
+            run_id = record.get("id")
+            if isinstance(run_id, str) and run_id:
+                if time.monotonic() < deadline:
+                    sys.stdout.write(run_id + "\n")
+                break
 except SystemExit:
     raise
 except Exception:
