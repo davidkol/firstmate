@@ -981,16 +981,13 @@ test_pipeline_owned_custody_rejects_mismatched_ownership() {
 #
 # A supervisor that consumed one failed run needs to tell that run from its rerun
 # without having watched the working interval between them, so the reader names the
-# exact run it attributed. Both fields come from the same `axi status` answer the
-# verdict came from; the installed producer's TOON carries `id:` and `head:`
-# (verified read-only against no-mistakes v1.46.0). The plain listing used by the
-# coarse fallback carries no run ID at all - its rows are
-# "<status> <branch> <short-sha> <date>" - so that path emits no identity rather
-# than a synthesised one, and this suite pins that limit rather than papering it.
+# exact run it attributed. The full path uses the ID from the same `axi status`
+# answer as the verdict. The coarse listing has no ID, so failed/cancelled rows
+# resolve an exact ID through the producer's existing read-only lookup below.
 # A one-shot stand-in for the running no-mistakes daemon's local JSON-RPC socket.
 # It speaks the SAME newline-delimited protocol the real daemon serves, and answers
 # from a fixture file mapping method name -> result object, so these tests exercise
-# the reader's real client path (request shape, framing, validation) rather than a
+# the reader's real client path (framing and response validation) rather than a
 # mocked-out helper. A method missing from the fixture is answered with a JSON-RPC
 # error, and the reserved key "raw" makes the server emit that literal line instead
 # of a reply, for the malformed-frame case.
@@ -1089,7 +1086,7 @@ test_run_identity_names_the_attributed_run() {
   assert_contains "$out" "run-identity: 01RUNA" "the identity changed when the same run projected a short head"
   out=$(run_crew_state "$d" feat-ident)
   assert_not_contains "$out" "run-identity" "the ordinary mode stays a single verdict line"
-  pass "--with-run-identity adds the attributed run's exact id and head to the same verdict"
+  pass "--with-run-identity adds the attributed run's exact ID to the same verdict"
 }
 
 test_run_identity_separates_two_runs_at_the_same_branch_and_head() {

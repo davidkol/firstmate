@@ -708,8 +708,8 @@ status_unseen_coordination() {  # <status-file> [captured-size:mtime]
 #             it is a declared outcome that the status-signal path already
 #             delivers once, so it maps to `none` and takes the same
 #             delivered-outcome suppression as `done:`/`blocked:`.
-#   none    - positively read, and none of the above: a stopped, finished,
-#             parked or torn-down crew.
+#   none    - none of the above; this includes worker-declared state that
+#             supplies no authoritative evidence about an owned run.
 #   unknown - NO authoritative verdict: an empty id, an unreadable or malformed
 #             answer, or a reader that itself reported `unknown`. Kept distinct
 #             from `none` because "the crew is not failing" and "we could not
@@ -746,20 +746,56 @@ crew_absorb_class() {  # <id>
   crew_absorb_class_of_line "$line"
 }
 
-# ONE bounded read that answers both "what is this crew doing" and "WHICH owned run
-# is that answer about". Prints "<class><TAB><run-identity>"; the identity is empty
-# whenever fm-crew-state.sh could not attribute a full run, which is the honest
-# answer on the coarse-listing fallback (see that reader's --with-run-identity
-# contract). Callers that must tell one failed run from its rerun use this instead
-# of crew_absorb_class, so the two facts always come from the same observation and
-# cannot straddle a run transition.
+# The RAW provenance of a verdict line, from fm-crew-state.sh's own vocabulary:
+# run-step (the reader attributed a no-mistakes run and read its state), pane (a
+# semantic busy verdict about the harness), status-log (the crew's own appended
+# line), or none (no source at all). The absorb class deliberately collapses these
+# into a triage decision, but a caller reconciling what it already knows about a
+# RUN needs the difference: only run-step is evidence about the run. Anything the
+# reader derived from the worker's log or pane is evidence about the WORKER, which
+# is exactly what it falls back to when the producer times out. An unrecognised or
+# absent source reads as none, so a malformed answer can never pass as attributed.
+crew_absorb_source_of_line() {  # <current-state-line>
+  local line=$1 src
+  case "$line" in state:*) ;; *) printf 'none'; return ;; esac
+  case "$line" in *"source: "*) ;; *) printf 'none'; return ;; esac
+  src=${line#*source: }; src=${src%% *}
+  case "$src" in run-step|pane|status-log) printf '%s' "$src" ;; *) printf 'none' ;; esac
+}
+
+# ONE bounded read that answers all three questions a run-aware caller needs at
+# once: what is this crew doing, WHICH owned run is that answer about, and WHERE
+# did the answer come from. Prints "<class><TAB><run-identity><TAB><source>". The
+# identity is empty when the reader cannot name the attributed run; its
+# --with-run-identity contract owns the full and coarse lookup rules.
+# The source is the raw provenance, kept because a
+# class alone cannot distinguish an answer about the RUN from the reader's
+# worker-derived fallback. Callers that must tell one failed run from its rerun,
+# or decide whether a delivery record about a run may be forgotten, use this
+# instead of crew_absorb_class, so all three facts come from the same observation
+# and cannot straddle a run transition.
+# Split one crew_absorb_observation answer into obs_class, obs_ident and
+# obs_source. It lives with the producer of that answer so the three-field contract
+# has one owner, and every caller reads all three from the SAME observation, so a
+# decision can never pair a class from one read with provenance from another.
+# shellcheck disable=SC2034  # obs_class/obs_ident are return values read by callers.
+read_observation() {  # <observation>
+  local rest
+  obs_class=${1%%	*}
+  rest=${1#*	}
+  obs_ident=${rest%%	*}
+  obs_source=${rest#*	}
+  [ "$obs_source" != "$rest" ] || obs_source=none
+}
+
 crew_absorb_observation() {  # <id>
   local id=$1 out line ident
-  [ -n "$id" ] || { printf 'unknown\t'; return; }
+  [ -n "$id" ] || { printf 'unknown\t\tnone'; return; }
   out=$("$FM_CREW_STATE_BIN" --with-run-identity "$id" 2>/dev/null) || true
   line=$(printf '%s\n' "$out" | head -1)
   ident=$(printf '%s\n' "$out" | sed -n 's/^run-identity: //p' | head -1)
-  printf '%s\t%s' "$(crew_absorb_class_of_line "$line")" "$ident"
+  printf '%s\t%s\t%s' "$(crew_absorb_class_of_line "$line")" "$ident" \
+    "$(crew_absorb_source_of_line "$line")"
 }
 
 # 0 if crew <id> shows POSITIVE evidence it is still working (crew_absorb_class

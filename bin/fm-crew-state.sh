@@ -74,10 +74,10 @@
 # is read through a different surface.
 # The full path takes the ID from the `axi status` output this reader already holds,
 # with no extra producer call. The coarse fallback's `no-mistakes runs` rows carry
-# no ID, so that path resolves one through nm_exact_run_id (below) - the producer's
-# OWN existing read-only lookup - rather than synthesising a token from state words,
-# a sha, or a timestamp. When neither can name the run the line is omitted, and a
-# consumer must treat that as "not known", never as a different run.
+# no ID. For failed/cancelled runs that path resolves one through nm_exact_run_id
+# (below), the producer's existing read-only lookup. Other coarse states omit the
+# identity because no consumer needs it. An unavailable identity is also omitted;
+# a consumer must treat that as "not known", never as a different run.
 # Read-only and side-effect free. Always exits 0 on a successful read regardless
 # of state; exit 2 only on a usage error.
 set -u

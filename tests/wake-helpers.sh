@@ -111,8 +111,7 @@ SH
 # the pane/current-state verdict.
 # `--with-run-identity <id>` prints the same verdict plus, when a per-id
 # FM_FAKE_CREW_IDENTITY_<sanitized-id> or the shared FM_FAKE_CREW_IDENTITY is set,
-# the reader's `run-identity: <value>` line. Absent means the reader attributed no
-# full run, which is what the coarse listing fallback really produces.
+# the reader's `run-identity: <value>` line. Absent models an unavailable identity.
 make_fake_crew_state() {  # <fakebin>
   local fakebin=$1
   cat > "$fakebin/fm-crew-state.sh" <<'SH'
