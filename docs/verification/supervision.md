@@ -441,13 +441,40 @@ tests/fm-session-start.test.sh
 
 All five commands exited zero.
 
+### Coordination-only status routing
+
+Verified on 2026-09-10 with codex-cli 0.153.4 on macOS, using the candidate's real watcher and queue in isolated homes.
+The live regression runs a real Codex primary and a real Codex worker in a disposable tmux session; it changes no live home or hook registration.
+The existing captain-directed process is present before worker launch; initialization notifications before the first status leave the already armed primary unchanged.
+Worker progress, local answers, declared waits, and the worker's configured notify turn-end producer also leave the parked primary pane unchanged and its supervisor alive.
+An explicit worker request then resumes that same primary conversation, which drains the request, and its next Stop creates a live identity-verified successor watcher for the same conversation.
+The test waits for the worker's actual answer and status writes because a notify marker alone may appear during initialization.
+
+```sh
+FM_CODEX_LIVE_E2E=1 bin/fm-test-run.sh tests/fm-codex-continuity-live-e2e.test.sh
+```
+
+Selected exact output from the passing run:
+
+```text
+ok - real captain-directed worker initialization before status: 0 primary wakes
+ok - real worker progress, local answer, paused wait and notify turn ends: 0 primary wakes
+ok - codex-cli 0.153.4 live E2E: idle armed nothing, a detached supervisor waited without model cost, the captain kept the conversation, and one worker event resumed it
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=144752
+```
+
+`tests/fm-watch-triage.test.sh` covers unseen append snapshots, grace coalescing, restart delivery, deliberate waits, completed-work timers and later owned-run failures.
+`tests/fm-wake-queue.test.sh` owns concurrent publication/drain and interruption recovery, while `tests/fm-supervision-events.test.sh` covers the native blocked-transition hold exemption without driving a real backend.
+`bin/fm-classify-lib.sh` owns the status-routing contract; [architecture.md](../architecture.md#event-driven-supervision) describes its normal-mode and away-mode boundary.
+Unproven no-status exits have no automatic crash-notification guarantee: current shell presence and unbound notify markers cannot establish a launch/recovery incarnation.
+The real execution above covers Codex on tmux and macOS; other primary harnesses, real native-push backends, and Linux were not exercised by that run.
+
 ### Codex background-wake lifecycle repair
 
 The ownership, destination, binding-read and delivery-failure paths around that wake were repaired in this repository on 2026-09-07, after a fault-probe audit reproduced four runtime cases the earlier passes had not covered.
 This entry records deterministic in-repository verification only.
-The live Codex axis was NOT re-run for it: the opt-in `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh` still names codex-cli 0.153.4 from the 2026-09-07 pass above, and its own oracles were tightened in this change without being re-executed against a real client.
-Treat that axis as untested for this repair until the opt-in command is run again.
-Two defects in that suite's own harness were corrected here and are likewise unexecuted against a real client: it now settles the pane before taking the quiet control's baseline, because a baseline captured while the Stop hook's status line is still up differs from itself as the TUI reflows and reports that rendering as conversation activity; and an empty candidate diff is now a no-op, because a clone that already carries the exact candidate is the shape of a pipeline commit rather than a projection failure.
+The live Codex axis has since been rerun on 2026-09-10; the current execution and limits are recorded under Coordination-only status routing above.
+Two defects in that suite's own harness were corrected here and are included in that later live execution: it now settles the pane before taking the quiet control's baseline, because a baseline captured while the Stop hook's status line is still up differs from itself as the TUI reflows and reports that rendering as conversation activity; and an empty candidate diff is now a no-op, because a clone that already carries the exact candidate is the shape of a pipeline commit rather than a projection failure.
 
 Deterministically verified here:
 

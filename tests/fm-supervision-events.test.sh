@@ -34,7 +34,7 @@ sleep() { printf 'SLEEP\n' >> "$SLEEP_LOG"; }
 reset_state() {
   rm -f "$STATE_DIR"/*.meta "$STATE_DIR"/*.status "$STATE_DIR"/.wake-queue \
     "$STATE_DIR"/.wake-queue.seq "$STATE_DIR"/.watch-triage.log \
-    "$STATE_DIR"/.herdr-escalated-* "$TMP"/panes "$TMP"/wtcalls "$TMP"/wtcalled 2>/dev/null || true
+    "$STATE_DIR"/.hb-surfaced-* "$STATE_DIR"/.herdr-escalated-* "$TMP"/panes "$TMP"/wtcalls "$TMP"/wtcalled 2>/dev/null || true
   : > "$WAKE_LOG"
   : > "$SLEEP_LOG"
   _event_cap_key=""
@@ -81,6 +81,28 @@ fi
 [ ! -s "$WAKE_LOG" ] || fail "a declared-pause crew must not wake the supervisor from the event fast-path"
 grep -q 'absorbed push' "$STATE_DIR/.watch-triage.log" 2>/dev/null || fail "the paused absorb should be logged to the triage log"
 pass "handle_push_transition: a declared-pause crew is absorbed (no fast wake), left to the poll loop's long cadence"
+
+# A native blocked edge cannot revive a declared hold or a delivered outcome.
+for declaration in 'captain-held [key=route]: transferred' 'done: report delivered'; do
+  reset_state
+  fm_write_meta "$STATE_DIR/tk2.meta" "window=default:wG:pQ" "backend=herdr" "kind=ship"
+  printf '%s\n' "$declaration" > "$STATE_DIR/tk2.status"
+  printf '%s' "$declaration" > "$STATE_DIR/.hb-surfaced-tk2"
+  handle_push_transition herdr default "$(mkrec wG:pQ blocked)"
+  [ ! -s "$WAKE_LOG" ] || fail "native blocked revived $declaration"
+  [ ! -s "$STATE_DIR/.wake-queue" ] || fail "native blocked queued $declaration"
+  [ -e "$STATE_DIR/.herdr-escalated-default_wG_pQ" ] || fail "absorbed blocked edge was not consumed"
+done
+pass "native blocked edges respect declared holds and delivered outcomes"
+
+reset_state
+fm_write_meta "$STATE_DIR/directed.meta" "window=default:wG:pQ" "backend=herdr" "kind=ship"
+mkdir -p "$TMP/data/directed"
+printf '# Delivery contract\n- process: captain-directed\n' > "$TMP/data/directed/brief.md"
+FM_HOME="$TMP" handle_push_transition herdr default "$(mkrec wG:pQ blocked)"
+[ ! -s "$WAKE_LOG" ] || fail "captain-directed native menu with no status woke the primary"
+[ -e "$STATE_DIR/.herdr-escalated-default_wG_pQ" ] || fail "captain-directed native observation was not consumed"
+pass "captain-directed native menus are routine even before the first status"
 
 # --- event_wait_or_sleep: secondmate windows are excluded from the pane list --
 

@@ -1876,7 +1876,7 @@ test_design_intake_rejects_secondmate_and_herdr_combinations_in_any_order() {
 # The temporary baseline script shares the current helper scripts and root so the
 # only compared behavior is fm-brief.sh's ordinary ship/scout/secondmate output.
 test_design_intake_preserves_nonship_brief_bytes() {
-  local approved base_root home kind id expected current
+  local approved base_root home kind id expected current brief_bytes
   approved=6077d702e1d50a8e364dc77b0eb8a64f018545c2
   base_root="$TMP_ROOT/design-intake-approved-base"
   home="$TMP_ROOT/design-intake-byte-home"
@@ -1922,10 +1922,26 @@ test_design_intake_preserves_nonship_brief_bytes() {
         ;;
     esac
     current="$home/data/$id/brief.md"
-    cmp -s "$expected" "$current" \
-      || fail "ordinary $kind brief changed from the exact approved Companion bytes"
+    if [ "$kind" = scout ]; then
+      # Coordination-only routing deliberately updates rule 4. Keep the older
+      # Companion contract pinned everywhere else, and verify the new emitted
+      # worker interface before excluding that one changed paragraph.
+      assert_grep 'explicitly route coordination to firstmate' "$current" "scout lost explicit routing"
+      assert_grep 'when deliberately waiting for the captain here' "$current" "scout lost its deliberate wait declaration"
+      assert_no_grep 'Each append wakes firstmate' "$current" "scout still requests routine wakes"
+      for brief_bytes in "$expected" "$current"; do
+        awk '/^4\. Report status by appending one line:$/ { skip=1; print "4. Status routing verified separately"; next }
+             /^5\. / { skip=0 }
+             !skip { print }' "$brief_bytes" > "$brief_bytes.without-status-rule"
+      done
+      cmp -s "$expected.without-status-rule" "$current.without-status-rule" \
+        || fail "ordinary scout changed outside its updated status rule"
+    else
+      cmp -s "$expected" "$current" \
+        || fail "ordinary $kind brief changed from the exact approved Companion bytes"
+    fi
   done
-  pass "fm-brief.sh: scout and secondmate briefs remain byte-compatible"
+  pass "fm-brief.sh: scout changes only status routing; secondmate remains byte-compatible"
 }
 
 test_script_parses

@@ -17,6 +17,22 @@ DRAIN="$ROOT/bin/fm-wake-drain.sh"
 TMP_ROOT=$(fm_test_tmproot fm-wake-tests)
 
 
+test_drain_preserves_distinct_status_snapshots() {
+  local dir state out first second count
+  dir=$(make_case distinct-status-snapshots); state="$dir/state"; out="$dir/drain.out"
+  first="signal: $state/task.status | status snapshot 100:1: needs-decision: repeated request"
+  second="signal: $state/task.status | status snapshot 150:1: needs-decision: repeated request"
+  append_wake "$state" signal task.status "$first" || fail "first snapshot append failed"
+  append_wake "$state" signal task.status "$second" || fail "second snapshot append failed"
+  append_wake "$state" signal task.status "$first" || fail "snapshot retry append failed"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "snapshot drain failed"
+  count=$(awk -F '\t' '$3 == "signal" { n++ } END { print n+0 }' "$out")
+  [ "$count" -eq 2 ] || fail "distinct status snapshots collapsed or retry duplicated: $count records"
+  grep -F "$first" "$out" >/dev/null || fail "earlier explicit request was erased by later same-task work"
+  grep -F "$second" "$out" >/dev/null || fail "later explicit request was lost"
+  pass "drain preserves distinct same-task status snapshots and collapses exact publication retries"
+}
+
 test_concurrent_append_and_drain() {
   local dir state out1 out2 all pids i pid count unique malformed
   dir=$(make_case concurrent)
@@ -122,7 +138,7 @@ test_not_working_stale_enqueue_before_suppressor() {
   printf 'window=%s\nkind=ship\n' "$window" > "$state/stopped.meta"
   # Non-terminal status (no captain-relevant verb); prime .seen-* so the per-poll
   # signal scan does not pre-empt the stale path.
-  printf 'working: implementing\n' > "$state/stopped.status"
+  printf 'legacy note without a state declaration\n' > "$state/stopped.status"
   if [ "$(uname)" = Darwin ]; then sig=$(stat -f '%z:%Fm' "$state/stopped.status"); else sig=$(stat -c '%s:%Y' "$state/stopped.status"); fi
   printf '%s' "$sig" > "$state/.seen-stopped_status"
   key=$(printf '%s' "$window" | tr ':/.' '___')
@@ -437,6 +453,7 @@ test_interruption_before_and_after_raw_commit() {
   pass "interruptions restore before commitment and never replay after raw commitment"
 }
 
+test_drain_preserves_distinct_status_snapshots
 test_concurrent_append_and_drain
 test_signal_catchup_without_running_watcher
 test_stale_enqueue_before_suppressor

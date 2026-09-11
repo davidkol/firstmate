@@ -1,11 +1,11 @@
 Mode: Codex Stop-hook-owned background wake.
 
 When this session owns supervision and away mode is not active:
-1. Drain first with `bin/fm-wake-drain.sh`.
+1. Drain first with `FM_SUPERVISION_MODEL=autoarm bin/fm-wake-drain.sh`.
 2. Routine watcher arm and re-arm are owned by the Stop hook (`bin/fm-codex-stop-autoarm.sh`), never by you.
    Every turn end while supervision is needed launches or attaches one home-scoped watcher cycle with no model command and no model tokens, and the hook returns immediately so this conversation stays interactive for the captain while it waits.
 3. An actionable close wakes you as a new marked operational message in this conversation, published with `codex queue` against this conversation's own id.
-   On such a wake, run `bin/fm-wake-drain.sh` first and handle it.
+   On such a wake, run `FM_SUPERVISION_MODEL=autoarm bin/fm-wake-drain.sh` first and handle it.
    Do not run `bin/fm-watch-checkpoint.sh` or `bin/fm-watch-arm.sh` after an ordinary wake; the next turn end re-arms automatically when supervision is still needed.
    Do not invent a wake from an attach-status line alone; drain and act only on real wake records, the drain's `OPEN DECISIONS` entries, or a real watcher reason line.
 4. On the one `FIRSTMATE WATCHER FAILURE` notice, drain, inspect the automatic mechanism failure, and do not turn the notice into a repeating manual-checkpoint loop.
@@ -17,7 +17,9 @@ When this session owns supervision and away mode is not active:
    `codex queue` reports success even for a conversation that has already exited, so a published wake is never delivery proof; a wake published into a closed conversation is drained by the next session start instead.
 8. Never use shell `&` or Codex background tasks for firstmate watcher supervision.
    If `bin/fm-watch-arm.sh` is ever shelled during recovery, a backgrounded, piped, or bundled anti-pattern is denied automatically by the PreToolUse seatbelt (`bin/fm-arm-pretool-check.sh`) registered in `.codex/hooks.json`.
-9. Waiting on the hook-owned cycle is silent: do not send idle progress while the watcher is parked.
+9. The drain command explicitly carries the known supervision model because detached or sandboxed callers may not expose Codex ancestry.
+   A delivered watcher cycle normally has exited before the handling turn; a fresh between-cycle beacon is healthy, while an aged beacon or automatic-mechanism failure still needs investigation.
+10. Waiting on the hook-owned cycle is silent: do not send idle progress while the watcher is parked.
 
 The watcher itself remains `bin/fm-watch.sh`, and `bin/fm-watch-arm.sh` remains the verified arm wrapper that the detached supervisor foregrounds.
 Codex has no asynchronous hook mode, so the Stop hook detaches that supervisor through `bin/fm-codex-detach.sh` and exits at once rather than holding the stop open.

@@ -506,7 +506,7 @@ main_supervise() {  # <session-id>
       write_binding "$session" superseded
       exit 0
     fi
-    publish_wake "$session" "$(printf 'FIRSTMATE WATCHER WAKE - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is Stop-hook-owned; do not arm another cycle yourself.\n\n%s' "$reasons")"
+    publish_wake "$session" "$(printf 'FIRSTMATE WATCHER WAKE - drain queued wakes with FM_SUPERVISION_MODEL=autoarm bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is Stop-hook-owned; do not arm another cycle yourself.\n\n%s' "$reasons")"
     publish_rc=$?
     if [ "$publish_rc" -eq 3 ]; then
       write_binding "$session" superseded

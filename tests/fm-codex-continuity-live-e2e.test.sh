@@ -25,12 +25,14 @@ fail() {
 command -v codex >/dev/null 2>&1 || fail "codex not found"
 command -v tmux >/dev/null 2>&1 || fail "tmux not found"
 
-LAB="$ROOT/.codex-live-e2e.$$"
+LAB="$ROOT/.no-mistakes/codex-live-e2e.$$"
 PROJECT="$LAB/project"
 HOME_DIR="$LAB/fmhome"
+WORKER_DIR="$LAB/worker"
 SESSION="fm-codex-live-e2e-$$"
 CODEX_VERSION=$(codex --version)
 QUIET_SECONDS=${FM_CODEX_LIVE_QUIET_SECONDS:-40}
+PRIMARY_PANE=
 
 cleanup() {
   local pid
@@ -52,8 +54,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+file_mtime() {
+  if [ "$(uname)" = Darwin ]; then stat -f %m "$1"; else stat -c %Y "$1"; fi
+}
+
 pane() {
-  tmux capture-pane -p -S -200 -t "$SESSION" 2>/dev/null || true
+  tmux capture-pane -p -S -200 -t "$PRIMARY_PANE" 2>/dev/null || true
 }
 
 # The TUI hard-wraps and re-indents a long message, and the wrap point moves with
@@ -141,9 +147,20 @@ wait_for_file() {  # <path> <seconds> <what>
 }
 
 say() {  # <text> - type one captain message and submit it
-  tmux send-keys -t "$SESSION" "$1"
+  tmux send-keys -t "$PRIMARY_PANE" "$1"
   sleep 1
-  tmux send-keys -t "$SESSION" Enter
+  tmux send-keys -t "$PRIMARY_PANE" Enter
+}
+
+wait_for_worker_answer() {  # <sentinel> <seconds>
+  local needle=$1 limit=$2 i=0 captured count
+  while [ "$i" -lt $((limit * 2)) ]; do
+    captured=$(tmux capture-pane -p -S -100 -t "$SESSION:worker" 2>/dev/null || true)
+    count=$(printf '%s\n' "$captured" | grep -c -F "$needle" || true)
+    [ "$count" -ge 2 ] && return 0
+    sleep 0.5; i=$((i + 1))
+  done
+  fail "worker never answered $needle: $captured"
 }
 
 binding_field() {  # <field>
@@ -152,8 +169,6 @@ binding_field() {  # <field>
 
 mkdir -p "$LAB"
 git clone -q "$ROOT" "$PROJECT"
-# A local clone contains only committed objects, so project this candidate diff
-# into the isolated clone before asking Codex to exercise the behavior.
 # A local clone carries only committed objects, so any uncommitted candidate has
 # to be projected into it. An EMPTY diff means the clone already has the exact
 # candidate, which is the shape of a pipeline commit or any clean checkout: that
@@ -182,7 +197,7 @@ FM_STATE_OVERRIDE="$HOME_DIR/state"
 # shellcheck source=/dev/null
 . "$PROJECT/bin/fm-wake-lib.sh"
 
-PROMPT='You are a Firstmate primary session for this isolated test home. Reply with exactly READY and nothing else. Later, if you receive a firstmate supervision notification, run bin/fm-wake-drain.sh once and report in one line what it said.'
+PROMPT='You are a Firstmate primary session for this isolated test home. Reply with exactly READY and nothing else. Later, if you receive a firstmate supervision notification, run FM_SUPERVISION_MODEL=autoarm bin/fm-wake-drain.sh once and report in one line what it said.'
 
 tmux new-session -d -s "$SESSION" -x 200 -y 50 -c "$PROJECT" \
   "FM_HOME='$HOME_DIR' FM_POLL=3 FM_SIGNAL_GRACE=2 exec codex \
@@ -191,13 +206,15 @@ tmux new-session -d -s "$SESSION" -x 200 -y 50 -c "$PROJECT" \
      --dangerously-bypass-approvals-and-sandbox \
      '$PROMPT'" \
   || fail "could not start the isolated Codex conversation"
+PRIMARY_PANE=$(tmux display-message -p -t "$SESSION" '#{pane_id}')
+[ -n "$PRIMARY_PANE" ] || fail "the isolated primary has no pane id"
 
 # A fresh lab directory is untrusted, so accept the one trust prompt if it shows.
 i=0
 while [ "$i" -lt 40 ]; do
   case "$(pane)" in
     *"Do you trust the contents of this directory"*)
-      tmux send-keys -t "$SESSION" Enter
+      tmux send-keys -t "$PRIMARY_PANE" Enter
       break
       ;;
     *READY*) break ;;
@@ -208,19 +225,53 @@ done
 wait_for_pane_answer READY 120 "the isolated Codex conversation never completed its first turn"
 
 # --- idle home: the Stop hook must arm nothing ------------------------------
+pane_settled 120 || fail "idle primary never finished its Stop boundary"
 [ ! -f "$HOME_DIR/state/.codex-autoarm-session" ] \
   || fail "Codex armed a supervisor for a home with no work in flight"
 [ ! -e "$HOME_DIR/state/.watch.lock" ] \
   || fail "Codex started a watcher for a home with no work in flight"
 
 # --- live home: one turn end arms a detached supervisor ----------------------
-printf 'window=fm:fm-live\nworktree=%s\nkind=ship\nharness=codex\n' "$PROJECT" \
+mkdir -p "$WORKER_DIR"
+git -C "$WORKER_DIR" init -q
+mkdir -p "$HOME_DIR/data/live"
+printf '# Delivery contract\n- process: captain-directed\n' > "$HOME_DIR/data/live/brief.md"
+printf 'window=%s:worker\nworktree=%s\nkind=ship\nharness=codex\nbackend=tmux\n' "$SESSION" "$WORKER_DIR" \
   > "$HOME_DIR/state/live.meta"
 say 'Reply with exactly ARMED and nothing else.'
 wait_for_pane_answer ARMED 120 "the Codex conversation never finished the arming turn"
 wait_for_file "$HOME_DIR/state/.codex-autoarm-session" 30 \
   "the Stop hook never armed a supervisor for a home with work in flight"
+pane_settled 120 || fail "the primary did not settle before worker initialization"
+BEFORE_WORKER=$(pane)
+INITIAL_SUPERVISOR=$(binding_field pid)
+WORKER_PROMPT="This is an isolated wake-routing test. Use a shell to append exactly these three newline-terminated records to $HOME_DIR/state/live.status:
+working: lab progress
+resolved: local answer
+paused: waiting for the captain in this window
+Then reply WORKER_READY and wait. Do nothing else."
+# The real worker's notify command is the Codex producer used by fm-spawn.
+tmux new-window -d -t "$SESSION" -n worker -c "$WORKER_DIR" \
+  "exec codex --dangerously-bypass-approvals-and-sandbox -c 'notify=[\"bash\",\"-c\",\"touch $HOME_DIR/state/live.turn-ended\"]' '$WORKER_PROMPT'" \
+  || fail "could not start the isolated Codex worker"
+# Review and accept only this empty lab repository's trust prompt.
+i=0
+while [ "$i" -lt 60 ] && [ ! -e "$HOME_DIR/state/live.turn-ended" ]; do
+  case "$(tmux capture-pane -p -t "$SESSION:worker" 2>/dev/null)" in
+    *"Do you trust the contents of this directory"*) tmux send-keys -t "$SESSION:worker" Enter; break ;;
+  esac
+  sleep 0.5; i=$((i + 1))
+done
+# notify may fire during initialization as well as after work. A marker alone
+# is therefore not proof that the worker completed the requested status writes.
+wait_for_worker_answer WORKER_READY 180
+wait_for_file "$HOME_DIR/state/live.turn-ended" 30 "the real worker never emitted notify"
+[ "$(tail -1 "$HOME_DIR/state/live.status" 2>/dev/null)" = 'paused: waiting for the captain in this window' ] \
+  || fail "the real worker did not declare its in-window wait: $(cat "$HOME_DIR/state/live.status" 2>/dev/null)"
 
+[ "$(pane)" = "$BEFORE_WORKER" ] || fail "worker initialization before any status woke the primary"
+[ "$(binding_field pid)" = "$INITIAL_SUPERVISOR" ] || fail "worker initialization closed the watcher cycle"
+printf 'ok - real captain-directed worker initialization before status: 0 primary wakes\n'
 SUPERVISOR=$(binding_field pid)
 CONVERSATION=$(binding_field session)
 case "$SUPERVISOR" in ''|*[!0-9]*) fail "the supervisor record has no pid" ;; esac
@@ -243,6 +294,25 @@ sleep "$QUIET_SECONDS"
 $(diff <(printf '%s\n' "$PARKED") <(pane) || true)"
 kill -0 "$SUPERVISOR" 2>/dev/null || fail "the supervisor died during the quiet window"
 
+# --- ordinary worker conversation still costs zero primary wakes ------------
+WORKER_TURN_BEFORE=$(file_mtime "$HOME_DIR/state/live.turn-ended")
+tmux send-keys -t "$SESSION:worker" "Append resolved: captain answered locally, working: ordinary followup, and paused: waiting for the captain in this window as three lines to $HOME_DIR/state/live.status. Reply WORKER_FOLLOWUP and wait. Do nothing else."
+sleep 1
+tmux send-keys -t "$SESSION:worker" Enter
+wait_for_worker_answer WORKER_FOLLOWUP 180
+i=0
+while [ "$i" -lt 180 ]; do
+  WORKER_TURN_AFTER=$(file_mtime "$HOME_DIR/state/live.turn-ended")
+  [ "$WORKER_TURN_AFTER" != "$WORKER_TURN_BEFORE" ] && break
+  sleep 0.5; i=$((i + 1))
+done
+[ "$WORKER_TURN_AFTER" != "$WORKER_TURN_BEFORE" ] || fail "ordinary worker followup did not complete"
+sleep 10
+[ "$(pane)" = "$PARKED" ] || fail "ordinary worker conversation woke the primary"
+[ ! -s "$HOME_DIR/state/.wake-queue" ] || fail "ordinary worker conversation queued coordination"
+[ "$(binding_field pid)" = "$SUPERVISOR" ] || fail "routine events closed the parked supervisor"
+printf 'ok - real worker progress, local answer, paused wait and notify turn ends: 0 primary wakes\n'
+
 # --- the captain can still use the conversation while it waits ---------------
 say 'Reply with exactly INTERACTIVE and nothing else.'
 wait_for_pane INTERACTIVE 120 "the captain could not use the conversation while the supervisor waited"
@@ -250,8 +320,9 @@ wait_for_pane INTERACTIVE 120 "the captain could not use the conversation while 
   || fail "a captain turn replaced the live supervisor instead of reusing it"
 
 # --- a worker event resumes this same conversation ---------------------------
-printf 'needs-decision: worker asks whether to open the new window\n' \
-  >> "$HOME_DIR/state/live.status"
+tmux send-keys -t "$SESSION:worker" "Append needs-decision: worker asks whether to open the new window to $HOME_DIR/state/live.status. Reply REQUEST_SENT and wait. Do nothing else."
+sleep 1
+tmux send-keys -t "$SESSION:worker" Enter
 # Wait on the marked wire prefix: it can only come from a delivered wake, never
 # from the launch prompt or from anything the model wrote itself.
 wait_for_pane_squashed "FIRSTMATE_OP:v1watcher:" 180 \
@@ -261,6 +332,8 @@ wait_for_pane_squashed "FIRSTMATE_OP:v1watcher:" 180 \
 wait_for_pane_squashed "workeraskswhethertoopenthenewwindow" 180 \
   "the resumed conversation never drained the worker's own request"
 PANE_AFTER=$(pane_squashed)
+printf 'same-conversation=%s\n' "$CONVERSATION"
+pane
 case "$PANE_AFTER" in
   *"FIRSTMATE_OP:v1watcher:FIRSTMATEWATCHERWAKE"*) : ;;
   *) fail "the wake reached the conversation unmarked, which away mode would read as the captain returning:

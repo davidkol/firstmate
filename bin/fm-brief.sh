@@ -760,13 +760,11 @@ $ORIENT_2$MEMORY_SECTION
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
-   Each append wakes firstmate, so report sparingly: only phase changes a supervisor
-   would act on and the needs-decision/blocked/paused/done/failed states. No step-by-step
-   FYI progress lines; firstmate reads your pane for that.
-   Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - ONLY when you are deliberately idling on a
-   known external wait you expect to clear on its own (an upstream release, a rate-limit reset):
-   firstmate then leaves your idle pane alone and rechecks it on a long cadence instead of
-   treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+   The status-routing contract is owned by \`bin/fm-classify-lib.sh\`.
+   Report sparingly: \`needs-decision:\`, \`blocked:\`, \`failed:\` and \`done:\` explicitly route coordination to firstmate.
+   Routine progress and in-window conversation stay in this window; firstmate does not need check-ins.
+   Use \`$PAUSED_VERB: {why}\` when deliberately waiting for the captain here or for a known external dependency.
+   This declaration keeps an idle wait quiet; use \`blocked:\` when firstmate must help.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
@@ -1166,16 +1164,13 @@ $RULE1
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
-   Each append wakes firstmate, so report sparingly: only phase changes a supervisor
-   would act on (setup done, bug reproduced, fix implemented, validation passed) and the
-   needs-decision/blocked/paused/done/failed states. No step-by-step FYI progress lines;
-   firstmate reads your pane for that.
+   The status-routing contract is owned by \`bin/fm-classify-lib.sh\`.
+   Report sparingly: \`needs-decision:\`, \`blocked:\`, \`failed:\` and \`done:\` explicitly route coordination to firstmate.
+   Routine progress and in-window conversation stay in this window; firstmate does not need check-ins.
    A mid-task \`working:\` line (including setup complete) is nonterminal: do not end the
    turn after it; continue the same stage until a defined \`done:\` gate under Definition of done.
-   Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - ONLY when you are deliberately idling on a
-   known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
-   a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
-   cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+   Use \`$PAUSED_VERB: {why}\` when deliberately waiting for the captain here or for a known external dependency.
+   This declaration keeps an idle wait quiet; use \`blocked:\` when firstmate must help.
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 $DECISION_RULE
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.

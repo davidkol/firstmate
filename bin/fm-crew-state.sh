@@ -2,8 +2,8 @@
 # fm-crew-state.sh - deterministic read of a crew's CURRENT state.
 #
 # Why this exists: state/<id>.status is an append-only, best-effort EVENT LOG.
-# Crews append only wake-worthy transitions (done/needs-decision/blocked/paused/failed)
-# and nothing when they silently resume, so `tail -1` of that log reports the
+# Crews append selected transitions, including routine working and paused notes,
+# and may append nothing when they resume, so `tail -1` of that log reports the
 # last EVENT, not the current STATE. After firstmate resolves a needs-decision
 # or blocked and the crew resumes (responds to the gate, the pipeline fixes, it
 # re-validates), the log's last line stays stale. This helper never infers the
@@ -64,6 +64,20 @@
 # `--progress-token <id>` prints a stable token for an attributable active
 # run-step and its bounded active-step log tail, or nothing when no such owned
 # progress source is active.
+# `--with-run-identity <id>` prints the ordinary current-state line and then, when
+# the run-step path attributed a run to this crew, one extra `run-identity: <run-id>`
+# line naming that exact run. It answers "WHICH owned run is this state about", which
+# a supervisor needs to tell one failed run from its rerun without having observed
+# the working interval between them. The value is the producer's own run ID and
+# nothing else: a ULID is already globally unique, so consumption stays stable when
+# a head is projected short in one answer and full in another, or when the same run
+# is read through a different surface.
+# The full path takes the ID from the `axi status` output this reader already holds,
+# with no extra producer call. The coarse fallback's `no-mistakes runs` rows carry
+# no ID. For failed/cancelled runs that path resolves one through nm_exact_run_id
+# (below), the producer's existing read-only lookup. Other coarse states omit the
+# identity because no consumer needs it. An unavailable identity is also omitted;
+# a consumer must treat that as "not known", never as a different run.
 # Read-only and side-effect free. Always exits 0 on a successful read regardless
 # of state; exit 2 only on a usage error.
 set -u
@@ -85,13 +99,14 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
 
 PROGRESS_TOKEN_MODE=0
-if [ "${1:-}" = --progress-token ]; then
-  PROGRESS_TOKEN_MODE=1
-  shift
-fi
+RUN_IDENTITY_MODE=0
+case "${1:-}" in
+  --progress-token)    PROGRESS_TOKEN_MODE=1; shift ;;
+  --with-run-identity) RUN_IDENTITY_MODE=1; shift ;;
+esac
 ID=${1:-}
 [ -n "$ID" ] && [ "$#" -eq 1 ] \
-  || { echo "usage: fm-crew-state.sh [--progress-token] <id>" >&2; exit 2; }
+  || { echo "usage: fm-crew-state.sh [--progress-token|--with-run-identity] <id>" >&2; exit 2; }
 
 META="$STATE/$ID.meta"
 LOG="$STATE/$ID.status"
@@ -116,6 +131,9 @@ emit() {  # <state> <source> [detail]
   fi
   [ -n "${3:-}" ] && line="$line${SEP}$3"
   printf '%s\n' "$line"
+  if [ "$RUN_IDENTITY_MODE" -eq 1 ] && [ "$2" = run-step ]; then
+    emit_run_identity
+  fi
   exit 0
 }
 
@@ -388,6 +406,9 @@ nm_ci_checks_state() {
 # is a run for THIS branch active right now. Echoes the first (most recent)
 # matching row's status word (running/completed/cancelled/failed), or empty
 # when the branch has no run within FM_CREW_STATE_RUNS_LIMIT rows.
+# Prints "<status>\t<short-sha>" for the matched row: the sha is what lets the exact
+# identity lookup below resolve this row's full head, and it is already validated
+# against the worktree by the same code-identity rule the full path uses.
 nm_runs_status_for_branch() {  # <branch>
   local branch=$1 out row st rest br sha
   out=$(nm_run runs --limit "$FM_CREW_STATE_RUNS_LIMIT")
@@ -408,7 +429,7 @@ nm_runs_status_for_branch() {  # <branch>
       if ! nm_coarse_head_matches_worktree "$sha"; then
         continue
       fi
-      printf '%s' "$st"
+      printf '%s\t%s' "$st" "$sha"
       return 0
     fi
   done <<< "$out"
@@ -431,9 +452,37 @@ nm_run_head_matches_worktree() {
   fm_nm_head_matches_worktree "$WT" "$run_head"
 }
 
+# Minimum abbreviation git itself will produce, and the floor this reader accepts
+# when the producer projects one commit two ways in a single answer.
+NM_MIN_ABBREV=7
+
+# 0 when two head fields FROM THE SAME producer answer name the same commit.
+# `axi status` renders the top-level head abbreviated (internal/cli/axi_render.go
+# shortSHA) while branch_sync.pipeline.current_head is full, so a literal string
+# comparison of the two can never hold. Neither side is resolvable with git here:
+# an unpublished pipeline commit lives in the gate's object store, not the worker's,
+# and this reader must never fetch it. Agreement is therefore decided on the
+# producer's own representations: both must be hex object names, the shorter must
+# reach NM_MIN_ABBREV, and the shorter must be a prefix of the longer. A differing
+# prefix, a non-hex value, an empty side, or an abbreviation below the floor is a
+# mismatch - this normalises representation only, and relaxes no binding.
+nm_same_producer_head() {  # <head-a> <head-b>
+  local a=$1 b=$2 short long
+  case "$a" in ''|*[!0-9a-f]*) return 1 ;; esac
+  case "$b" in ''|*[!0-9a-f]*) return 1 ;; esac
+  if [ "${#a}" -le "${#b}" ]; then short=$a; long=$b; else short=$b; long=$a; fi
+  [ "${#short}" -ge "$NM_MIN_ABBREV" ] || return 1
+  [ "${long#"$short"}" != "$long" ]
+}
+
 # Current no-mistakes explicitly reports a daemon-owned branch split during a
 # live fix round. Accept that divergence only when every ownership field binds
 # the active run to this exact branch and worktree tip.
+# Terminal statuses are accepted alongside active ones because the producer keeps
+# reporting pipeline_owned custody (safety blocked_pipeline_owned_recoverable) for a
+# failed or cancelled run whose commits are still unpublished. Dropping those was
+# how a genuinely failed owned run reached the status-log fallback and was reported
+# as ordinary progress instead of a failure.
 nm_pipeline_owned_matches_worktree() {
   local block local_block pipeline_block state run_status run_id pipeline_run
   local local_branch local_head submitted_head current_head run_head worktree_head
@@ -442,7 +491,7 @@ nm_pipeline_owned_matches_worktree() {
   state=$(strip_quotes "$(printf '%s\n' "$block" | sed -n 's/^  state:[[:space:]]*//p' | head -1)")
   [ "$state" = pipeline_owned ] || return 1
   run_status=$(strip_quotes "$(nm_field status)")
-  case "$run_status" in running|fixing|ci) ;; *) return 1 ;; esac
+  case "$run_status" in running|fixing|ci|failed|cancelled) ;; *) return 1 ;; esac
   run_id=$(strip_quotes "$(nm_field id)")
   run_head=$(strip_quotes "$(nm_field head)")
   [ -n "$run_id" ] && [ -n "$run_head" ] || return 1
@@ -460,7 +509,7 @@ nm_pipeline_owned_matches_worktree() {
     && [ "$local_head" = "$worktree_head" ] \
     && [ "$submitted_head" = "$worktree_head" ] \
     && [ "$pipeline_run" = "$run_id" ] \
-    && [ "$current_head" = "$run_head" ]
+    && nm_same_producer_head "$current_head" "$run_head"
 }
 
 nm_active_step() {
@@ -472,6 +521,142 @@ nm_active_step() {
   row=$(trim "$row")
   step=$(trim "${row%%,*}")
   strip_quotes "$step"
+}
+
+# The local no-mistakes daemon endpoint, resolved by the producer's OWN documented
+# rule (NM_HOME, else ~/.no-mistakes; internal/paths/paths.go). FM_NM_IPC_SOCKET is
+# the test seam, and FM_NM_IPC_TIMEOUT bounds the whole exchange.
+FM_NM_IPC_SOCKET="${FM_NM_IPC_SOCKET:-${NM_HOME:-$HOME/.no-mistakes}/socket}"
+FM_NM_IPC_TIMEOUT=${FM_NM_IPC_TIMEOUT:-5}
+case "$FM_NM_IPC_TIMEOUT" in ''|*[!0-9]*) FM_NM_IPC_TIMEOUT=5 ;; esac
+
+# Resolve the exact producer run ID for a run this reader attributed through the
+# coarse listing, which prints no ID of its own.
+#
+# This is a BOUNDED, FIXED-PURPOSE read of the producer's existing API, not a new
+# capability and not a database reader: exactly two read-only JSON-RPC methods that
+# the installed daemon already serves and its own CLI already uses - `get_run` to
+# learn the repository identity from a run the answer we hold already names, and
+# `get_runs_for_head` to ask for this crew's exact branch and full head. Repository
+# identity therefore comes from the producer, never from a guessed path or hash.
+#
+# Every returned record is re-validated against the exact repo, branch and full head
+# that were asked for, and against the status this reader attributed, so a wrong,
+# reordered, partial or unrelated answer yields nothing rather than a wrong ID. One
+# connection, one socket deadline, a 1 MiB frame bound, and no retry. A missing
+# socket, missing python3, refused connection, timeout, malformed frame or absent
+# method all print nothing, which callers must read as "not known".
+nm_exact_run_id() {  # <known-run-id> <branch> <full-head> <status>
+  [ -S "$FM_NM_IPC_SOCKET" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$FM_NM_IPC_SOCKET" "$FM_NM_IPC_TIMEOUT" "$1" "$2" "$3" "$4" <<'NM_IPC_PY' 2>/dev/null || true
+import json, socket, sys, time
+
+sock_path, timeout, known_run, branch, head, status = sys.argv[1:7]
+FRAME_MAX = 1024 * 1024
+
+
+def remaining_timeout(conn, deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("identity lookup deadline expired")
+    conn.settimeout(remaining)
+
+
+def call(conn, pending, deadline, method, params, rid):
+    remaining_timeout(conn, deadline)
+    conn.sendall((json.dumps({"jsonrpc": "2.0", "method": method,
+                             "params": params, "id": rid}) + "\n").encode())
+    while True:
+        newline = pending.find(b"\n")
+        if newline >= 0:
+            line = bytes(pending[:newline + 1])
+            del pending[:newline + 1]
+            break
+        if len(pending) >= FRAME_MAX:
+            return None
+        remaining_timeout(conn, deadline)
+        chunk = conn.recv(min(65536, FRAME_MAX - len(pending)))
+        if not chunk:
+            return None
+        pending.extend(chunk)
+    if not line or len(line) >= FRAME_MAX:
+        return None
+    try:
+        msg = json.loads(line.decode("utf-8", "replace"))
+    except ValueError:
+        return None
+    if not isinstance(msg, dict) or msg.get("id") != rid or msg.get("error") is not None:
+        return None
+    result = msg.get("result")
+    return result if isinstance(result, dict) else None
+
+
+try:
+    deadline = time.monotonic() + float(timeout)
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+        pending = bytearray()
+        remaining_timeout(conn, deadline)
+        conn.connect(sock_path)
+
+        result = call(conn, pending, deadline, "get_run", {"run_id": known_run}, 1)
+        run = (result or {}).get("run")
+        if not isinstance(run, dict) or run.get("id") != known_run:
+            raise SystemExit(0)
+        repo = run.get("repo_id")
+        if not isinstance(repo, str) or not repo:
+            raise SystemExit(0)
+
+        result = call(conn, pending, deadline, "get_runs_for_head",
+                      {"repo_id": repo, "branch": branch, "head_sha": head}, 2)
+        runs = (result or {}).get("runs")
+        if not isinstance(runs, list):
+            raise SystemExit(0)
+        for record in runs:
+            if not isinstance(record, dict):
+                continue
+            if record.get("repo_id") != repo or record.get("branch") != branch \
+                    or record.get("head_sha") != head:
+                continue
+            if status and record.get("status") != status:
+                continue
+            run_id = record.get("id")
+            if isinstance(run_id, str) and run_id:
+                if time.monotonic() < deadline:
+                    sys.stdout.write(run_id + "\n")
+                break
+except SystemExit:
+    raise
+except Exception:
+    pass
+NM_IPC_PY
+}
+
+# The exact producer identity of the run this reader attributed. The full path reads
+# it from the `axi status` answer already in hand; the coarse path asks the producer
+# for it. Either way the value is the run ID alone, so it does not change when the
+# same run is projected with a short head in one answer and a full head in another.
+#
+# BOUNDARY, deliberate: the coarse path resolves an ID only for a FAILED or CANCELLED
+# run. That is the one identity any consumer needs - the watcher keys its
+# failure receipt on it - and every other coarse state would pay a socket round trip
+# for a value nothing reads. The cheap full-path ID is still reported for every
+# state, so a caller that only wants "which run is this" keeps it there.
+emit_run_identity() {
+  local run_id known head_full
+  if [ "${RUN_SOURCE:-}" = coarse ]; then
+    case "$COARSE_STATUS" in failed|cancelled) ;; *) return 0 ;; esac
+    [ -n "$COARSE_HEAD_SHORT" ] || return 0
+    head_full=$(git -C "$WT" rev-parse --verify "${COARSE_HEAD_SHORT}^{commit}" 2>/dev/null) || return 0
+    [ -n "$head_full" ] || return 0
+    known=$(strip_quotes "$(nm_field id)")
+    [ -n "$known" ] || return 0
+    run_id=$(nm_exact_run_id "$known" "$CREW_BRANCH" "$head_full" "$COARSE_STATUS")
+  else
+    run_id=$(strip_quotes "$(nm_field id)")
+  fi
+  [ -n "$run_id" ] || return 0
+  printf 'run-identity: %s\n' "$run_id"
 }
 
 emit_run_progress_token() {
@@ -502,6 +687,7 @@ HAVE_RUN=0
 # run-step block below skips the TOON field parsing entirely for this crew.
 RUN_SOURCE=full
 COARSE_STATUS=""
+COARSE_HEAD_SHORT=""
 # Scouts and secondmates never drive a no-mistakes validation of their own
 # worktree, so skip the lookup for them and read state from pane/log directly.
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then
@@ -519,7 +705,10 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
       # primary call means the CLI itself did not respond, so retrying it
       # immediately with a second bounded call would just double the wait
       # for no better answer.
-      COARSE_STATUS=$(nm_runs_status_for_branch "$CREW_BRANCH")
+      COARSE_ROW=$(nm_runs_status_for_branch "$CREW_BRANCH")
+      COARSE_STATUS=${COARSE_ROW%%	*}
+      COARSE_HEAD_SHORT=${COARSE_ROW#*	}
+      [ "$COARSE_HEAD_SHORT" != "$COARSE_ROW" ] || COARSE_HEAD_SHORT=""
       if [ -n "$COARSE_STATUS" ]; then
         HAVE_RUN=1
         RUN_SOURCE=coarse
@@ -546,8 +735,9 @@ if [ "$HAVE_RUN" = 1 ]; then
     # gets full detail once `axi status` reports its own branch again (e.g.
     # once its own step is the most-recently-touched one), and its own
     # needs-decision/blocked status-log append (a captain-relevant VERB) is
-    # surfaced through signal_reason_is_actionable regardless of this
-    # coarse-vs-full distinction, so a real gate is never silently missed.
+    # surfaced by the watcher's unconsumed-coordination scan
+    # (status_unseen_coordination) regardless of this coarse-vs-full
+    # distinction, so a real gate is never silently missed.
     case "$COARSE_STATUS" in
       running)   RUN_STATE=working; RUN_DETAIL="validating (background run)" ;;
       completed) RUN_STATE="done";  RUN_DETAIL="run completed" ;;

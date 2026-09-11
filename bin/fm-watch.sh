@@ -2,44 +2,31 @@
 # Firstmate watcher.
 # Classifies supervision wakes in bash. In normal mode it absorbs benign wakes
 # and keeps blocking; it queues and exits only for actionable wakes.
-# The no-verb signal and stale path is absorb-only-when-provably-working: a wake
-# is absorbed only when the crew shows POSITIVE evidence it is still working (an
-# actively-running no-mistakes step, or a backend busy signal), and surfaced
-# otherwise, so a crew that finishes (or stops and waits) without a current
-# working signal is never silently swallowed. A declared external-wait pause is
-# the separate idle absorb case and is rechecked internally on its long bounded
-# cadence, although its initial no-verb status signal still surfaces in normal mode.
-# While state/.afk exists, the daemon owns triage and this watcher queues and exits
-# on every wake. Printed reason lines:
-#   signal: <file>...      status/turn-end signals, surfaced when a listed status
-#                          has a captain-relevant verb OR a no-verb signal's crew
-#                          is not provably working, unless afk is active
-#   stale: <window>        a provably-working stale is ALWAYS absorbed (with a wedge
-#                          timer) regardless of what the status log says - an active
-#                          run-step or busy pane outranks even a captain-relevant log
-#                          line, since the crew's own log gets no new entry once
-#                          firstmate hands it to a no-mistakes validation. A declared
-#                          external-wait pause is absorbed instead with its own long
-#                          internal-recheck cadence, never as a wedge. Only when neither
-#                          absorb class applies does the log's last line decide:
-#                          terminal (captain-relevant) or non-terminal (no verb),
-#                          both surfaced at once. A provably-working stale past the
-#                          wedge threshold also surfaces, with an "escalation N"
-#                          count in the reason; at FM_WEDGE_DEMAND_INSPECT_COUNT
-#                          consecutive escalations on the SAME pane, the reason
-#                          also carries a "demand-deep-inspection" marker so the
-#                          wake payload itself, not just repetition, forces a
-#                          closer look instead of another routine supervision
-#                          resume. Unless afk is active. A genuinely busy pane
-#                          (window_is_busy true) is exempt from the above, but
-#                          only up to BUSY_TURN_MAX_SECS with no completed turn
-#                          (state/<id>.turn-ended, or the spawn record before any
-#                          turn completes); past that bound busy_turn_over_age
-#                          routes it through the same wedge timer, so it surfaces
-#                          with the identical "stale: ..." reason, escalation
-#                          count, and demand-deep-inspection marker, for human
-#                          inspection only - never an automatic interrupt,
-#                          signal, or restart of the worker or its tool process.
+# Status routing is owned by fm-classify-lib.sh. Routine declarations and their
+# turn-end markers are consumed without a model turn; unconsumed explicit status
+# events are queued before their scan signatures advance. Without a declaration or
+# captain-directed contract, workers retain the positive-working recovery fallback.
+# Declared waits are rechecked internally, and progress uses the existing stall
+# grace. Owned active runs and failures take precedence over old status. Delivered
+# outcomes do not reawaken merely because the pane changes, and an owned-run
+# failure is announced once, keyed on the producer's exact run ID, so its idle pane
+# then stays quiet instead of re-surfacing as a possible wedge; the ordinary stuck
+# timer comes back as soon as that worker positively resumes - a completed turn while
+# it fixes the same run locally, or a new run reported working - and a genuinely
+# different run that fails still delivers. While the run ID is unreadable an
+# owned-run failure is PENDING rather than announced unnamed. A routine
+# status or turn-end event is consumed without a model turn but is not evidence of
+# useful progress, so it never retires an ordinary window's possible-wedge timer or
+# escalation count; only owned pipeline progress and a changed pane do that.
+# While state/.afk exists, the daemon retains its own one-shot triage policy.
+# Printed reason lines:
+#   signal: <file>...      explicit status events or undeclared-worker recovery
+#   stale: <window>        an unreported terminal status, owned-run failure, or
+#                          undeclared idle worker. Stalled progress and over-age
+#                          busy turns use the existing possible-wedge timer,
+#                          escalation count, and demand-deep-inspection marker.
+#                          These request inspection, never automatic interruption
+#                          or restart of a worker or its tool process.
 #   check: <script>: <out> authenticated check output, always actionable
 #   check: rejected unauthenticated state checks: <paths>
 #                          unsafe state checks were refused without execution
@@ -118,20 +105,22 @@ SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trai
 # working: note or turn-end while a pipeline runs, a no-change heartbeat). Rather
 # than wake firstmate's LLM for each, this watcher classifies every wake in bash
 # and ABSORBS the benign majority - it advances the suppression marker, logs to a
-# debug log, and keeps blocking WITHOUT enqueuing or exiting. The no-verb signal
-# / stale path is absorb-only-when-provably-working: such a wake is absorbed ONLY
-# while the crew shows positive evidence it is still working (an actively-running
-# no-mistakes step, or a busy pane, via crew_is_provably_working over
-# fm-crew-state.sh); a crew that stopped its turn with no running pipeline and no
-# busy pane is SURFACED, so a finish reported only through interactive pane menus
-# (no done: status) is never swallowed. An ACTIONABLE wake (a captain-relevant
-# signal, a no-verb signal whose crew is not provably working, any check, a stale
-# pane whose crew is not provably working, a provably-working stale past the
-# threshold, or anything unknown) is written to the durable queue and exits, which
-# is what wakes the LLM through the background-task completion. The same classifier
-# (fm-classify-lib.sh) backs the away-mode daemon; while state/.afk exists the
-# daemon owns triage, so this watcher reverts to one-shot (enqueue + exit on every
-# wake) and never double-triages - and never runs the costly provably-working read.
+# debug log, and keeps blocking WITHOUT enqueuing or exiting. Eligibility is owned
+# by fm-classify-lib.sh: a worker that DECLARED its state (a routine verb, a pause,
+# a captain hold) or carries the captain-directed delivery contract is taken at its
+# word and its idle pane gets the existing stall grace instead of a wake. A worker
+# with no declaration at all keeps the older positive-evidence fallback: its no-verb
+# signal or stale pane is absorbed only while fm-crew-state.sh proves it is still
+# working (an actively-running no-mistakes step, or a busy pane), and surfaced
+# otherwise, so a finish reported only through interactive pane menus (no done:
+# status) is never swallowed. An ACTIONABLE wake (an unconsumed explicit status
+# event, an undeclared worker that cannot be proven working, any check, an
+# unreported terminal status, an owned-run failure, or a stalled/over-age pane past
+# the wedge threshold) is written to the durable queue and exits, which is what
+# wakes the LLM through the background-task completion. The same classifier backs
+# the away-mode daemon; while state/.afk exists the daemon owns triage, so this
+# watcher reverts to one-shot (enqueue + exit on every wake) and never
+# double-triages - and never runs the costly authoritative read.
 STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
 # A surfaced signal and the first static-pane observation can describe the same
 # completed turn. Suppress that one transport duplicate while retaining the
@@ -151,12 +140,15 @@ case "$SIGNAL_STALE_GRACE" in ''|*[!0-9]*) SIGNAL_STALE_GRACE=$STALE_ESCALATE_SE
 # turn-ended and resets the age. Set generously above any legitimate interval
 # between completed turns, including long tool calls, builds, or test runs.
 BUSY_TURN_MAX_SECS=${FM_BUSY_TURN_MAX_SECS:-3600}
-# A crew that declared a pause is idling on a known external wait, so its stale
-# pane is absorbed rather than wedge-escalated.
-# A captain-held or paused crew whose agent has confidently exited uses the same
-# bounded cadence, while a live or ambiguously read agent still surfaces once.
-# These cases re-surface once for a recheck every PAUSE_RESURFACE_SECS - far
-# longer than the wedge threshold, but finite so a forgotten hold cannot rot invisibly.
+# A crew that declared a pause, or carries a durable captain-held transfer, is
+# idling deliberately, so its stale pane is absorbed rather than wedge-escalated.
+# The declaration alone decides this: backend agent liveness is no longer consulted,
+# because a worker waiting for an answer in its own window is exactly as intentional
+# as one that already exited. Only a positive active-run or owned-failure read
+# overrides the hold. The absorbed pane is rechecked internally every
+# PAUSE_RESURFACE_SECS - far longer than the wedge threshold, but finite so a
+# forgotten hold cannot rot invisibly - and that recheck writes a triage-log line
+# rather than a wake, so a declared wait never costs a model turn.
 PAUSE_RESURFACE_SECS=${FM_PAUSE_RESURFACE_SECS:-$FM_PAUSE_RESURFACE_SECS_DEFAULT}
 # Consecutive event-path failures (fm_backend_wait_transition returning 2 -
 # connect/subscribe failure) before the push fast-path is disabled for the rest
@@ -388,79 +380,260 @@ clear_pause_tracking() {  # <window>
   rm -f "$STATE/.stale-$key" "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key" "$STATE/.wedge-escalations-$key"
 }
 
+# Per-window receipt for an owned no-mistakes run that fm-crew-state.sh attributes
+# to this crew's own code and reports failed. An unresolved failed run keeps
+# reporting failed on every later read, so without a receipt each new settled pane
+# hash - or each watcher restart - would re-announce the same failure. It lives in
+# its own marker rather than sharing .paused-<key>, because pause tracking is
+# retired by unrelated transitions (a prior provably-working classification) that
+# say nothing about whether the failure was delivered. Both delivery processes use
+# it, so an ordinary and a captain-directed worker announce a failure identically.
+#
+# What it stores is the EXACT producer run ID of the failed run, from
+# crew_absorb_observation, never a bare "delivered" flag. Identity, not a state
+# transition, is what separates one failure from the next: a rerun that fails again
+# is a different run ID, so it delivers even though the watcher never sampled the
+# working interval between them - which it cannot be relied on to do, because an
+# idle worker's pane hash does not change while firstmate's validation runs. The ID
+# alone is the key, so the same run stays consumed when one answer projects its head
+# short and another projects it full. The receipt is written only AFTER the wake is
+# durably queued, matching the queue-before-consumption ordering every other
+# suppressor here follows.
+#
+# An observation that reports a failed run WITHOUT naming it decides nothing. It is
+# not a second failure, and it is not proof that the recorded one is still current,
+# so it neither delivers nor consumes nor retires: delivery for that observation is
+# PENDING and the bounded cadence simply asks again. There is deliberately no
+# anonymous receipt and no adopting a later ID onto one, because either would let a
+# genuinely distinct failure be swallowed once reading recovered. The honest limit
+# this leaves is availability, not correctness: while the run identity is
+# unreadable, the automatic observer cannot announce an owned-run failure at all and
+# cannot promise a complete history of what it missed. A worker's own explicit
+# `failed:`, `blocked:` or `needs-decision:` status still routes through the signal
+# path untouched, which is the path that does not depend on the producer at all.
+failure_receipt_path() {  # <window>
+  printf '%s/.failed-%s' "$STATE" "$(printf '%s' "$1" | tr ':/.' '___')"
+}
+
+failure_receipt_exists() {  # <window>
+  [ -e "$(failure_receipt_path "$1")" ]
+}
+
+failure_already_delivered() {  # <window> <run-identity>
+  [ -n "${2:-}" ] || return 1
+  [ "$(cat "$(failure_receipt_path "$1")" 2>/dev/null)" = "$2" ]
+}
+
+record_failure_delivered() {  # <window> <run-identity>
+  [ -n "${2:-}" ] || return 0
+  printf '%s' "$2" > "$(failure_receipt_path "$1")"
+}
+
+# Retire a delivered-failure record ONLY on an observation that positively read the
+# RUN and found it is no longer failing. Provenance decides that, not the class: a
+# timed-out producer makes fm-crew-state.sh fall back to the worker's own status log
+# or to a semantic busy pane, and `working · status-log`, `paused · status-log` and
+# `working · pane` are all evidence about the WORKER. None of them establishes that
+# the consumed run recovered or became a different run, so none of them may forget
+# it. Only `source: run-step` is an answer about the run itself; while the producer
+# is unreadable the record simply stands, and the exact run ID still decides whether
+# a later failure is the same one or a new one.
+failure_receipt_sync() {  # <window> <authoritative-class> <observation-source>
+  [ "${3:-}" = run-step ] || return 0
+  case "$2" in failed|unknown) return 0 ;; esac
+  rm -f "$(failure_receipt_path "$1")"
+}
+
+
+# 0 when this worker has positively resumed since its owned-run failure was
+# consumed: its harness-neutral completed-turn marker (state/<id>.turn-ended, the
+# same file the busy-duration bound reads) is newer than the receipt. Firstmate
+# hands a failed run back to the worker, which then fixes it locally at the SAME
+# head under the SAME run, so the reader keeps reporting that terminal run and no
+# state transition marks the resumption - the worker's own completed turn does.
+# A re-rendered idle pane is not resumption, and this cue only ever STARTS the
+# ordinary stuck timer; nothing restarts it while the receipt is held, so a stream
+# of turn ends cannot push the watchdog out indefinitely. A worker that resumed and
+# then hung mid-turn never settles, so the busy path's completed-turn age bound
+# covers it instead.
+worker_resumed_since_failure() {  # <window> <task>
+  local rf te
+  rf=$(failure_receipt_path "$1")
+  te="$STATE/$2.turn-ended"
+  [ -e "$rf" ] && [ -e "$te" ] || return 1
+  [ "$te" -nt "$rf" ]
+}
+
+# 0 when a consumed owned-run failure should keep this window's idle pane quiet:
+# the failure was delivered and the worker has not resumed since.
+failure_consumed_and_idle() {  # <window> <task>
+  failure_receipt_exists "$1" || return 1
+  ! worker_resumed_since_failure "$1" "$2"
+}
+
+# The one bounded cadence for authoritative fm-crew-state.sh reads on a pane hash
+# this loop has ALREADY classified - EVERY such read, including one for a window
+# that still carries pause tracking and one whose failed run has no readable
+# identity. fm-classify-lib.sh's contract is that the
+# authoritative read runs on no-verb signal and first-sighting stale paths, never
+# every wake, because it may make a bounded no-mistakes call; but a hash that was
+# classified while a run was healthy must still be able to notice that the run
+# later failed, and an idle worker gives no new hash to trigger that. This gate
+# reconciles the two: it stamps the ATTEMPT, readable or not, so an unanswerable
+# reader cannot turn into one bounded pipeline call per poll, and it is keyed on
+# its own marker so no pause or stale transition can retire the cadence. Both
+# delivery processes gate on it.
+crew_read_due() {  # <window>
+  local rf
+  rf="$STATE/.crew-read-$(printf '%s' "$1" | tr ':/.' '___')"
+  [ "$(age_of "$rf")" -ge "$STALE_ESCALATE_SECS" ] || return 1
+  date +%s > "$rf"
+}
+
+# THE bounded authoritative observation for a pane hash this loop has already
+# classified, taken once and shared by every status shape below it. An idle worker
+# stops producing new hashes, so a run that fails after the crew went quiet would
+# otherwise be suppressed by whatever its status log happens to carry - a
+# pre-validation outcome, a routine progress note, or a declared wait - and each
+# shape would need its own read. This runs BEFORE any of that suppression.
+# Sets stale_class and stale_ident (both empty when the cadence is not due) and
+# returns 0 when it handled an owned-run failure itself.
+observe_classified_stale() {  # <window> <task> <hash>
+  local win=$1 task=$2 h=$3
+  stale_class=; stale_ident=; stale_source=
+  crew_read_due "$win" || return 1
+  read_observation "$(crew_absorb_observation "$task")"
+  stale_class=$obs_class; stale_ident=$obs_ident; stale_source=$obs_source
+  failure_receipt_sync "$win" "$stale_class" "$stale_source"
+  [ "$stale_class" = failed ] || return 1
+  surface_nonterminal_stale "$win" "$h" failed "$stale_ident"
+}
+
 # Reconcile a declared pause or captain-held status with authoritative crew state.
-# Only a confidently dead ordinary crew may recover paused classification after
-# fm-crew-state has fallen back to stopped or unknown.
+# A deliberate ordinary-worker wait survives stopped or unknown state; only
+# positive active-run or failure evidence overrides it.
 pause_state_class() {  # <window> <task>
-  local win=$1 task=$2 key last recheck_file class agent_alive
-  key=${win//:/_}
-  key=${key//\//_}
-  key=${key//./_}
+  local win=$1 task=$2 key last recheck_file class ident source
+  key=$(printf '%s' "$win" | tr ':/.' '___')
   last=$(last_status_line "$STATE/$task.status")
   recheck_file="$STATE/.paused-rechecked-$key"
   if ! status_is_paused_or_captain_held "$last"; then
     rm -f "$recheck_file"
-    crew_absorb_class "$task"
+    read_observation "$(crew_absorb_observation "$task")"
+    class=$obs_class; ident=$obs_ident; source=$obs_source
+    failure_receipt_sync "$win" "$class" "$source"
+    printf '%s\t%s\t%s' "$class" "$ident" "$source"
     return
   fi
+  # The throttled arm answers from the pause marker alone, without an
+  # authoritative read, so it is never evidence that a failure was resolved and it
+  # reports no provenance at all.
   if [ -e "$STATE/.paused-$key" ] && [ "$(age_of "$recheck_file")" -lt "$STALE_ESCALATE_SECS" ]; then
-    if [ "$(window_kind "$win")" != secondmate ]; then
-      agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
-      if [ "$agent_alive" != dead ]; then
-        rm -f "$recheck_file"
-        printf 'none'
-        return
-      fi
-    fi
-    printf 'paused'
+    printf 'paused\t\tnone'
     return
   fi
-  class=$(crew_absorb_class "$task")
-  if [ "$class" = working ]; then
-    rm -f "$recheck_file"
-    printf 'working'
-    return
+  read_observation "$(crew_absorb_observation "$task")"
+  class=$obs_class; ident=$obs_ident; source=$obs_source
+  failure_receipt_sync "$win" "$class" "$source"
+  case "$class" in
+    working|failed) rm -f "$recheck_file"; printf '%s\t%s\t%s' "$class" "$ident" "$source"; return ;;
+  esac
+  # A live declared wait is just as intentional as one left at a shell. A
+  # captain-held transfer has no current-state mapping but owns the same hold.
+  # An unreadable verdict holds the declaration for the same reason a positively
+  # inconclusive one does: nothing observed contradicts it.
+  if [ "$(status_line_verb "$last")" = "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}" ]; then
+    class=paused
+  elif [ "$(window_kind "$win")" != secondmate ]; then
+    case "$class" in none|unknown) class=paused ;; esac
   fi
-  if [ "$(window_kind "$win")" != secondmate ]; then
-    agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
-    if [ "$agent_alive" != dead ]; then
-      rm -f "$recheck_file"
-      printf 'none'
-      return
-    fi
-  fi
-  [ "$class" = none ] && [ "${agent_alive:-unknown}" = dead ] && class=paused
   case "$class" in
     paused) date +%s > "$recheck_file" ;;
     *) rm -f "$recheck_file" ;;
   esac
-  printf '%s' "$class"
+  printf '%s\t%s\t%s' "$class" "$ident" "$source"
 }
 
-surface_nonterminal_stale() {  # <window> <hash>
-  local win=$1 h=$2 key task last signal_marker
+surface_nonterminal_stale() {  # <window> <hash> [failed [run-identity]]
+  local win=$1 h=$2 failure=${3:-} ident=${4:-} key task last signal_marker reason
   key=$(printf '%s' "$win" | tr ':/.' '___')
   task=$(window_to_task "$win" "$STATE")
   signal_marker="$STATE/.signal-surfaced-$task"
-  if [ "$(age_of "$signal_marker")" -lt "$SIGNAL_STALE_GRACE" ]; then
+  if [ "$failure" = failed ]; then
+    if [ -z "$ident" ]; then
+      printf '%s' "$h" > "$STATE/.stale-$key"
+      triage_log "absorbed stale (owned run failure pending: no readable run identity): $win"
+      return 0
+    fi
+    if failure_already_delivered "$win" "$ident"; then
+      printf '%s' "$h" > "$STATE/.stale-$key"
+      rm -f "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key"
+      if worker_resumed_since_failure "$win" "$task"; then
+        [ -e "$STATE/.stale-since-$key" ] || wedge_timer_start "$win" "$STATE/.stale-since-$key" "$task"
+        triage_log "absorbed stale (owned run failure already delivered; watchdog runs for resumed work): $win"
+      else
+        rm -f "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key"
+        triage_log "absorbed stale (owned run failure already delivered): $win"
+      fi
+      return 0
+    fi
+  elif [ "$(age_of "$signal_marker")" -lt "$SIGNAL_STALE_GRACE" ]; then
     printf '%s' "$h" > "$STATE/.stale-$key"
     rm -f "$signal_marker"
     wedge_timer_start "$win" "$STATE/.stale-since-$key" "$task"
     triage_log "absorbed bare stale duplicate after surfaced signal: $win"
     return 0
   fi
-  fm_wake_append stale "$win" "stale: $win" || exit 1
+  reason="stale: $win"
+  [ "$failure" != failed ] || reason="$reason (owned run failed)"
+  fm_wake_append stale "$win" "$reason" || exit 1
   printf '%s' "$h" > "$STATE/.stale-$key"
   rm -f "$STATE/.stale-since-$key" "$STATE/.stale-progress-$key" "$signal_marker"
+  [ "$failure" != failed ] || record_failure_delivered "$win" "$ident"
   last=$(last_status_line "$STATE/$task.status")
-  if status_is_paused_or_captain_held "$last"; then
+  if [ "$failure" != failed ] && status_is_paused_or_captain_held "$last"; then
     : > "$STATE/.paused-$key"
     date +%s > "$STATE/.paused-rechecked-$key"
     date +%s > "$STATE/.paused-resurfaced-$key"
   else
     rm -f "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key"
   fi
-  wake "stale: $win"
+  wake "$reason"
+}
+
+# Captain-directed builders route coordination explicitly. Reuse the existing
+# pause/recheck detector state for a bounded current-state read, never a model
+# wake based on pane or busy age. An owned-run failure is announced once through
+# the shared failure receipt, exactly as the ordinary process announces it.
+# A dead/missing shell is not proof of an exit: spawn publishes metadata before
+# launch and Codex has no generation-bound turn-end source. Such unproven exits
+# remain the targeted/session-start recovery owner's responsibility, and this
+# process deliberately carries no silent-crash or hang guarantee.
+handle_captain_directed_window() {  # <window> <task>
+  local win=$1 task=$2 key class ident recheck reason
+  key=$(printf '%s' "$win" | tr ':/.' '___')
+  recheck="$STATE/.paused-rechecked-$key"
+  crew_read_due "$win" || return 0
+  read_observation "$(crew_absorb_observation "$task")"
+  class=$obs_class; ident=$obs_ident
+  failure_receipt_sync "$win" "$class" "$obs_source"
+  if [ "$class" = failed ]; then
+    if [ -z "$ident" ]; then
+      triage_log "owned run failure pending: no readable run identity: $win"
+    elif failure_already_delivered "$win" "$ident"; then
+      :
+    else
+      reason="stale: $win (owned run failed)"
+      fm_wake_append stale "$win" "$reason" || exit 1
+      clear_pause_tracking "$win"
+      record_failure_delivered "$win" "$ident"
+      date +%s > "$recheck"
+      wake "$reason"
+    fi
+  else
+    handle_paused_stale "$win" "$task" coordination-only
+  fi
+  date +%s > "$recheck"
 }
 
 # Check and heartbeat cadence must survive actionable exits and restarts: the
@@ -844,60 +1017,70 @@ while :; do
   pending=$(scan_signals)
   if [ -n "$pending" ]; then
     sleep "$SIGNAL_GRACE"
-    pending=$(printf '%s\n%s' "$pending" "$(scan_signals)")
+    pending=$(printf '%s\n%s\n' "$pending" "$(scan_signals)" | awk -F '\t' '
+      NF == 3 { if (!($1 in row)) order[++n]=$1; row[$1]=$0 }
+      END { for (i=1; i<=n; i++) print row[order[i]] }
+    ')
     files=""
+    actionable=""
+    signal_event_snapshots=()
     while IFS=$(printf '\t') read -r sf sig f; do
       [ -n "$sf" ] || continue
-      case " $files " in *" $f "*) ;; *) files="$files $f" ;; esac
+      files="$files $f"
+      signal_events=
+      case "$f" in *.status) signal_events=$(status_unseen_coordination "$f" "$sig") ;; esac
+      signal_event_snapshots+=("$signal_events")
+      if afk_present || [ -n "$signal_events" ] \
+        || { ! signal_has_declaration "$f" && ! signal_crew_provably_working "$f"; }; then
+        actionable="$actionable $f"
+      fi
     done <<EOF
 $pending
 EOF
-    reason="signal:$files"
-    # Triage: a signal is ACTIONABLE when any of these holds (cheapest first):
-    #   - the away-mode daemon owns triage (afk) and wants every wake;
-    #   - any status file carries a captain-relevant verb;
-    #   - or it is a no-verb wake (a bare turn-end, a working: note) whose crew is
-    #     NOT provably working - the crew stopped its turn with no actively-running
-    #     pipeline and no busy pane, so it may be done (even via an interactive menu
-    #     that wrote no done: status), waiting on a decision, or wedged. Absorbing
-    #     such a turn-end is exactly the swallowed-finish this change guards against.
-    # Actionable -> enqueue, advance .seen-* markers, exit. Benign (a no-verb wake
-    # whose crew IS provably working) in always-on mode -> advance the markers so it
-    # will not re-fire, log, and keep blocking without enqueuing. The provably-working
-    # check is the only costly one (it may run a bounded no-mistakes call), so the ||
-    # ordering evaluates it ONLY for a non-afk, no-captain-verb signal.
-    # shellcheck disable=SC2086  # $files is a space-separated status-path list (ids carry no spaces)
-    if afk_present || signal_reason_is_actionable $files || ! signal_crew_provably_working $files; then
-      while IFS=$(printf '\t') read -r sf sig f; do
-        [ -n "$sf" ] || continue
-        fm_wake_append signal "$(basename "$f")" "$reason" || exit 1
-      done <<EOF
+    reason="signal:$actionable"
+    # Queue each eligible file once before acknowledging ANY scan signature.
+    # A kill or failed publication leaves the original signals recoverable.
+    # Routine files in a mixed batch never become extra coordination records.
+    signal_index=0
+    while IFS=$(printf '\t') read -r sf sig f; do
+      [ -n "$sf" ] || continue
+      signal_events=${signal_event_snapshots[$signal_index]}
+      signal_index=$((signal_index + 1))
+      case " $actionable " in *" $f "*) ;; *) continue ;; esac
+      signal_payload=$reason
+      [ -z "$signal_events" ] || signal_payload="$reason$FM_WAKE_STATUS_SNAPSHOT_PREFIX$sig: $signal_events"
+      fm_wake_append signal "$(basename "$f")" "$signal_payload" || exit 1
+    done <<EOF
 $pending
 EOF
-      while IFS=$(printf '\t') read -r sf sig f; do
-        [ -n "$sf" ] || continue
-        printf '%s' "$sig" > "$sf"
-        mark_surfaced "$f"
-        if ! afk_present; then
-          case "$f" in
-            "$STATE"/*.status) signal_task=${f##*/}; signal_task=${signal_task%.status} ;;
-            "$STATE"/*.turn-ended) signal_task=${f##*/}; signal_task=${signal_task%.turn-ended} ;;
-            *) signal_task= ;;
-          esac
-          [ -z "$signal_task" ] || : > "$STATE/.signal-surfaced-$signal_task"
-        fi
-      done <<EOF
+    while IFS=$(printf '\t') read -r sf sig f; do
+      [ -n "$sf" ] || continue
+      printf '%s' "$sig" > "$sf"
+      case " $actionable " in
+        *" $f "*)
+          mark_surfaced "$f"
+          if ! afk_present; then
+            case "$f" in
+              *.status)
+                signal_task=${f##*/}; signal_task=${signal_task%.status}
+                signal_window=$(fm_backend_target_of_meta "$STATE/$signal_task.meta" 2>/dev/null || true)
+                [ -z "$signal_window" ] || clear_pause_tracking "$signal_window"
+                ;;
+            esac
+            signal_task=${f##*/}
+            signal_task=${signal_task%.status}
+            signal_task=${signal_task%.turn-ended}
+            : > "$STATE/.signal-surfaced-$signal_task"
+          fi
+          ;;
+      esac
+    done <<EOF
 $pending
 EOF
+    if [ -n "$actionable" ]; then
       wake "$reason"
     else
-      while IFS=$(printf '\t') read -r sf sig f; do
-        [ -n "$sf" ] || continue
-        printf '%s' "$sig" > "$sf"
-      done <<EOF
-$pending
-EOF
-      triage_log "absorbed benign $reason"
+      triage_log "absorbed benign signal:$files"
     fi
   fi
 
@@ -912,6 +1095,10 @@ EOF
     key=${key//\//_}
     key=${key//./_}
     last=$(last_status_line "$STATE/$task.status")
+    if ! afk_present && [ "$kind" != secondmate ] && task_is_captain_directed "$task"; then
+      handle_captain_directed_window "$w" "$task"
+      continue
+    fi
     if ! status_is_paused_or_captain_held "$last" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$w"
     fi
@@ -942,7 +1129,8 @@ EOF
         # The pane is idle/stale at hash $h. Triage decides whether this wakes
         # firstmate. Detection itself is unchanged from above.
         if [ "$kind" = secondmate ]; then
-          case "$(pause_state_class "$w" "$task")" in
+          read_observation "$(pause_state_class "$w" "$task")"
+          case "$obs_class" in
             paused) handle_paused_stale "$w" "$task" "$h" ;;
             *)      clear_pause_tracking "$w" ;;
           esac
@@ -969,10 +1157,21 @@ EOF
           # authoritative source fm-crew-state.sh itself already prioritizes
           # over the log) a chance to override before trusting the log.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            if crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
+            read_observation "$(crew_absorb_observation "$task")"
+            terminal_class=$obs_class; terminal_ident=$obs_ident
+            failure_receipt_sync "$w" "$terminal_class" "$obs_source"
+            if [ "$terminal_class" = failed ]; then
+              surface_nonterminal_stale "$w" "$h" failed "$terminal_ident"
+            elif [ "$terminal_class" = working ]; then
               printf '%s' "$h" > "$sf"
               wedge_timer_start "$w" "$ssf" "$task"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
+            elif [ "$(cat "$(_hb_surfaced_path "$task")" 2>/dev/null)" = "$last" ]; then
+              # This outcome/request was already delivered. A changing idle
+              # pane does not constitute another coordination event.
+              printf '%s' "$h" > "$sf"
+              rm -f "$ssf" "$spf"
+              triage_log "absorbed stale (status already delivered): $w"
             else
               signal_marker="$STATE/.signal-surfaced-$task"
               if [ "$(age_of "$signal_marker")" -lt "$SIGNAL_STALE_GRACE" ]; then
@@ -987,34 +1186,27 @@ EOF
                 wake "stale: $w"
               fi
             fi
-          elif [ -e "$ssf" ]; then
-            # This exact hash was already overridden as provably-working (a
-            # wedge timer is running for it) - keep treating it that way
-            # without re-reading the crew state every poll, and without
-            # letting the still-captain-relevant log line re-surface it.
-            wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf" "$task"
+          elif ! observe_classified_stale "$w" "$task" "$h"; then
+            # The old status line cannot become news again on this same hash, and
+            # a consumed failure stays quiet rather than re-surfacing as a wedge.
+            # Positively resumed work restarts the ordinary stuck timer, including
+            # on the same pane after a failure retired it.
+            if failure_consumed_and_idle "$w" "$task"; then
+              :
+            elif [ -e "$ssf" ]; then
+              wedge_timer_check "$w" "$ssf" "stale (overridden terminal status)" "$ewf" "$task"
+            elif [ "$stale_class" = working ]; then
+              wedge_timer_start "$w" "$ssf" "$task"
+            fi
           fi
-          # else: already surfaced as genuinely terminal on a prior poll of
-          # this same hash - nothing left to do (matches the original,
-          # unmodified terminal-status behavior).
         else
-          # Non-terminal stale: a crew gone quiet without a captain-relevant status.
-          # Decided once per distinct stale hash (the costly state reads run only
-          # on first sight, never every poll) via pause_state_class, which returns:
-          #   - working: an actively-running pipeline legitimately sits on a static
-          #     pane (e.g. waiting on CI), so absorb and start the wedge timer so a
-          #     genuinely frozen run still escalates past STALE_ESCALATE_SECS;
-          #   - paused: the crew declared an external wait, or a declared pause or
-          #     captain hold is paired with a confidently dead agent, so absorb on
-          #     the long PAUSE_RESURFACE_SECS cadence instead of wedge-escalating;
-          #   - none: no running pipeline, no exact busy verdict, no declared pause.
-          #     Surface immediately so firstmate inspects the inconclusive state
-          #     (it may be done via an interactive menu that wrote no done: status,
-          #     waiting on a decision, or wedged) instead of leaving the finish to
-          #     wait out the timer.
+          # Ordinary-process idle state: active work and routine progress get
+          # the existing stall grace, declared waits stay quiet, and actual
+          # failures or undeclared stopped work remain actionable.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             task=$(window_to_task "$w" "$STATE")
-            case "$(pause_state_class "$w" "$task")" in
+            read_observation "$(pause_state_class "$w" "$task")"
+            case "$obs_class" in
               working)
                 clear_pause_tracking "$w"
                 printf '%s' "$h" > "$sf"
@@ -1024,23 +1216,57 @@ EOF
               paused)
                 handle_paused_stale "$w" "$task" "$h"
                 ;;
+              failed)
+                surface_nonterminal_stale "$w" "$h" failed "$obs_ident"
+                ;;
               *)
-                surface_nonterminal_stale "$w" "$h"
+                if status_is_routine "$last"; then
+                  printf '%s' "$h" > "$sf"
+                  wedge_timer_start "$w" "$ssf" "$task"
+                  triage_log "absorbed non-terminal stale (declared progress): $w"
+                else
+                  surface_nonterminal_stale "$w" "$h"
+                fi
                 ;;
             esac
           else
             task=$(window_to_task "$w" "$STATE")
-            if [ -e "$pf" ] || status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")"; then
-              case "$(pause_state_class "$w" "$task")" in
-                paused)  handle_paused_stale "$w" "$task" "$h" ;;
-                working) clear_pause_state "$w"
-                         printf '%s' "$h" > "$sf"
-                         wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf" "$task"
-                         triage_log "absorbed non-terminal stale (provably working): $w" ;;
-                *)       handle_paused_stale "$w" "$task" "$h" ;;
-              esac
-            else
-              wedge_timer_check "$w" "$ssf" "non-terminal stale" "$ewf" "$task"
+            last=$(last_status_line "$STATE/$task.status")
+            # ONE gate owns every repeated authoritative read of this hash,
+            # including a window that still carries pause tracking. Routing a
+            # declared wait through its own pause recheck as well left a second,
+            # independently armed read path, and a failed run with no readable
+            # identity disarmed it permanently.
+            if ! observe_classified_stale "$w" "$task" "$h"; then
+              if failure_consumed_and_idle "$w" "$task"; then
+                # A consumed owned-run failure keeps an IDLE pane quiet whatever its
+                # status log says, and never re-enters the pause cadence. Once the
+                # worker positively resumes - locally under the same failed run, or
+                # under a new one - the ordinary stuck timer runs again.
+                triage_log "absorbed stale (owned run failure already delivered): $w"
+              elif [ -e "$pf" ] || status_is_paused_or_captain_held "$last"; then
+                case "$stale_class" in
+                  working) clear_pause_state "$w"
+                           printf '%s' "$h" > "$sf"
+                           [ -e "$ssf" ] || wedge_timer_start "$w" "$ssf" "$task"
+                           wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf" "$task"
+                           triage_log "absorbed non-terminal stale (provably working): $w" ;;
+                  paused|none|unknown)
+                           handle_paused_stale "$w" "$task" "$h" ;;
+                  *)       # No authoritative read this cycle. A live wedge timer
+                           # with pause tracking already retired means this pane was
+                           # last classified as working, which outranks the older
+                           # declaration, so keep its own timer running; a wait that
+                           # still holds its marker keeps absorbing instead.
+                           if [ ! -e "$pf" ] && [ -e "$ssf" ]; then
+                             wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf" "$task"
+                           else
+                             handle_paused_stale "$w" "$task" "$h"
+                           fi ;;
+                esac
+              else
+                wedge_timer_check "$w" "$ssf" "non-terminal stale" "$ewf" "$task"
+              fi
             fi
           fi
         fi
@@ -1067,7 +1293,8 @@ EOF
       fi
       task=$(window_to_task "$w" "$STATE")
       if ! afk_present && status_is_paused_or_captain_held "$(last_status_line "$STATE/$task.status")" && [ "$busy_now" -ne 0 ]; then
-        case "$(pause_state_class "$w" "$task")" in
+        read_observation "$(pause_state_class "$w" "$task")"
+        case "$obs_class" in
           paused) handle_paused_stale "$w" "$task" "$h" ;;
           *)      clear_pause_tracking "$w" ;;
         esac
