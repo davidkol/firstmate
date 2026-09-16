@@ -117,6 +117,13 @@ init_changed_fixture_repo() {
     chmod +x "$repo/tests/$script"
   done
   : >"$repo/tests/lib.sh"
+  : >"$repo/tests/fixtures.sh"
+  : >"$repo/tests/shared-probe-fixture.sh"
+  printf '# fixtures.sh\n# shared-probe-fixture.sh\n' >>"$repo/tests/fm-pr-merge.test.sh"
+  printf '# shared-probe-fixture.sh\n' >>"$repo/tests/fm-secondmate-safety.test.sh"
+  mkdir -p "$repo/tests/fixtures/demo"
+  : >"$repo/tests/fixtures/demo/demo-fixture.sh"
+  printf '# tests/fixtures/demo\n' >>"$repo/tests/fm-backend-orca.test.sh"
   : >"$repo/tests/fm-backend-herdr-eventwait.test.py"
   : >"$repo/bin/fm-supervisor-target-lib.sh"
   : >"$repo/bin/unmapped-source.sh"
@@ -317,6 +324,54 @@ test_changed_maps_skill_assets_and_fixtures() {
 
   rm -rf "$tmp"
   pass "skill assets and test fixtures resolve to covering tests instead of aborting"
+}
+
+test_changed_shared_fixture_selects_its_readers() {
+  local tmp repo listed rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-fixture.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+
+  printf '\n' >>"$repo/tests/shared-probe-fixture.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-pr-merge.test.sh" \
+    "top-level test fixture selects its pr-forge reader"
+  assert_contains "$listed" "tests/fm-secondmate-safety.test.sh" \
+    "top-level test fixture selects its secondmate reader"
+  case "$listed" in
+    *fm-backend-orca.test.sh*) fail "top-level test fixture selection widened past its readers: $listed" ;;
+  esac
+  git -C "$repo" add tests/shared-probe-fixture.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm fixture-change
+
+  printf '\n' >>"$repo/tests/fixtures.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-pr-merge.test.sh" \
+    "top-level fixtures.sh selects its reader"
+  git -C "$repo" add tests/fixtures.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm fixtures-helper-change
+
+  printf '\n' >>"$repo/tests/fixtures/demo/demo-fixture.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-backend-orca.test.sh" \
+    "a nested fixture still selects the suite that reads its directory"
+  case "$listed" in
+    *fm-pr-merge.test.sh*) fail "nested fixture was swallowed by the top-level fixture glob: $listed" ;;
+  esac
+  git -C "$repo" add tests/fixtures/demo/demo-fixture.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm nested-fixture-change
+
+  : >"$repo/tests/unread-thing.sh"
+  set +e
+  (cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) >"$tmp/out" 2>"$tmp/err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "an unread tests/ path must still fail with exit 2, got $rc"
+  grep -Fq 'no changed-test mapping for source path: tests/unread-thing.sh' "$tmp/err" \
+    || fail "the refusal did not name the unread tests/ path: $(cat "$tmp/err")"
+
+  rm -rf "$tmp"
+  pass "top-level shared fixtures select their readers while nested and unknown controls stay intact"
 }
 
 # Deleting a test used to resolve to a script path that no longer exists, get
@@ -875,6 +930,7 @@ test_changed_file_selection_is_conservative
 test_changed_dependency_selection_and_unmapped_failure
 test_changed_selects_contract_family_for_prose_paths
 test_changed_maps_skill_assets_and_fixtures
+test_changed_shared_fixture_selects_its_readers
 test_changed_falls_back_to_family_for_deleted_test
 test_require_nonempty_refuses_empty_selection
 test_empty_selection_emits_summary

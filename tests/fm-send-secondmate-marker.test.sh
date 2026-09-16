@@ -253,6 +253,45 @@ test_marked_send_preserves_trailing_newlines() {
   pass "fm-send: marked secondmate payload preserves trailing newline bytes"
 }
 
+test_empty_message_refused() {
+  local dir fb log home err rc
+
+  dir="$TMP_ROOT/empty-marked"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"; err="$dir/send.err"
+  home=$(setup_home empty-marked)
+  fm_write_secondmate_meta "$home/state/domain.meta" "$home" "sess:fm-domain"
+  : > "$log"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" fm-domain >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "an empty secondmate steer should refuse"
+  assert_contains "$(cat "$err")" "nonempty message" \
+    "the empty-message refusal should be explicit"
+  [ ! -d "$home/state/domain.inbox" ] || fail "an empty steer still wrote an inbox record"
+  [ -z "$(find "$home/state/pending-replies" -type f -not -name '.*' 2>/dev/null)" ] \
+    || fail "an empty steer still minted a pending-reply expectation"
+  [ ! -s "$log" ] || fail "an empty steer still typed something"
+
+  dir="$TMP_ROOT/whitespace-only"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"; err="$dir/send.err"
+  home=$(setup_home whitespace-only)
+  fm_write_meta "$home/state/build.meta" \
+    "window=sess:fm-build" "worktree=$home/wt" "project=$home/p" \
+    "harness=echo" "kind=ship" "mode=no-mistakes" "yolo=off"
+  : > "$log"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" build "   " >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a whitespace-only ordinary steer should refuse"
+  assert_contains "$(cat "$err")" "nonempty message" \
+    "the whitespace-only refusal should be explicit"
+  [ ! -s "$log" ] || fail "a whitespace-only steer still typed something"
+
+  run_send "$fb" "$home" "$log" build --key Enter \
+    || fail "a --key send should still succeed"
+  pass "fm-send: empty marked and whitespace-only ordinary steers refuse without side effects"
+}
+
 test_secondmate_target_is_marked
 test_exact_secondmate_task_id_is_marked
 test_crewmate_target_is_not_marked
@@ -261,3 +300,4 @@ test_key_path_is_not_marked
 test_marker_is_label_plus_invisible_separator
 test_marker_transformation_is_idempotent
 test_marked_send_preserves_trailing_newlines
+test_empty_message_refused

@@ -495,10 +495,12 @@ test_spawn_freezes_delivery_posture_across_prompt_and_metadata() {
     "dispatch metadata did not use the frozen current mode"
   assert_grep 'yolo=off' "$HOME_DIR/state/$id.meta" \
     "dispatch metadata did not use the frozen current yolo posture"
-  assert_grep 'This project ships **local-only**' "$brief" \
-    "the final worker prompt did not use the same frozen mode as metadata"
-  assert_no_grep 'This project ships **direct-PR**' "$brief" \
-    "the final worker prompt retained its stale scaffold-time mode"
+  assert_grep "Never push to any remote and never open a PR. Work only on your \`fm/$id\` branch" "$brief" \
+    "the final worker prompt did not use the same frozen local-only rule as metadata"
+  assert_grep "bin/fm-merge-local.sh $id" "$brief" \
+    "the final worker prompt did not use the frozen local-only landing path"
+  assert_no_grep "push only your feature branch and open a PR with \`gh-axi\`" "$brief" \
+    "the final worker prompt retained its stale scaffold-time direct-PR landing path"
   pass "fm-spawn.sh: dispatch freezes prompt and metadata posture together"
 }
 

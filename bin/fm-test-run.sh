@@ -70,6 +70,8 @@
 # duration-balanced partition of that exact set (see docs/fm-test-portable-shards.md).
 # --changed is conservative: it over-selects related families rather than
 # under-selecting, and never expands to the complete suite unless --all.
+# Shared top-level test helpers and fixtures map to suites that reference them.
+# Nested tests/fixtures/ paths map by their containing fixture directory first.
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -788,10 +790,6 @@ families_for_changed_path() {
     docs/configuration.md|docs/supervision-protocols/*)
       printf '%s\n' pure-contract-unit
       ;;
-    tests/lib.sh|tests/*-helpers.sh)
-      families_for_test_reference "$(basename "$path")" \
-        || printf '%s\n' "__unmapped__:$path"
-      ;;
     tests/fixtures/*)
       # A fixture in a subdirectory is named by that directory in the tests that
       # read it, so coverage resolves from the segment directly under
@@ -805,6 +803,12 @@ families_for_changed_path() {
         *) fixture_needle=$fixture_rest ;;
       esac
       families_for_test_reference "$fixture_needle" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
+    tests/lib.sh|tests/fixtures.sh|tests/*-helpers.sh|tests/*-fixture.sh)
+      # Keep this after tests/fixtures/* because case globs can span slashes.
+      # A nested *-fixture.sh must map by its directory, not its basename.
+      families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     bin/*)
